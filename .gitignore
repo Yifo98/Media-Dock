@@ -11,6 +11,8 @@ node_modules
 dist
 dist-electron
 dist-ssr
+build/preview-*.png
+build/theme-previews/
 *.local
 release/*
 !release/*/
@@ -18,8 +20,11 @@ release/*/*
 !release/*/RELEASE-NOTES.md
 cookies
 tools
+updates
+Media Dock Data
+subtitle-cleanup-config.json
 .codex-tmp/
-YT-DLP Studio.lnk
+Media Dock.lnk
 
 # Editor directories and files
 .vscode/*

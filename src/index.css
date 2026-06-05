@@ -1,18 +1,27 @@
 :root {
   color-scheme: dark;
-  font-family: "Bahnschrift", "Segoe UI Variable Text", "Trebuchet MS", sans-serif;
+  font-family: "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "PingFang SC", "Microsoft YaHei UI", sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  --bg: #071018;
-  --bg-2: #0d1724;
-  --panel: rgba(12, 21, 34, 0.9);
-  --text-strong: #f6f8fb;
-  --text-muted: #92a6bb;
-  --accent: #ffb15f;
-  --accent-2: #6fd6ff;
-  --field-bg: rgba(255, 255, 255, 0.03);
-  --field-bg-focus: rgba(255, 255, 255, 0.05);
-  --field-surface: #101826;
+  --bg: #0a0d11;
+  --bg-2: #171b20;
+  --panel: rgba(15, 19, 25, 0.91);
+  --text-strong: #f5f7fb;
+  --text-muted: #a5afbc;
+  --accent: #d7e0ea;
+  --accent-2: #71d7ff;
+  --accent-3: #f1c36d;
+  --halo: rgba(113, 215, 255, 0.2);
+  --field-bg: rgba(245, 248, 255, 0.034);
+  --field-bg-focus: rgba(245, 248, 255, 0.07);
+  --field-surface: #14191f;
+  --surface-glow-1: rgba(113, 215, 255, 0.12);
+  --surface-glow-2: rgba(241, 195, 109, 0.1);
+  --surface-glow-3: rgba(215, 224, 234, 0.08);
+  --surface-bottom: #05070a;
+  --mesh-1: rgba(113, 215, 255, 0.13);
+  --mesh-2: rgba(241, 195, 109, 0.1);
+  --mesh-3: rgba(215, 224, 234, 0.09);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -20,16 +29,25 @@
 }
 
 :root[data-theme="midnight"] {
-  --bg: #071018;
-  --bg-2: #0d1724;
-  --panel: rgba(12, 21, 34, 0.9);
-  --text-strong: #f6f8fb;
-  --text-muted: #92a6bb;
-  --accent: #ffb15f;
-  --accent-2: #6fd6ff;
+  --bg: #080d12;
+  --bg-2: #152019;
+  --panel: rgba(11, 18, 25, 0.88);
+  --text-strong: #f7faf7;
+  --text-muted: #9aaea6;
+  --accent: #f3c76f;
+  --accent-2: #76dfc4;
+  --accent-3: #9db7ff;
+  --halo: rgba(118, 223, 196, 0.24);
   --field-bg: rgba(255, 255, 255, 0.03);
-  --field-bg-focus: rgba(255, 255, 255, 0.05);
-  --field-surface: #101826;
+  --field-bg-focus: rgba(255, 255, 255, 0.065);
+  --field-surface: #111a20;
+  --surface-glow-1: rgba(243, 199, 111, 0.13);
+  --surface-glow-2: rgba(118, 223, 196, 0.13);
+  --surface-glow-3: rgba(157, 183, 255, 0.1);
+  --surface-bottom: #050807;
+  --mesh-1: rgba(243, 199, 111, 0.18);
+  --mesh-2: rgba(118, 223, 196, 0.16);
+  --mesh-3: rgba(157, 183, 255, 0.12);
 }
 
 :root[data-theme="ember"] {
@@ -40,9 +58,18 @@
   --text-muted: #d1b6aa;
   --accent: #ff9f68;
   --accent-2: #ffdf8f;
+  --accent-3: #9dd2ff;
+  --halo: rgba(255, 159, 104, 0.24);
   --field-bg: rgba(255, 245, 240, 0.045);
   --field-bg-focus: rgba(255, 245, 240, 0.08);
   --field-surface: #241713;
+  --surface-glow-1: rgba(255, 148, 99, 0.22);
+  --surface-glow-2: rgba(255, 220, 143, 0.12);
+  --surface-glow-3: rgba(157, 210, 255, 0.1);
+  --surface-bottom: #0d0605;
+  --mesh-1: rgba(255, 148, 99, 0.2);
+  --mesh-2: rgba(255, 220, 143, 0.14);
+  --mesh-3: rgba(157, 210, 255, 0.1);
 }
 
 :root[data-theme="aurora"] {
@@ -53,9 +80,84 @@
   --text-muted: #96bcc8;
   --accent: #6cf7c8;
   --accent-2: #74b8ff;
+  --accent-3: #e2ccff;
+  --halo: rgba(116, 184, 255, 0.24);
   --field-bg: rgba(240, 255, 255, 0.035);
   --field-bg-focus: rgba(240, 255, 255, 0.07);
   --field-surface: #10202a;
+  --surface-glow-1: rgba(108, 247, 200, 0.16);
+  --surface-glow-2: rgba(116, 184, 255, 0.18);
+  --surface-glow-3: rgba(226, 204, 255, 0.11);
+  --surface-bottom: #040c11;
+  --mesh-1: rgba(108, 247, 200, 0.18);
+  --mesh-2: rgba(116, 184, 255, 0.17);
+  --mesh-3: rgba(226, 204, 255, 0.12);
+}
+
+:root[data-theme="lagoon"] {
+  --bg: #071315;
+  --bg-2: #122324;
+  --panel: rgba(10, 23, 25, 0.9);
+  --text-strong: #f4fffb;
+  --text-muted: #99bab3;
+  --accent: #7ee7d1;
+  --accent-2: #f2a16d;
+  --accent-3: #7fb6ff;
+  --halo: rgba(126, 231, 209, 0.23);
+  --field-bg: rgba(235, 255, 250, 0.035);
+  --field-bg-focus: rgba(235, 255, 250, 0.072);
+  --field-surface: #101f22;
+  --surface-glow-1: rgba(126, 231, 209, 0.15);
+  --surface-glow-2: rgba(242, 161, 109, 0.12);
+  --surface-glow-3: rgba(127, 182, 255, 0.12);
+  --surface-bottom: #04100f;
+  --mesh-1: rgba(126, 231, 209, 0.18);
+  --mesh-2: rgba(242, 161, 109, 0.13);
+  --mesh-3: rgba(127, 182, 255, 0.12);
+}
+
+:root[data-theme="graphite"] {
+  --bg: #0a0d11;
+  --bg-2: #171b20;
+  --panel: rgba(15, 19, 25, 0.91);
+  --text-strong: #f5f7fb;
+  --text-muted: #a5afbc;
+  --accent: #d7e0ea;
+  --accent-2: #71d7ff;
+  --accent-3: #f1c36d;
+  --halo: rgba(113, 215, 255, 0.2);
+  --field-bg: rgba(245, 248, 255, 0.034);
+  --field-bg-focus: rgba(245, 248, 255, 0.07);
+  --field-surface: #14191f;
+  --surface-glow-1: rgba(113, 215, 255, 0.12);
+  --surface-glow-2: rgba(241, 195, 109, 0.1);
+  --surface-glow-3: rgba(215, 224, 234, 0.08);
+  --surface-bottom: #05070a;
+  --mesh-1: rgba(113, 215, 255, 0.13);
+  --mesh-2: rgba(241, 195, 109, 0.1);
+  --mesh-3: rgba(215, 224, 234, 0.09);
+}
+
+:root[data-theme="prism"] {
+  --bg: #0d1018;
+  --bg-2: #171725;
+  --panel: rgba(17, 20, 32, 0.9);
+  --text-strong: #fbf8ff;
+  --text-muted: #b2adcb;
+  --accent: #ff8fba;
+  --accent-2: #7de7ff;
+  --accent-3: #f4dc79;
+  --halo: rgba(125, 231, 255, 0.22);
+  --field-bg: rgba(250, 246, 255, 0.035);
+  --field-bg-focus: rgba(250, 246, 255, 0.075);
+  --field-surface: #181b28;
+  --surface-glow-1: rgba(255, 143, 186, 0.15);
+  --surface-glow-2: rgba(125, 231, 255, 0.14);
+  --surface-glow-3: rgba(244, 220, 121, 0.11);
+  --surface-bottom: #060713;
+  --mesh-1: rgba(255, 143, 186, 0.16);
+  --mesh-2: rgba(125, 231, 255, 0.15);
+  --mesh-3: rgba(244, 220, 121, 0.12);
 }
 
 * {
@@ -71,24 +173,63 @@ body,
 }
 
 body {
+  position: relative;
+  overflow-x: hidden;
   background:
-    radial-gradient(circle at top left, rgba(255, 177, 95, 0.12), transparent 30%),
-    radial-gradient(circle at top right, rgba(111, 214, 255, 0.12), transparent 26%),
-    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 52%, #050a12 100%);
+    linear-gradient(135deg, var(--surface-glow-1), transparent 34%),
+    linear-gradient(245deg, var(--surface-glow-2), transparent 30%),
+    linear-gradient(315deg, var(--surface-glow-3), transparent 36%),
+    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 52%, var(--surface-bottom) 100%);
+  background-size: 180% 180%;
+  animation: surface-gradient 18s ease-in-out infinite alternate;
+  transition: background 240ms ease;
 }
 
-:root[data-theme="ember"] body {
+body::before {
+  position: fixed;
+  inset: -18%;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
   background:
-    radial-gradient(circle at top left, rgba(255, 148, 99, 0.2), transparent 30%),
-    radial-gradient(circle at top right, rgba(255, 220, 143, 0.11), transparent 24%),
-    linear-gradient(180deg, #251511 0%, var(--bg) 52%, #0d0605 100%);
+    conic-gradient(from 165deg at 44% 34%, var(--mesh-1), transparent 24%, var(--mesh-2), transparent 54%, var(--mesh-3), transparent 76%, var(--mesh-1)),
+    linear-gradient(115deg, transparent 16%, rgba(255, 255, 255, 0.035), transparent 42%, var(--surface-glow-2), transparent 66%);
+  filter: blur(34px);
+  opacity: 0.78;
+  transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  animation: aurora-shift 20s ease-in-out infinite alternate;
 }
 
-:root[data-theme="aurora"] body {
-  background:
-    radial-gradient(circle at top left, rgba(108, 247, 200, 0.14), transparent 28%),
-    radial-gradient(circle at top right, rgba(116, 184, 255, 0.15), transparent 24%),
-    linear-gradient(180deg, #0d1a23 0%, var(--bg) 52%, #040c11 100%);
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes surface-gradient {
+  0% {
+    background-position: 0% 28%;
+  }
+
+  100% {
+    background-position: 100% 72%;
+  }
+}
+
+@keyframes aurora-shift {
+  0% {
+    transform: translate3d(-2%, -1%, 0) rotate(-4deg) scale(1);
+  }
+
+  100% {
+    transform: translate3d(2%, 1%, 0) rotate(5deg) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  body::before {
+    animation: none;
+  }
 }
 
 button,

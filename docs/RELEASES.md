@@ -1,4 +1,4 @@
-# YT-DLP Studio Releases
+# Media Dock Releases
 
 中文 | [English](#english)
 
@@ -9,21 +9,26 @@
 
 ## 当前推荐资产
 
-- `YT-DLP Studio-2.0.1-win.zip`
-  说明：Windows 推荐下载，解压后运行 `YT-DLP Studio.exe`
+- `Media Dock-2.0.2-win.zip`
+  说明：Windows 推荐下载，解压后双击 `Launch Media Dock.bat`
 - macOS 资产
-  说明：可发布 `dmg` / `zip`，未内置工具时建议同时注明依赖系统环境
+  说明：推荐发布 `Media Dock-2.0.2-arm64-mac.zip`，解压后双击 `Launch Media Dock.command`
 
-## 2.0.1 更新摘要
+## 2.0.2 更新摘要
 
-- macOS 支持升级为真正的“解压即用”，应用内已内置 `yt-dlp`、`ffmpeg`、`ffprobe`、`deno`
-- 新增 Windows 便携版与 zip 分享包，支持在其他 Windows 电脑上解压或双击即用
-- 打包流程会剔除 cookies、用户配置和字幕整理 API 配置，避免把本机敏感信息带进分享包
+- 公开应用名改为 `Media Dock`，界面和包名更简短
+- 3 号图标已接入 Windows `.ico` 和 macOS `.icns`
+- 标准 ZIP 改为脚本启动结构，根目录放 `.bat` / `.command`，核心运行组件放在 `core/`
+- 标准包继续内置 `yt-dlp`、`ffmpeg`、`ffprobe`、`deno`
+- 默认下载、cookies、缓存、更新包和自动安装的 Deno 都保存在同级 `Media Dock Data/`
+- Windows 端可自动调用 Bandizip `bz.exe` 做运行时 zip 解压，未安装时回退 PowerShell
+- 打包流程会剔除 cookies、用户配置、缓存和字幕整理 API 配置，避免把本机敏感信息带进分享包
+- 新增本地音视频单个配对合并和批量文件夹自动配对合并
+- 批量合并优先按照媒体时长配对，名称只作为兜底辅助
+- 合并输出支持自定义文件名，批量任务会自动追加 `01`、`02` 序号避免覆盖
 - 本地媒体工具台新增字幕整理能力，支持 OpenAI-compatible 接口、模型拉取、连接测试、批量清洗和停止任务
-- 桌面控制台与媒体工具台补齐环境刷新、批量进度、链接去重/清空、4K 画质上限和界面排版优化
-- 新增根目录单一启动器，移除 `daily-use` 里的重复启动脚本
+- 桌面控制台压缩实时信息区域，日志和最近任务不再被挤到最底部
 - 修复 Windows 下载标题乱码，下载任务与实时信息会按本地编码正常显示
-- 修复 Windows 便携版 cookies 目录，改为程序目录下的 `cookies/`
 
 ## 版本规则
 
@@ -42,12 +47,15 @@
 ### 中文模板
 
 ```text
-YT-DLP Studio vX.Y.Z
+Media Dock vX.Y.Z
 
 - Windows 压缩包：解压即用
-- macOS：支持从系统环境读取 yt-dlp / ffmpeg / ffprobe / deno
+- macOS 压缩包：解压后双击 Launch Media Dock.command
 
 默认情况下不需要额外安装 ffmpeg、ffprobe、yt-dlp 或 Conda。
+核心运行文件放在 core 目录，用户只需要点根目录启动脚本。
+程序默认会把下载、cookies、缓存、更新包和自动安装的 Deno 放在同级 Media Dock Data 目录。
+Windows 端如果装了 Bandizip，可自动调用 bz.exe 解压运行时 zip；没装也会回退 PowerShell。
 如果某个资产明确标注为 Lite、tools not bundled 或 UI-only，请按说明先准备对应环境。
 
 Windows 首次运行时，可能会看到系统安全提示。
@@ -78,10 +86,8 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## 资产命名建议
 
-- `YT-DLP Studio-2.0.1-win.zip`
-- `YT-DLP Studio 2.0.1.exe`
-- `YT-DLP Studio-2.0.1-arm64-mac.zip`
-- `YT-DLP Studio-2.0.1.dmg`
+- `Media Dock-2.0.2-win.zip`
+- `Media Dock-2.0.2-arm64-mac.zip`
 
 ## English
 
@@ -92,22 +98,25 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## Recommended Asset
 
-- `YT-DLP Studio-2.0.1-win.zip`
-  Notes: recommended Windows build, unzip and run `YT-DLP Studio.exe`
+- `Media Dock-2.0.2-win.zip`
+  Notes: recommended Windows build, unzip and run `Launch Media Dock.bat`
 - macOS assets
-  Notes: `dmg` / `zip` builds are supported; mention system-tool fallback when tools are not bundled
+  Notes: prefer `Media Dock-2.0.2-arm64-mac.zip`, unzip and run `Launch Media Dock.command`
 
 ## Recommended Release Copy
 
 ### English Template
 
 ```text
-YT-DLP Studio vX.Y.Z
+Media Dock vX.Y.Z
 
 - Windows zip: unzip and use
-- macOS: can use yt-dlp / ffmpeg / ffprobe / deno from the system environment
+- macOS zip: unzip and run Launch Media Dock.command
 
 No extra setup is required by default.
+Core runtime files live in core; users should launch from the root script.
+Default downloads, cookies, cache, update zips, and auto-installed Deno files stay in the sibling Media Dock Data folder.
+On Windows, Bandizip bz.exe is used for runtime zip extraction when detected, with PowerShell fallback.
 If an asset is labeled Lite, tools-not-bundled, or UI-only, please install the required tools first.
 
 Windows may show a first-run security prompt on unsigned builds.

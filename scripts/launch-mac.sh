@@ -44,7 +44,7 @@ fi
 
 cd "$PROJECT_ROOT"
 
-echo "Launching YT-DLP Studio on macOS..."
+echo "Launching Media Dock on macOS..."
 echo "Project root: $PROJECT_ROOT"
 if [[ "$HAS_CONDA_ENV" == "1" ]]; then
   echo "Tool env: $YTDLP_ENV_ROOT"

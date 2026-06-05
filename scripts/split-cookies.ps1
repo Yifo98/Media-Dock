@@ -1,6 +1,7 @@
 param(
-    [string]$InputPath = "I:\yt-dlp\cookies\412c572e-c1ea-40af-a239-a19b4bc332f1.txt",
-    [string]$OutputDir = "I:\yt-dlp\cookies\split"
+    [Parameter(Mandatory = $true)]
+    [string]$InputPath,
+    [string]$OutputDir = (Join-Path (Join-Path $PSScriptRoot "..") "cookies\split")
 )
 
 Set-StrictMode -Version Latest

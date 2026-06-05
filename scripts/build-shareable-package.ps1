@@ -10,7 +10,69 @@ $ErrorActionPreference = "Stop"
 $toolsDir = Join-Path $ProjectRoot "tools"
 $releaseDir = Join-Path $ProjectRoot "release"
 $shareRoot = Join-Path $releaseDir "share"
-$shareZip = Join-Path $releaseDir "YT-DLP-Studio-share.zip"
+$shareZip = Join-Path $releaseDir "Media-Dock-share.zip"
+
+function Get-BandizipPath {
+    $candidates = @()
+    if ($env:BANDIZIP_BIN) {
+        $candidates += $env:BANDIZIP_BIN
+    }
+    if ($env:ProgramFiles) {
+        $candidates += (Join-Path $env:ProgramFiles "Bandizip\bz.exe")
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $candidates += (Join-Path ${env:ProgramFiles(x86)} "Bandizip\bz.exe")
+    }
+
+    $pathCandidate = Get-Command "bz.exe" -ErrorAction SilentlyContinue
+    if ($pathCandidate) {
+        $candidates += $pathCandidate.Source
+    }
+
+    foreach ($candidate in $candidates | Select-Object -Unique) {
+        if ($candidate -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function New-ZipArchive {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    $bandizip = Get-BandizipPath
+    if ($bandizip) {
+        & $bandizip c -y -fmt:zip -storeroot:yes $DestinationPath $SourcePath | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Bandizip compression failed with exit code $LASTEXITCODE."
+        }
+        return
+    }
+
+    Compress-Archive -Path $SourcePath -DestinationPath $DestinationPath -Force
+}
+
+function Expand-ZipArchive {
+    param(
+        [string]$ArchivePath,
+        [string]$DestinationPath
+    )
+
+    $bandizip = Get-BandizipPath
+    if ($bandizip) {
+        & $bandizip x -y -aoa "-o:$DestinationPath" $ArchivePath | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Bandizip extraction failed with exit code $LASTEXITCODE."
+        }
+        return
+    }
+
+    Expand-Archive -LiteralPath $ArchivePath -DestinationPath $DestinationPath -Force
+}
 
 $requiredFiles = @(
     "ffmpeg.exe",
@@ -56,9 +118,9 @@ if (Test-Path $shareRoot) {
 }
 
 New-Item -ItemType Directory -Force -Path $shareRoot | Out-Null
-Copy-Item -LiteralPath $unpackedDir -Destination (Join-Path $shareRoot "YT-DLP Studio") -Recurse -Force
+Copy-Item -LiteralPath $unpackedDir -Destination (Join-Path $shareRoot "Media Dock") -Recurse -Force
 
-$portableAppDir = Join-Path $shareRoot "YT-DLP Studio"
+$portableAppDir = Join-Path $shareRoot "Media Dock"
 $userDataCandidates = @(
     (Join-Path $portableAppDir "user-data"),
     (Join-Path $portableAppDir "User Data"),
@@ -77,16 +139,16 @@ if (Test-Path $shareZip) {
     Remove-Item -LiteralPath $shareZip -Force
 }
 
-Compress-Archive -Path (Join-Path $shareRoot "YT-DLP Studio") -DestinationPath $shareZip -Force
+New-ZipArchive -SourcePath (Join-Path $shareRoot "Media Dock") -DestinationPath $shareZip
 
-$privacyPattern = 'cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
+$privacyPattern = 'cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key|Media Dock Data|app-cache'
 $tempInspectDir = Join-Path $releaseDir "_inspect"
 
 if (Test-Path $tempInspectDir) {
     Remove-Item -LiteralPath $tempInspectDir -Recurse -Force
 }
 
-Expand-Archive -LiteralPath $shareZip -DestinationPath $tempInspectDir -Force
+Expand-ZipArchive -ArchivePath $shareZip -DestinationPath $tempInspectDir
 
 try {
     $sensitive = Get-ChildItem -LiteralPath $tempInspectDir -Recurse -File | Where-Object {

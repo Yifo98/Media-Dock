@@ -19,6 +19,8 @@ type AppPaths = {
 type CookieFileInfo = {
   label: string
   path: string
+  domains: string[]
+  cookieCount: number
 }
 
 type SelfCheckItem = {
@@ -28,10 +30,34 @@ type SelfCheckItem = {
   detail: string
 }
 
+type UpdateCheckResult = {
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseName: string | null
+  releaseUrl: string | null
+  assetName: string | null
+  assetUrl: string | null
+}
+
+type UpdateDownloadResult = {
+  filePath: string
+  assetName: string
+  releaseUrl: string
+}
+
+type RuntimeToolInstallResult = {
+  tool: 'deno'
+  path: string
+  version: string
+}
+
 type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
+type MediaMergeMode = 'single' | 'batch'
+type MediaMergeOutputFormat = 'mp4' | 'mkv'
 
 type SubtitleCleanupConfig = {
   baseUrl: string
@@ -130,7 +156,7 @@ type DownloadUpdate =
 type MediaToolsUpdate =
   | { type: 'clear' }
   | { type: 'command'; command: string }
-  | { type: 'log'; line: string; stream: 'stdout' | 'stderr' }
+  | { type: 'log'; line: string; stream: 'stdout' | 'stderr' | 'system' }
   | {
       type: 'status'
       status: DownloadStatus
@@ -151,6 +177,9 @@ interface Window {
     getPaths: () => Promise<AppPaths>
     listCookieFiles: () => Promise<CookieFileInfo[]>
     getSelfCheck: () => Promise<{ items: SelfCheckItem[]; toolsSource: 'bundled' | 'external' }>
+    checkForUpdates: () => Promise<UpdateCheckResult>
+    downloadLatestUpdate: () => Promise<UpdateDownloadResult>
+    installDenoRuntime: () => Promise<RuntimeToolInstallResult>
     openMediaTools: () => Promise<void>
     pickDirectory: (currentPath?: string) => Promise<string | null>
     pickMediaFile: (currentPath?: string) => Promise<string | null>
@@ -167,6 +196,15 @@ interface Window {
       audioFormat: MediaAudioExportFormat
       subtitleFormat: MediaSubtitleExportFormat
       subtitleStreamIndexes: number[]
+    }) => Promise<string[]>
+    runMediaMerge: (request: {
+      mode: MediaMergeMode
+      videoPath: string | null
+      audioPath: string | null
+      inputDir: string | null
+      outputDir: string
+      outputFormat: MediaMergeOutputFormat
+      outputName: string | null
     }) => Promise<string[]>
     cancelMediaTool: () => Promise<void>
     getSubtitleCleanupConfig: () => Promise<SubtitleCleanupConfig>

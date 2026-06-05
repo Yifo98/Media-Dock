@@ -1,15 +1,15 @@
-# YT-DLP Studio Workspace Guide
+# Media Dock Workspace Guide
 
 ## Daily Use
 
-- `Launch YT-DLP Studio.command`
+- `Launch Media Dock.command`
   - macOS daily launch entry at the project root. Double-click it from Finder.
-- `release/win-unpacked/YT-DLP Studio.exe`
+- `release/win-unpacked/Media Dock.exe`
   - The real built Windows desktop app. Do not move this exe by itself out of `win-unpacked/`.
 
 ## Share With Others
 
-- `release/YT-DLP-Studio-share.zip`
+- `release/<version>/Media Dock-<version>-win.zip`
   - Share this file with friends.
 - `release/share/`
   - Expanded share package output.
@@ -40,7 +40,7 @@ These can be recreated by building again, so they do not need special backup:
 
 - `release/win-unpacked/`
 - `release/share/`
-- `release/YT-DLP-Studio-share.zip`
+- `release/<version>/Media Dock-<version>-win.zip`
 
 ## Already Cleaned Up
 

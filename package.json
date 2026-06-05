@@ -1,10 +1,10 @@
 {
   "name": "yt-dlp-studio",
   "private": true,
-  "version": "2.0.1",
+  "version": "2.0.2",
   "type": "module",
   "main": "dist-electron/main.js",
-  "description": "A polished Electron front-end for yt-dlp using the shared conda environment.",
+  "description": "A compact local media download and processing desktop app.",
   "author": "Dyifo",
   "scripts": {
     "version:patch": "npm version patch --no-git-tag-version",
@@ -48,11 +48,15 @@
     "vite": "^8.0.0",
     "wait-on": "^9.0.4"
   },
+  "overrides": {
+    "tmp": "^0.2.6"
+  },
   "build": {
     "appId": "com.codex.ytdlpstudio",
-    "productName": "YT-DLP Studio",
+    "productName": "Media Dock",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**",
@@ -67,13 +71,19 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "signAndEditExecutable": false,
       "target": "portable"
     },
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.video",
       "target": [
         "dmg",

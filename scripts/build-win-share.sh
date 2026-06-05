@@ -16,7 +16,7 @@ YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip}"
-ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
+ZIP_PRIVACY_PATTERN='cookie|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key|Media Dock Data|app-cache'
 
 if [[ -z "${YTDLP_URL:-}" ]]; then
   if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
@@ -34,41 +34,90 @@ cleanup() {
 
 prepare_release_dir() {
   mkdir -p "$RELEASE_DIR" "$VERSION_DIR"
+  for release_version_dir in "$RELEASE_DIR"/*(/N); do
+    if [[ "$(basename "$release_version_dir")" != "$APP_VERSION" ]]; then
+      rm -rf "$release_version_dir"
+    fi
+  done
   rm -rf "$RELEASE_DIR"/win-unpacked
   rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
-  rm -f "$RELEASE_DIR"/*win*.zip(N) "$RELEASE_DIR"/*.exe(N) "$RELEASE_DIR"/*win*.zip.blockmap(N) "$RELEASE_DIR"/builder-debug.yml(N)
+  rm -f "$RELEASE_DIR"/*win*.zip(N) "$RELEASE_DIR"/*.exe(N) "$RELEASE_DIR"/*win*.zip.blockmap(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
   rm -f "$VERSION_DIR"/*win*.zip(N) "$VERSION_DIR"/*.exe(N)
+}
+
+repack_windows_launcher_zip() {
+  local archive="$1"
+  local unpack_dir="$TMP_DIR/win-unpacked-zip"
+  local package_name="Media Dock-$APP_VERSION-win"
+  local package_dir="$TMP_DIR/$package_name"
+  rm -rf "$unpack_dir" "$package_dir"
+  mkdir -p "$unpack_dir" "$package_dir/core"
+  unzip -q "$archive" -d "$unpack_dir"
+  cp -R "$unpack_dir"/. "$package_dir/core/"
+  cat > "$package_dir/Launch Media Dock.bat" <<'EOF'
+@echo off
+setlocal
+cd /d "%~dp0"
+set "MEDIA_DOCK_PORTABLE_ROOT=%~dp0"
+start "" "%~dp0core\Media Dock.exe"
+EOF
+  cat > "$package_dir/README-windows.txt" <<'EOF'
+Media Dock for Windows
+
+Double-click "Launch Media Dock.bat" after unzipping this folder.
+The actual runtime files are kept inside the "core" folder.
+yt-dlp, ffmpeg, ffprobe, and deno are bundled with the program.
+
+Runtime data stays next to this launcher in "Media Dock Data".
+That folder contains downloads, cookies, cache, update zips, and any
+auto-installed Deno runtime files.
+
+If Bandizip is installed, Windows runtime zip extraction may use Bandizip's
+bz.exe automatically. If it is not installed, the app falls back to the
+built-in PowerShell extraction path.
+EOF
+  rm -f "$archive"
+  (cd "$TMP_DIR" && zip -qr "$archive" "$package_name")
 }
 
 write_release_notes() {
   cat > "$VERSION_DIR/RELEASE-NOTES.md" <<EOF
-# YT-DLP Studio $APP_VERSION
+# Media Dock $APP_VERSION
 
 ## 中文说明
 
-本次发布主要刷新了桌面分享包，重点补强了下载流程、实时进度和运行态面板。
+本次发布主要刷新了桌面分享包，重点补强了本地媒体合并、主界面交互、自动更新和隐私打包边界。
 
 ## 包含内容
 
-- \`YT-DLP Studio-$APP_VERSION-arm64-mac.zip\`
-- \`YT-DLP Studio-$APP_VERSION-win.zip\`
-- \`YT-DLP Studio $APP_VERSION.exe\`
+- \`Media Dock-$APP_VERSION-arm64-mac.zip\`
+- \`Media Dock-$APP_VERSION-win.zip\`
+- \`Launch Media Dock.bat\` Windows ZIP 根目录启动脚本
+- \`README-windows.txt\`
+- \`Launch Media Dock.command\` macOS ZIP 根目录启动脚本
 - \`README-mac.txt\`
 
 ## 主要更新
 
-- 修复实时下载进度，让进行中的任务不再直接跳到 100%
-- 重做下载面板布局，让高频操作按钮更容易够到
-- 将实时信息拆成更清晰的队列总览和当前任务聚焦区域
-- 修复 Windows 下载标题乱码，任务名称会按本地编码正常显示
-- 修复 Windows 便携版 cookies 目录，改为程序目录下的 \`cookies/\`
+- 媒体工具改为主窗口内部工作区，不再从主界面弹出额外窗口
+- 新增本地音视频单个配对合并和批量文件夹自动配对合并
+- 批量合并优先按照媒体时长自动配对，名称只作为兜底辅助
+- 合并输出支持自定义文件名，批量任务会自动追加 01 02 序号避免覆盖
+- 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 \`Media Dock Data\` 目录
+- 刷新 3 号图标为新的桌面应用图标
+- 压缩主界面实时信息区域，让日志和最近任务更靠上
+- 修复长路径在顶部卡片和启动自检区域溢出重叠的问题
+- 增加启动自动检查更新，发现旧版本时可直接下载最新 ZIP
+- 增加 Deno 缺失时的一键自动下载和同级目录安装
+- Windows 端检测到 Bandizip 的 \`bz.exe\` 时，会优先用于 zip 解压；未安装时自动回退 PowerShell
+- Windows ZIP 根目录内置 \`Launch Media Dock.bat\`，核心运行文件放在 \`core\` 目录
+- macOS ZIP 根目录内置 \`Launch Media Dock.command\`，核心运行文件放在 \`core\` 目录
 - 标准分享包继续内置 \`yt-dlp\` \`ffmpeg\` \`ffprobe\` 和 \`deno\`
-- 优化运行时刷新、cookies 指引与本地媒体工具整合体验
 
 ## 打包与隐私
 
 - 分享包目标仍然是解压即用
-- 打包脚本会在构建前自动清理旧平台产物
+- 打包脚本会在构建前删除旧版本目录，只保留当前最新版本
 - 打包脚本会校验压缩包中不包含 cookies 历史记录 本地会话 字幕清理配置 API Key 等隐私文件
 - 目前 macOS 与 Windows 版本都还是未签名状态，首次运行可能会看到系统安全提示
 
@@ -76,29 +125,39 @@ write_release_notes() {
 
 ## Summary
 
-This release refreshes the shared desktop package with the latest download flow, real-time progress, and telemetry improvements.
+This release refreshes the shared desktop package with local media merge support, smoother in-window navigation, update checks, and stricter privacy packaging boundaries.
 
 ## Included artifacts
 
-- \`YT-DLP Studio-$APP_VERSION-arm64-mac.zip\`
-- \`YT-DLP Studio-$APP_VERSION-win.zip\`
-- \`YT-DLP Studio $APP_VERSION.exe\`
+- \`Media Dock-$APP_VERSION-arm64-mac.zip\`
+- \`Media Dock-$APP_VERSION-win.zip\`
+- \`Launch Media Dock.bat\` at the Windows zip root
+- \`README-windows.txt\`
+- \`Launch Media Dock.command\` at the macOS zip root
 - \`README-mac.txt\`
 
 ## Highlights
 
-- Fixed real-time download progress so active jobs no longer jump straight to 100 percent
-- Reworked the download panel so the primary actions are easier to reach
-- Split telemetry into clearer queue overview and active download focus sections
-- Fixed mojibake in Windows download titles by decoding yt-dlp output with the local code page
-- Moved the Windows portable cookies folder into the app directory as \`cookies/\`
+- Moved Media Tools into an in-window workspace instead of opening an extra window from the main UI
+- Added single-pair and batch-folder local audio/video merge workflows
+- Batch merge now prefers duration-based pairing, using names only as a fallback signal
+- Merge output supports a custom base name, with 01 02 suffixes added automatically for batch jobs
+- Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling \`Media Dock Data\` folder
+- Refreshed the desktop app icon with option 3
+- Tightened the main telemetry rail so logs and recent jobs stay higher on screen
+- Fixed long runtime paths overflowing the hero status cards and startup self-check area
+- Added startup update checks and direct latest zip download support
+- Added one-click local Deno download and sibling-folder install when Deno is missing
+- Windows uses Bandizip \`bz.exe\` for zip extraction when detected, falling back to PowerShell when it is not installed
+- Added \`Launch Media Dock.bat\` at the Windows zip root, with runtime files kept in \`core\`
+- Added \`Launch Media Dock.command\` at the macOS zip root, with runtime files kept in \`core\`
+- Added \`README-mac.txt\` inside the macOS zip with first-run guidance
 - Kept bundled \`yt-dlp\`, \`ffmpeg\`, \`ffprobe\`, and \`deno\` inside the standard shared builds
-- Refined runtime refresh, cookies guidance, and local media tool integration
 
 ## Packaging and privacy
 
 - Shared builds are intended to be unpack-and-run
-- Packaging scripts now clear old platform artifacts before building new ones
+- Packaging scripts now delete old version folders before building, leaving only the latest version
 - Packaging scripts verify that cookies, history, local session files, subtitle cleanup configs, API keys, and similar private files are not included in release archives
 - macOS and Windows builds are currently unsigned, so first-run security prompts are expected
 EOF
@@ -132,15 +191,16 @@ cp "$FFMPEG_EXE" "$TOOLS_BIN_DIR/ffmpeg.exe"
 cp "$FFPROBE_EXE" "$TOOLS_BIN_DIR/ffprobe.exe"
 
 npm run build
-npx electron-builder --win portable zip --x64
+npx electron-builder --win zip --x64
 
 WIN_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*win*.zip' | head -n 1)"
-WIN_PORTABLE_EXE="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*.exe' | head -n 1)"
 
-if [[ -z "$WIN_ZIP" || -z "$WIN_PORTABLE_EXE" ]]; then
+if [[ -z "$WIN_ZIP" ]]; then
   echo "Windows build artifacts were not created as expected."
   exit 1
 fi
+
+repack_windows_launcher_zip "$WIN_ZIP"
 
 if unzip -l "$WIN_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
   echo "Sensitive files were detected inside the Windows zip artifact."
@@ -148,13 +208,9 @@ if unzip -l "$WIN_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
 fi
 
 mv "$WIN_ZIP" "$VERSION_DIR/"
-mv "$WIN_PORTABLE_EXE" "$VERSION_DIR/"
 rm -rf "$RELEASE_DIR"/win-unpacked
-rm -f "$RELEASE_DIR"/builder-debug.yml(N)
+rm -f "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
 write_release_notes
 
-echo "Windows portable artifact:"
-echo "$VERSION_DIR/$(basename "$WIN_PORTABLE_EXE")"
-echo
 echo "Windows zip artifact:"
 echo "$VERSION_DIR/$(basename "$WIN_ZIP")"

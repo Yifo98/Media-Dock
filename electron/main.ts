@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { delimiter, dirname, isAbsolute, join, parse, relative } from 'node:path'
+import { delimiter, dirname, extname, isAbsolute, join, parse, relative } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 
@@ -15,6 +17,9 @@ type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
+type MediaMergeMode = 'single' | 'batch'
+type MediaMergeOutputFormat = 'mp4' | 'mkv'
+type RuntimeToolInstallTarget = 'deno'
 
 type DownloadRequest = {
   urls: string[]
@@ -31,6 +36,8 @@ type DownloadRequest = {
 type CookieFileInfo = {
   label: string
   path: string
+  domains: string[]
+  cookieCount: number
 }
 
 type SelfCheckItem = {
@@ -63,6 +70,46 @@ type MediaToolRequest = {
   audioFormat: MediaAudioExportFormat
   subtitleFormat: MediaSubtitleExportFormat
   subtitleStreamIndexes: number[]
+}
+
+type MediaMergeRequest = {
+  mode: MediaMergeMode
+  videoPath: string | null
+  audioPath: string | null
+  inputDir: string | null
+  outputDir: string
+  outputFormat: MediaMergeOutputFormat
+  outputName: string | null
+}
+
+type MediaMergePair = {
+  videoPath: string
+  audioPath: string
+  outputPath: string
+  durationDiff: number | null
+  matchReason: string
+}
+
+type UpdateCheckResult = {
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseName: string | null
+  releaseUrl: string | null
+  assetName: string | null
+  assetUrl: string | null
+}
+
+type UpdateDownloadResult = {
+  filePath: string
+  assetName: string
+  releaseUrl: string
+}
+
+type RuntimeToolInstallResult = {
+  tool: RuntimeToolInstallTarget
+  path: string
+  version: string
 }
 
 type SubtitleCleanupConfig = {
@@ -134,9 +181,11 @@ type JobContext = {
 }
 
 const isWindows = process.platform === 'win32'
+const APP_DISPLAY_NAME = 'Media Dock'
 const windowsHomeDir = process.env.USERPROFILE ?? homedir()
 const windowsLocalAppDataDir = process.env.LOCALAPPDATA ?? join(windowsHomeDir, 'AppData', 'Local')
 const windowsProgramFilesDir = process.env.ProgramFiles ?? 'C:\\Program Files'
+const windowsProgramFilesX86Dir = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
 const envRoot = process.env.YTDLP_ENV_ROOT
   ?? (
     isWindows
@@ -197,6 +246,11 @@ const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
   '最终输出只能包含整理后的正文，不要附加标题、解释、摘要、项目符号、Markdown、时间戳或额外说明。',
 ].join('\n')
 
+const GITHUB_OWNER = 'Yifo98'
+const GITHUB_REPO = 'YT-DLP-Studio'
+const GITHUB_LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
+const DENO_VERSION = '2.7.5'
+
 function ensureDirectory(dirPath: string) {
   if (existsSync(dirPath)) {
     if (!statSync(dirPath).isDirectory()) {
@@ -218,7 +272,29 @@ function getBundledToolsDir() {
 }
 
 function getPortableRootDir() {
+  const explicitPortableRoot = process.env.MEDIA_DOCK_PORTABLE_ROOT?.trim()
+  if (app.isPackaged && explicitPortableRoot) {
+    return explicitPortableRoot
+  }
+
+  if (app.isPackaged && process.platform === 'darwin') {
+    const appBundleDir = dirname(dirname(dirname(process.execPath)))
+    return dirname(appBundleDir)
+  }
+
   return dirname(process.execPath)
+}
+
+function getPortableDataRootDir() {
+  const rootDir = app.isPackaged
+    ? getPortableRootDir()
+    : getDevRootDir()
+
+  return ensureDirectory(join(rootDir, `${APP_DISPLAY_NAME} Data`))
+}
+
+function initializePortableUserDataPath() {
+  app.setPath('userData', ensureDirectory(join(getPortableDataRootDir(), 'app-cache')))
 }
 
 function uniquePaths(paths: Array<string | undefined>) {
@@ -235,6 +311,8 @@ function getManagedToolBinDirs() {
   return uniquePaths([
     join(bundledToolsDir, 'bin'),
     bundledToolsDir,
+    join(getRuntimeToolsInstallRoot(), 'bin'),
+    getRuntimeToolsInstallRoot(),
     join(getPortableRootDir(), 'tools', 'bin'),
     join(getPortableRootDir(), 'tools'),
     join(getDevRootDir(), 'tools', 'bin'),
@@ -247,6 +325,7 @@ function getManagedToolLibDirs() {
 
   return uniquePaths([
     join(bundledToolsDir, 'lib'),
+    join(getRuntimeToolsInstallRoot(), 'lib'),
     join(getPortableRootDir(), 'tools', 'lib'),
     join(getDevRootDir(), 'tools', 'lib'),
   ])
@@ -257,6 +336,10 @@ function getManagedToolsDirs() {
 }
 
 function getFallbackToolDirs() {
+  if (!shouldAllowSystemToolFallback()) {
+    return []
+  }
+
   return uniquePaths([
     process.env.YTDLP_TOOLS_DIR,
     join(envRoot, isWindows ? 'Scripts' : 'bin'),
@@ -295,7 +378,7 @@ function resolveExecutablePath(name: string) {
     }
   }
 
-  return findExecutableInPath(name)
+  return shouldAllowSystemToolFallback() ? findExecutableInPath(name) : null
 }
 
 function isPathInside(parentDir: string, targetPath: string) {
@@ -317,7 +400,7 @@ function getToolsSource() {
 function getEnvironmentLabel() {
   const ytDlpPath = resolveExecutablePath('yt-dlp')
   if (!ytDlpPath) {
-    return 'system-path'
+    return app.isPackaged ? 'portable-missing' : 'system-path'
   }
 
   if (getManagedToolsDirs().some((directory) => isPathInside(directory, ytDlpPath))) {
@@ -391,16 +474,303 @@ function createStreamDecoder() {
 
 function getCookiesDir() {
   const targetDir = app.isPackaged
-    ? isWindows
-      ? join(getPortableRootDir(), 'cookies')
-      : join(app.getPath('userData'), 'cookie-files')
+    ? join(getPortableDataRootDir(), 'cookies')
     : join(getDevRootDir(), 'cookies')
 
   return ensureDirectory(targetDir)
 }
 
+function getRuntimeToolsInstallRoot() {
+  return app.isPackaged ? join(getPortableDataRootDir(), 'tools') : join(getDevRootDir(), 'tools')
+}
+
+function getRuntimeToolsInstallBinDir() {
+  return join(getRuntimeToolsInstallRoot(), 'bin')
+}
+
+function getRuntimeToolsDownloadDir() {
+  return join(getRuntimeToolsInstallRoot(), '_downloads')
+}
+
+function getUpdateDownloadDir() {
+  return app.isPackaged ? join(getPortableDataRootDir(), 'updates') : join(getDevRootDir(), 'updates')
+}
+
+initializePortableUserDataPath()
+
+function shouldAllowSystemToolFallback() {
+  return !app.isPackaged || process.env.MEDIA_DOCK_ALLOW_SYSTEM_TOOLS === '1'
+}
+
+function getWindowIconPath() {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(getDevRootDir(), 'build', 'icon.png')
+
+  return existsSync(iconPath) ? iconPath : undefined
+}
+
+function normalizeVersion(value: string) {
+  return value.trim().replace(/^[^\d]*/, '').split(/[+-]/, 1)[0]
+}
+
+function compareVersions(left: string, right: string) {
+  const leftParts = normalizeVersion(left).split('.').map((part) => Number.parseInt(part, 10) || 0)
+  const rightParts = normalizeVersion(right).split('.').map((part) => Number.parseInt(part, 10) || 0)
+  const length = Math.max(leftParts.length, rightParts.length)
+
+  for (let index = 0; index < length; index += 1) {
+    const leftValue = leftParts[index] ?? 0
+    const rightValue = rightParts[index] ?? 0
+    if (leftValue > rightValue) return 1
+    if (leftValue < rightValue) return -1
+  }
+
+  return 0
+}
+
+type GitHubReleasePayload = {
+  tag_name?: string
+  name?: string
+  html_url?: string
+  assets?: Array<{
+    name?: string
+    browser_download_url?: string
+  }>
+}
+
+function selectUpdateAsset(assets: NonNullable<GitHubReleasePayload['assets']>) {
+  const normalizedAssets = assets
+    .map((asset) => ({
+      name: asset.name ?? '',
+      url: asset.browser_download_url ?? '',
+    }))
+    .filter((asset) => asset.name && asset.url)
+
+  if (isWindows) {
+    return normalizedAssets.find((asset) => /\.exe$/i.test(asset.name))
+      ?? normalizedAssets.find((asset) => /win.*\.zip$/i.test(asset.name))
+      ?? null
+  }
+
+  if (process.platform === 'darwin') {
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    return normalizedAssets.find((asset) => new RegExp(`${arch}.*mac.*\\.zip$`, 'i').test(asset.name))
+      ?? normalizedAssets.find((asset) => /mac.*\.zip$/i.test(asset.name))
+      ?? null
+  }
+
+  return normalizedAssets.find((asset) => /\.zip$/i.test(asset.name)) ?? null
+}
+
+async function checkForUpdates(): Promise<UpdateCheckResult> {
+  const currentVersion = app.getVersion()
+  const response = await fetch(GITHUB_LATEST_RELEASE_API)
+
+  if (!response.ok) {
+    throw new Error(`Update check failed with status ${response.status}.`)
+  }
+
+  const release = await response.json() as GitHubReleasePayload
+  const latestVersion = release.tag_name ? normalizeVersion(release.tag_name) : null
+  const asset = selectUpdateAsset(release.assets ?? [])
+
+  return {
+    currentVersion,
+    latestVersion,
+    updateAvailable: latestVersion ? compareVersions(currentVersion, latestVersion) < 0 : false,
+    releaseName: release.name ?? release.tag_name ?? null,
+    releaseUrl: release.html_url ?? null,
+    assetName: asset?.name ?? null,
+    assetUrl: asset?.url ?? null,
+  }
+}
+
+async function downloadUrlToFile(url: string, targetPath: string) {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Download failed with status ${response.status}.`)
+  }
+  if (!response.body) {
+    throw new Error('Download response did not include a body.')
+  }
+
+  ensureDirectory(dirname(targetPath))
+  await pipeline(Readable.fromWeb(response.body), createWriteStream(targetPath))
+}
+
+async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
+  const update = await checkForUpdates()
+  if (!update.releaseUrl || !update.assetName || !update.assetUrl) {
+    throw new Error('No matching release asset was found for this platform.')
+  }
+
+  const outputDir = ensureDirectory(getUpdateDownloadDir())
+  const targetPath = join(outputDir, update.assetName)
+  await downloadUrlToFile(update.assetUrl, targetPath)
+  shell.showItemInFolder(targetPath)
+
+  return {
+    filePath: targetPath,
+    assetName: update.assetName,
+    releaseUrl: update.releaseUrl,
+  }
+}
+
+function getDenoArchiveName() {
+  if (isWindows) {
+    return 'deno-x86_64-pc-windows-msvc.zip'
+  }
+
+  if (process.platform === 'darwin') {
+    return process.arch === 'arm64' ? 'deno-aarch64-apple-darwin.zip' : 'deno-x86_64-apple-darwin.zip'
+  }
+
+  if (process.platform === 'linux') {
+    return process.arch === 'arm64' ? 'deno-aarch64-unknown-linux-gnu.zip' : 'deno-x86_64-unknown-linux-gnu.zip'
+  }
+
+  throw new Error(`Deno auto-install is not supported on ${process.platform}.`)
+}
+
+function getDenoDownloadUrl() {
+  return `https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${getDenoArchiveName()}`
+}
+
+function quotePowerShellPath(value: string) {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+function getBandizipPath() {
+  if (!isWindows) {
+    return null
+  }
+
+  const candidatePaths = uniquePaths([
+    process.env.BANDIZIP_BIN,
+    join(windowsProgramFilesDir, 'Bandizip', 'bz.exe'),
+    join(windowsProgramFilesX86Dir, 'Bandizip', 'bz.exe'),
+    findExecutableInPath('bz') ?? undefined,
+  ])
+
+  return candidatePaths.find((candidate) => existsSync(candidate)) ?? null
+}
+
+async function runSimpleProcess(command: string, args: string[], cwd: string) {
+  return await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: {
+        ...process.env,
+        PATH: buildToolPathEnv(),
+      },
+    })
+
+    let stderr = ''
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8')
+    })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+        return
+      }
+      reject(new Error(stderr.trim() || `${command} exited with code ${code}`))
+    })
+  })
+}
+
+async function extractZip(zipPath: string, outputDir: string) {
+  rmSync(outputDir, { recursive: true, force: true })
+  ensureDirectory(outputDir)
+
+  if (isWindows) {
+    const bandizipPath = getBandizipPath()
+    if (bandizipPath) {
+      await runSimpleProcess(
+        bandizipPath,
+        ['x', '-y', '-aoa', `-o:${outputDir}`, zipPath],
+        dirname(zipPath),
+      )
+      return
+    }
+
+    const powershell = process.env.SystemRoot
+      ? join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : 'powershell.exe'
+    await runSimpleProcess(
+      powershell,
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-Command',
+        `Expand-Archive -LiteralPath ${quotePowerShellPath(zipPath)} -DestinationPath ${quotePowerShellPath(outputDir)} -Force`,
+      ],
+      dirname(zipPath),
+    )
+    return
+  }
+
+  await runSimpleProcess('unzip', ['-oq', zipPath, '-d', outputDir], dirname(zipPath))
+}
+
+function findFileRecursive(rootDir: string, fileName: string): string | null {
+  if (!existsSync(rootDir)) {
+    return null
+  }
+
+  for (const item of readdirSync(rootDir, { withFileTypes: true })) {
+    const fullPath = join(rootDir, item.name)
+    if (item.isDirectory()) {
+      const nested = findFileRecursive(fullPath, fileName)
+      if (nested) return nested
+      continue
+    }
+    if (item.isFile() && item.name === fileName) {
+      return fullPath
+    }
+  }
+
+  return null
+}
+
+async function installDenoRuntime(): Promise<RuntimeToolInstallResult> {
+  const binDir = ensureDirectory(getRuntimeToolsInstallBinDir())
+  const downloadDir = ensureDirectory(getRuntimeToolsDownloadDir())
+  const archiveName = getDenoArchiveName()
+  const archivePath = join(downloadDir, archiveName)
+  const extractDir = join(downloadDir, `deno-${DENO_VERSION}`)
+  const executableName = getExecutableName('deno')
+  const targetPath = join(binDir, executableName)
+
+  await downloadUrlToFile(getDenoDownloadUrl(), archivePath)
+  await extractZip(archivePath, extractDir)
+
+  const extractedDeno = findFileRecursive(extractDir, executableName)
+  if (!extractedDeno) {
+    throw new Error(`Downloaded Deno archive did not contain ${executableName}.`)
+  }
+
+  copyFileSync(extractedDeno, targetPath)
+  if (!isWindows) {
+    chmodSync(targetPath, 0o755)
+  }
+
+  rmSync(downloadDir, { recursive: true, force: true })
+
+  return {
+    tool: 'deno',
+    path: targetPath,
+    version: DENO_VERSION,
+  }
+}
+
 function getSubtitleCleanupConfigPath() {
-  return join(app.getPath('userData'), 'subtitle-cleanup-config.json')
+  return app.isPackaged
+    ? join(getPortableDataRootDir(), 'subtitle-cleanup-config.json')
+    : join(getDevRootDir(), 'subtitle-cleanup-config.json')
 }
 
 function normalizeSubtitleCleanupProviderProfile(input?: Partial<SubtitleCleanupProviderProfile> | null): SubtitleCleanupProviderProfile {
@@ -933,19 +1303,19 @@ function getSelfCheckItems(): SelfCheckItem[] {
   return [
     {
       key: 'yt-dlp',
-      label: 'yt-dlp',
+      label: 'download-core',
       ok: ytDlpPath !== getExecutableName('yt-dlp') || Boolean(findExecutableInPath('yt-dlp')),
       detail: ytDlpPath,
     },
     {
       key: 'ffmpeg',
-      label: 'ffmpeg',
+      label: 'media-core',
       ok: ffmpegPath !== getExecutableName('ffmpeg') || Boolean(findExecutableInPath('ffmpeg')),
       detail: ffmpegPath,
     },
     {
       key: 'ffprobe',
-      label: 'ffprobe',
+      label: 'media-probe',
       ok: ffprobePath !== getExecutableName('ffprobe') || Boolean(findExecutableInPath('ffprobe')),
       detail: ffprobePath,
     },
@@ -957,7 +1327,7 @@ function getSelfCheckItems(): SelfCheckItem[] {
     },
     {
       key: 'cookies',
-      label: 'Cookies dir',
+      label: 'auth-dir',
       ok: existsSync(getCookiesDir()),
       detail: getCookiesDir(),
     },
@@ -997,7 +1367,15 @@ function emitLog(line: string, stream: 'stdout' | 'stderr' | 'system', jobId?: s
 }
 
 function resolveDefaultDownloads() {
-  return join(homedir(), 'Downloads')
+  return ensureDirectory(join(getPortableDataRootDir(), 'downloads'))
+}
+
+function assertSafeExternalUrl(targetUrl: string) {
+  const parsed = new URL(targetUrl)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`Unsupported external URL protocol: ${parsed.protocol}`)
+  }
+  return parsed.toString()
 }
 
 function getHostWindow(webContentsId?: Electron.WebContents) {
@@ -1005,7 +1383,42 @@ function getHostWindow(webContentsId?: Electron.WebContents) {
 }
 
 function getDenoPath() {
-  return resolveExecutablePath('deno') ?? denoCandidates.find((candidate) => existsSync(candidate)) ?? null
+  return resolveExecutablePath('deno')
+    ?? (shouldAllowSystemToolFallback() ? denoCandidates.find((candidate) => existsSync(candidate)) ?? null : null)
+}
+
+function normalizeCookieDomain(value: string) {
+  return value.trim().replace(/^\./, '').toLowerCase()
+}
+
+function inspectCookieFile(filePath: string): Pick<CookieFileInfo, 'domains' | 'cookieCount'> {
+  const domainCounts = new Map<string, number>()
+  let cookieCount = 0
+
+  try {
+    const content = readFileSync(filePath, 'utf8')
+    content.split(/\r?\n/).forEach((rawLine) => {
+      const line = rawLine.trim()
+      if (!line || line.startsWith('#')) return
+
+      const parts = line.split('\t')
+      if (parts.length < 7) return
+
+      const domain = normalizeCookieDomain(parts[0])
+      if (!domain) return
+
+      cookieCount += 1
+      domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1)
+    })
+  } catch {
+    return { domains: [], cookieCount: 0 }
+  }
+
+  const domains = [...domainCounts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([domain]) => domain)
+
+  return { domains, cookieCount }
 }
 
 function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): CookieFileInfo[] {
@@ -1027,9 +1440,12 @@ function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): Cookie
       continue
     }
 
+    const cookieMetadata = inspectCookieFile(fullPath)
     result.push({
       label: relative(rootDir, fullPath) || item.name,
       path: fullPath,
+      domains: cookieMetadata.domains,
+      cookieCount: cookieMetadata.cookieCount,
     })
   }
 
@@ -1154,6 +1570,18 @@ function stringifyExecutableCommand(executable: string, args: string[]) {
   return `"${executable}" ${args.map((part) => (part.includes(' ') ? `"${part}"` : part)).join(' ')}`
 }
 
+function getDownloadHint(line: string, url: string) {
+  const lowerLine = line.toLowerCase()
+  const lowerUrl = url.toLowerCase()
+  if (lowerUrl.includes('bilibili.com') && (lowerLine.includes('http error 412') || lowerLine.includes('precondition failed'))) {
+    return '提示：B 站返回 412 通常是登录态、风控或请求条件不匹配。请优先选择 B 站专用 cookies 文件后重试。'
+  }
+  if ((lowerLine.includes('http error 403') || lowerLine.includes('forbidden')) && (lowerUrl.includes('bilibili.com') || lowerUrl.includes('youtube.com') || lowerUrl.includes('youku.com'))) {
+    return '提示：这个站点可能需要登录态或会员权限。请改用对应站点专用 cookies 文件后重试。'
+  }
+  return null
+}
+
 function parseDuration(value?: string) {
   if (!value) return null
   const parsed = Number.parseFloat(value)
@@ -1246,6 +1674,443 @@ function getSubtitleExportConfig(format: MediaSubtitleExportFormat) {
 function buildMediaOutputPath(inputPath: string, outputDir: string, suffix: string, extension: string) {
   const baseName = parse(inputPath).name
   return join(outputDir, `${baseName}${suffix}.${extension}`)
+}
+
+const mergeCandidateExtensions = new Set([
+  '.aac',
+  '.avi',
+  '.flac',
+  '.flv',
+  '.m4a',
+  '.m4s',
+  '.m4v',
+  '.mka',
+  '.mkv',
+  '.mov',
+  '.mp3',
+  '.mp4',
+  '.ogg',
+  '.opus',
+  '.ts',
+  '.wav',
+  '.webm',
+])
+
+function normalizeMergeStem(filePath: string) {
+  const exactStem = parse(filePath).name.toLowerCase()
+  const normalized = exactStem
+    .normalize('NFKC')
+    .replace(/[[\](){}【】（）]/g, ' ')
+    .replace(/(?:音频|视频)/g, ' ')
+    .replace(/\b(?:video|audio|track|only|dash|idm|idman)\b/g, ' ')
+    .replace(/\b(?:avc1|hev1|h264|h265|aac|mp4a|m4s|f\d+|\d+p)\b/g, ' ')
+    .replace(/[\s._-]+\d{3,}$/g, ' ')
+    .replace(/(?:^|[\s._-])(?:v|a)\d*$/g, ' ')
+    .replace(/[\s._-]+/g, ' ')
+    .trim()
+
+  return normalized || exactStem
+}
+
+function getAvailableOutputPath(outputPath: string) {
+  if (!existsSync(outputPath)) {
+    return outputPath
+  }
+
+  const parsed = parse(outputPath)
+  for (let index = 2; index < 1000; index += 1) {
+    const candidate = join(parsed.dir, `${parsed.name} ${index}${parsed.ext}`)
+    if (!existsSync(candidate)) {
+      return candidate
+    }
+  }
+
+  throw new Error(`Could not find an available output file name near: ${outputPath}`)
+}
+
+function sanitizeOutputBaseName(value: string | null | undefined) {
+  const normalized = value?.normalize('NFKC').trim() ?? ''
+  if (!normalized) {
+    return ''
+  }
+
+  const sanitized = [...normalized]
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0
+      return codePoint < 32 || '<>:"/\\|?*'.includes(character) ? ' ' : character
+    })
+    .join('')
+
+  return sanitized
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 140)
+    .trim()
+}
+
+function buildMergeOutputPath(
+  videoPath: string,
+  outputDir: string,
+  outputFormat: MediaMergeOutputFormat,
+  outputName?: string | null,
+  sequenceIndex?: number,
+) {
+  const customName = sanitizeOutputBaseName(outputName)
+  const defaultName = `${parse(videoPath).name} - merged`
+  const sequenceSuffix = customName && typeof sequenceIndex === 'number' ? ` ${String(sequenceIndex + 1).padStart(2, '0')}` : ''
+  const baseName = customName ? `${customName}${sequenceSuffix}` : defaultName
+  return getAvailableOutputPath(join(outputDir, `${baseName}.${outputFormat}`))
+}
+
+function getMergeRole(inspection: MediaInspection) {
+  const hasVideo = inspection.streams.some((stream) => stream.codecType === 'video')
+  const hasAudio = inspection.streams.some((stream) => stream.codecType === 'audio')
+
+  if (hasVideo && hasAudio) return 'video'
+  if (hasVideo) return 'video'
+  if (hasAudio) return 'audio'
+  return 'unknown'
+}
+
+type MergeCandidate = {
+  path: string
+  exactStem: string
+  matchStem: string
+  duration: number | null
+}
+
+function getDurationDiff(left: number | null, right: number | null) {
+  if (left === null || right === null) {
+    return null
+  }
+  return Math.abs(left - right)
+}
+
+function getNameMatchScore(videoFile: MergeCandidate, audioFile: MergeCandidate) {
+  if (audioFile.exactStem === videoFile.exactStem) return 0
+  if (audioFile.matchStem === videoFile.matchStem) return 1
+  if (audioFile.matchStem.includes(videoFile.matchStem) || videoFile.matchStem.includes(audioFile.matchStem)) return 2
+  return 6
+}
+
+function getDurationPairThreshold(videoDuration: number | null) {
+  if (videoDuration === null) {
+    return 0
+  }
+
+  return Math.max(2.5, Math.min(12, videoDuration * 0.03))
+}
+
+function selectAudioForVideo(videoFile: MergeCandidate, audioFiles: MergeCandidate[], usedAudioPaths: Set<string>) {
+  const availableAudioFiles = audioFiles.filter((item) => !usedAudioPaths.has(item.path))
+  if (availableAudioFiles.length === 0) {
+    return null
+  }
+
+  const durationCandidates = availableAudioFiles
+    .map((audioFile) => ({
+      audioFile,
+      durationDiff: getDurationDiff(videoFile.duration, audioFile.duration),
+      nameScore: getNameMatchScore(videoFile, audioFile),
+    }))
+    .filter((item): item is { audioFile: MergeCandidate; durationDiff: number; nameScore: number } => item.durationDiff !== null)
+    .sort((left, right) =>
+      left.durationDiff - right.durationDiff
+      || left.nameScore - right.nameScore
+      || parse(left.audioFile.path).base.localeCompare(parse(right.audioFile.path).base),
+    )
+
+  const bestDurationCandidate = durationCandidates[0]
+  if (bestDurationCandidate && bestDurationCandidate.durationDiff <= getDurationPairThreshold(videoFile.duration)) {
+    return {
+      audioFile: bestDurationCandidate.audioFile,
+      durationDiff: bestDurationCandidate.durationDiff,
+      matchReason: `duration ${bestDurationCandidate.durationDiff.toFixed(2)}s`,
+    }
+  }
+
+  const nameCandidate = availableAudioFiles
+    .map((audioFile) => ({
+      audioFile,
+      durationDiff: getDurationDiff(videoFile.duration, audioFile.duration),
+      nameScore: getNameMatchScore(videoFile, audioFile),
+    }))
+    .filter((item) => item.nameScore <= 1)
+    .sort((left, right) =>
+      left.nameScore - right.nameScore
+      || (left.durationDiff ?? Number.POSITIVE_INFINITY) - (right.durationDiff ?? Number.POSITIVE_INFINITY)
+      || parse(left.audioFile.path).base.localeCompare(parse(right.audioFile.path).base),
+    )[0]
+
+  if (!nameCandidate) {
+    return null
+  }
+
+  return {
+    audioFile: nameCandidate.audioFile,
+    durationDiff: nameCandidate.durationDiff,
+    matchReason: nameCandidate.nameScore === 0 ? 'exact name' : 'normalized name',
+  }
+}
+
+async function collectMergePairs(
+  inputDir: string,
+  outputDir: string,
+  outputFormat: MediaMergeOutputFormat,
+  outputName?: string | null,
+): Promise<MediaMergePair[]> {
+  const entries = readdirSync(inputDir, { withFileTypes: true })
+  const candidates = entries
+    .filter((entry) => entry.isFile() && mergeCandidateExtensions.has(extname(entry.name).toLowerCase()))
+    .map((entry) => join(inputDir, entry.name))
+    .sort((left, right) => parse(left).base.localeCompare(parse(right).base))
+
+  const videoFiles: MergeCandidate[] = []
+  const audioFiles: MergeCandidate[] = []
+
+  for (const candidatePath of candidates) {
+    if (mediaCancelled) {
+      throw new Error('Media tool action was cancelled.')
+    }
+
+    try {
+      const inspection = await inspectMedia(candidatePath)
+      const role = getMergeRole(inspection)
+      const item = {
+        path: candidatePath,
+        exactStem: parse(candidatePath).name.toLowerCase(),
+        matchStem: normalizeMergeStem(candidatePath),
+        duration: inspection.duration,
+      }
+
+      if (role === 'video') {
+        videoFiles.push(item)
+      } else if (role === 'audio') {
+        audioFiles.push(item)
+      } else {
+        emitMedia({ type: 'log', line: `[scan] skipped non audio/video file: ${parse(candidatePath).base}`, stream: 'stderr' })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ffprobe failed'
+      emitMedia({ type: 'log', line: `[scan] skipped ${parse(candidatePath).base}: ${message}`, stream: 'stderr' })
+    }
+  }
+
+  const usedAudioPaths = new Set<string>()
+  const pairs: MediaMergePair[] = []
+
+  for (const videoFile of videoFiles) {
+    const matchedAudio = selectAudioForVideo(videoFile, audioFiles, usedAudioPaths)
+
+    if (!matchedAudio) {
+      emitMedia({ type: 'log', line: `[scan] no matching audio file for: ${parse(videoFile.path).base}`, stream: 'stderr' })
+      continue
+    }
+
+    const audioFile = matchedAudio.audioFile
+    usedAudioPaths.add(audioFile.path)
+    pairs.push({
+      videoPath: videoFile.path,
+      audioPath: audioFile.path,
+      outputPath: buildMergeOutputPath(videoFile.path, outputDir, outputFormat, outputName, pairs.length),
+      durationDiff: matchedAudio.durationDiff,
+      matchReason: matchedAudio.matchReason,
+    })
+    emitMedia({
+      type: 'log',
+      line: `[scan] paired ${parse(videoFile.path).base} + ${parse(audioFile.path).base} (${matchedAudio.matchReason})`,
+      stream: 'stdout',
+    })
+  }
+
+  return pairs
+}
+
+async function collectSingleMergePair(
+  selectedPath: string,
+  manualAudioPath: string | null | undefined,
+  outputDir: string,
+  outputFormat: MediaMergeOutputFormat,
+  outputName?: string | null,
+): Promise<MediaMergePair[]> {
+  const selectedInspection = await inspectMedia(selectedPath)
+  const selectedRole = getMergeRole(selectedInspection)
+
+  if (manualAudioPath) {
+    const manualInspection = await inspectMedia(manualAudioPath)
+    const manualRole = getMergeRole(manualInspection)
+
+    if (selectedRole === 'unknown') {
+      throw new Error(`Selected file is not a video or audio stream: ${parse(selectedPath).base}`)
+    }
+    if (manualRole !== 'audio' && manualRole !== 'video') {
+      throw new Error(`Manual file is not a video or audio stream: ${parse(manualAudioPath).base}`)
+    }
+    if (selectedRole === manualRole) {
+      throw new Error(`Manual pairing needs one video stream and one audio stream: ${parse(selectedPath).base}, ${parse(manualAudioPath).base}`)
+    }
+
+    const videoPath = selectedRole === 'audio' && manualRole === 'video' ? manualAudioPath : selectedPath
+    const audioPath = selectedRole === 'audio' && manualRole === 'video' ? selectedPath : manualAudioPath
+
+    emitMedia({
+      type: 'log',
+      line: `[scan] manual pair ${parse(videoPath).base} + ${parse(audioPath).base}`,
+      stream: 'stdout',
+    })
+
+    return [{
+      videoPath,
+      audioPath,
+      outputPath: buildMergeOutputPath(videoPath, outputDir, outputFormat, outputName),
+      durationDiff: getDurationDiff(
+        selectedRole === 'audio' && manualRole === 'video' ? manualInspection.duration : selectedInspection.duration,
+        selectedRole === 'audio' && manualRole === 'video' ? selectedInspection.duration : manualInspection.duration,
+      ),
+      matchReason: 'manual pair',
+    }]
+  }
+
+  const inputDir = dirname(selectedPath)
+  const entries = readdirSync(inputDir, { withFileTypes: true })
+  const candidates = entries
+    .filter((entry) => entry.isFile() && mergeCandidateExtensions.has(extname(entry.name).toLowerCase()))
+    .map((entry) => join(inputDir, entry.name))
+    .filter((candidatePath) => candidatePath !== selectedPath)
+    .sort((left, right) => parse(left).base.localeCompare(parse(right).base))
+
+  const selectedCandidate: MergeCandidate = {
+    path: selectedPath,
+    exactStem: parse(selectedPath).name.toLowerCase(),
+    matchStem: normalizeMergeStem(selectedPath),
+    duration: selectedInspection.duration,
+  }
+  const videoFiles: MergeCandidate[] = selectedRole === 'video' ? [selectedCandidate] : []
+  const audioFiles: MergeCandidate[] = selectedRole === 'audio' ? [selectedCandidate] : []
+
+  for (const candidatePath of candidates) {
+    if (mediaCancelled) {
+      throw new Error('Media tool action was cancelled.')
+    }
+
+    try {
+      const inspection = await inspectMedia(candidatePath)
+      const role = getMergeRole(inspection)
+      const item = {
+        path: candidatePath,
+        exactStem: parse(candidatePath).name.toLowerCase(),
+        matchStem: normalizeMergeStem(candidatePath),
+        duration: inspection.duration,
+      }
+
+      if (role === 'video') {
+        videoFiles.push(item)
+      } else if (role === 'audio') {
+        audioFiles.push(item)
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ffprobe failed'
+      emitMedia({ type: 'log', line: `[scan] skipped ${parse(candidatePath).base}: ${message}`, stream: 'stderr' })
+    }
+  }
+
+  if (selectedRole !== 'video' && selectedRole !== 'audio') {
+    throw new Error(`Selected file is not a video or audio stream: ${parse(selectedPath).base}`)
+  }
+
+  const selectedVideoFiles = selectedRole === 'video' ? [selectedCandidate] : videoFiles
+  const selectedAudioFiles = selectedRole === 'audio' ? [selectedCandidate] : audioFiles
+  const usedAudioPaths = new Set<string>()
+  const possiblePairs = selectedVideoFiles
+    .map((videoFile) => {
+      const matchedAudio = selectAudioForVideo(videoFile, selectedAudioFiles, usedAudioPaths)
+      return matchedAudio ? { videoFile, matchedAudio } : null
+    })
+    .filter((item): item is { videoFile: MergeCandidate; matchedAudio: NonNullable<ReturnType<typeof selectAudioForVideo>> } => item !== null)
+    .sort((left, right) =>
+      (left.matchedAudio.durationDiff ?? Number.POSITIVE_INFINITY) - (right.matchedAudio.durationDiff ?? Number.POSITIVE_INFINITY)
+      || parse(left.videoFile.path).base.localeCompare(parse(right.videoFile.path).base),
+    )
+
+  const bestPair = possiblePairs[0]
+  if (!bestPair) {
+    throw new Error(`No matching separated file was found near: ${parse(selectedPath).base}`)
+  }
+
+  emitMedia({
+    type: 'log',
+    line: `[scan] auto paired ${parse(bestPair.videoFile.path).base} + ${parse(bestPair.matchedAudio.audioFile.path).base} (${bestPair.matchedAudio.matchReason})`,
+    stream: 'stdout',
+  })
+
+  return [{
+    videoPath: bestPair.videoFile.path,
+    audioPath: bestPair.matchedAudio.audioFile.path,
+    outputPath: buildMergeOutputPath(bestPair.videoFile.path, outputDir, outputFormat, outputName),
+    durationDiff: bestPair.matchedAudio.durationDiff,
+    matchReason: `auto ${bestPair.matchedAudio.matchReason}`,
+  }]
+}
+
+async function runMergePair(ffmpegPath: string, pair: MediaMergePair, outputFormat: MediaMergeOutputFormat, outputDir: string) {
+  const copyArgs = [
+    '-y',
+    '-i',
+    pair.videoPath,
+    '-i',
+    pair.audioPath,
+    '-map',
+    '0:v:0',
+    '-map',
+    '1:a:0',
+    '-c',
+    'copy',
+    '-shortest',
+    ...(outputFormat === 'mp4' ? ['-movflags', '+faststart'] : []),
+    pair.outputPath,
+  ]
+
+  emitMedia({ type: 'command', command: stringifyExecutableCommand(ffmpegPath, copyArgs) })
+
+  try {
+    await runLoggedProcess(ffmpegPath, copyArgs, outputDir)
+    return
+  } catch (error) {
+    if (outputFormat !== 'mp4' || mediaCancelled) {
+      throw error
+    }
+
+    emitMedia({
+      type: 'log',
+      line: '[merge] stream copy failed; retrying MP4 merge with AAC audio transcode.',
+      stream: 'stderr',
+    })
+
+    const fallbackArgs = [
+      '-y',
+      '-i',
+      pair.videoPath,
+      '-i',
+      pair.audioPath,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '192k',
+      '-shortest',
+      '-movflags',
+      '+faststart',
+      pair.outputPath,
+    ]
+
+    emitMedia({ type: 'command', command: stringifyExecutableCommand(ffmpegPath, fallbackArgs) })
+    await runLoggedProcess(ffmpegPath, fallbackArgs, outputDir)
+  }
 }
 
 async function runLoggedProcess(executable: string, args: string[], cwd: string) {
@@ -1374,6 +2239,67 @@ async function runMediaTool(request: MediaToolRequest) {
     type: 'status',
     status: 'success',
     message: request.action === 'extractAudio' ? 'Audio track exported.' : 'Subtitle streams exported.',
+    outputs,
+  })
+
+  return outputs
+}
+
+async function runMediaMerge(request: MediaMergeRequest) {
+  const ffmpegPath = getFfmpegPath()
+  const outputs: string[] = []
+
+  mediaCancelled = false
+  emitMedia({ type: 'clear' })
+  emitMedia({
+    type: 'status',
+    status: 'running',
+    message: request.mode === 'single' ? 'Preparing media merge...' : 'Scanning folder for media pairs...',
+  })
+
+  const pairs: MediaMergePair[] = request.mode === 'single'
+    ? await collectSingleMergePair(request.videoPath ?? '', request.audioPath, request.outputDir, request.outputFormat, request.outputName)
+    : await collectMergePairs(request.inputDir ?? '', request.outputDir, request.outputFormat, request.outputName)
+
+  if (pairs.length === 0) {
+    throw new Error('No matching video/audio pairs were found.')
+  }
+
+  for (const [index, pair] of pairs.entries()) {
+    if (mediaCancelled) {
+      throw new Error('Media tool action was cancelled.')
+    }
+
+    emitMedia({
+      type: 'status',
+      status: 'running',
+      message: `Merging media pair ${index + 1}/${pairs.length}: ${parse(pair.videoPath).base} (${pair.matchReason})`,
+      progress: {
+        current: index + 1,
+        total: pairs.length,
+        currentPath: pair.videoPath,
+      },
+    })
+
+    await runMergePair(ffmpegPath, pair, request.outputFormat, request.outputDir)
+    outputs.push(pair.outputPath)
+    emitMedia({
+      type: 'status',
+      status: 'running',
+      message: `Merged ${index + 1}/${pairs.length} media pair(s).`,
+      outputs: [pair.outputPath],
+      progress: {
+        current: index + 1,
+        total: pairs.length,
+        currentPath: pair.videoPath,
+      },
+    })
+  }
+
+  emitMedia({
+    type: 'status',
+    status: 'success',
+    message: request.mode === 'single' ? 'Video and audio merged.' : `Merged ${outputs.length} video/audio pair(s).`,
     outputs,
   })
 
@@ -1512,6 +2438,10 @@ function startNextJobs() {
       }
 
       emitLog(line, stream, next.jobId)
+      const hint = getDownloadHint(line, next.url)
+      if (hint) {
+        emitLog(hint, 'system', next.jobId)
+      }
     }
 
     let stdoutBuffer = ''
@@ -1617,23 +2547,33 @@ function startNextJobs() {
 }
 
 function createAppWindow(hash = '') {
+  const windowIconPath = getWindowIconPath()
   const win = new BrowserWindow({
     width: 1500,
     height: 1000,
     minWidth: 1280,
     minHeight: 840,
     backgroundColor: '#09111f',
-    title: 'YT-DLP Studio',
+    title: APP_DISPLAY_NAME,
+    ...(windowIconPath ? { icon: windowIconPath } : {}),
     autoHideMenuBar: true,
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      void shell.openExternal(assertSafeExternalUrl(url))
+    } catch (error) {
+      console.error('[electron] blocked window.open', error)
+    }
+    return { action: 'deny' }
+  })
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedUrl) => {
     console.error('[electron] did-fail-load', { errorCode, errorDescription, validatedUrl })
   })
@@ -1698,7 +2638,7 @@ function createMediaToolsWindow() {
   }
 
   mediaToolsWindow = createAppWindow('#media-tools')
-  mediaToolsWindow.setTitle('YT-DLP Studio - Local Media Tools')
+  mediaToolsWindow.setTitle(`${APP_DISPLAY_NAME} - Tools`)
   mediaToolsWindow.setMinimumSize(1100, 760)
   mediaToolsWindow.on('closed', () => {
     mediaToolsWindow = null
@@ -1740,6 +2680,18 @@ ipcMain.handle('self-check:get', () => ({
   toolsSource: getToolsSource(),
 }))
 
+ipcMain.handle('updates:check', async () => {
+  return await checkForUpdates()
+})
+
+ipcMain.handle('updates:downloadLatest', async () => {
+  return await downloadLatestUpdate()
+})
+
+ipcMain.handle('runtime:installDeno', async () => {
+  return await installDenoRuntime()
+})
+
 ipcMain.handle('window:openMediaTools', () => {
   createMediaToolsWindow()
 })
@@ -1775,7 +2727,7 @@ ipcMain.handle('dialog:pickMediaFile', async (event, currentPath?: string) => {
     defaultPath: resolveDialogStartDirectory(currentPath),
     properties: ['openFile'],
     filters: [
-      { name: 'Media files', extensions: ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi', 'mp3', 'm4a', 'wav', 'flac'] },
+      { name: 'Media files', extensions: ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi', 'flv', 'ts', 'm4s', 'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus'] },
       { name: 'All files', extensions: ['*'] },
     ],
   })
@@ -1822,12 +2774,12 @@ ipcMain.handle('shell:openExternal', async (_event, targetUrl: string) => {
   if (!targetUrl) {
     return
   }
-  await shell.openExternal(targetUrl)
+  await shell.openExternal(assertSafeExternalUrl(targetUrl))
 })
 
 ipcMain.handle('config:export', async (_event, config: unknown) => {
   const result = await dialog.showSaveDialog(mainWindow!, {
-    defaultPath: join(resolveDefaultDownloads(), 'yt-dlp-studio-config.json'),
+    defaultPath: join(resolveDefaultDownloads(), 'media-dock-config.json'),
     filters: [{ name: 'JSON', extensions: ['json'] }],
   })
 
@@ -1890,6 +2842,30 @@ ipcMain.handle('media:run', async (_event, request: MediaToolRequest) => {
   }
 
   return await runMediaTool(request)
+})
+
+ipcMain.handle('media:merge', async (_event, request: MediaMergeRequest) => {
+  if (activeMediaProcess || activeSubtitleCleanupAbort) {
+    throw new Error('Another media tool action is already running.')
+  }
+  if (!existsSync(getFfmpegPath())) {
+    throw new Error(`ffmpeg was not found at ${getFfmpegPath()}`)
+  }
+  if (!request.outputDir || !existsSync(request.outputDir) || !statSync(request.outputDir).isDirectory()) {
+    throw new Error(`Output directory does not exist: ${request.outputDir}`)
+  }
+  if (request.mode === 'single') {
+    if (!request.videoPath || !existsSync(request.videoPath)) {
+      throw new Error(`Selected media file does not exist: ${request.videoPath ?? ''}`)
+    }
+    if (request.audioPath && !existsSync(request.audioPath)) {
+      throw new Error(`Audio file does not exist: ${request.audioPath ?? ''}`)
+    }
+  } else if (!request.inputDir || !existsSync(request.inputDir) || !statSync(request.inputDir).isDirectory()) {
+    throw new Error(`Batch input directory does not exist: ${request.inputDir ?? ''}`)
+  }
+
+  return await runMediaMerge(request)
 })
 
 ipcMain.handle('subtitle-cleanup:run', async (_event, request: SubtitleCleanupRunRequest) => {
