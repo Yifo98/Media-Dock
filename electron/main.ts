@@ -1704,7 +1704,8 @@ function normalizeMergeStem(filePath: string) {
     .replace(/(?:音频|视频)/g, ' ')
     .replace(/\b(?:video|audio|track|only|dash|idm|idman)\b/g, ' ')
     .replace(/\b(?:avc1|hev1|h264|h265|aac|mp4a|m4s|f\d+|\d+p)\b/g, ' ')
-    .replace(/[\s._-]+\d{3,}$/g, ' ')
+    .replace(/[._-]+\d{1,3}$/g, ' ')
+    .replace(/\s+\d{3,}$/g, ' ')
     .replace(/(?:^|[\s._-])(?:v|a)\d*$/g, ' ')
     .replace(/[\s._-]+/g, ' ')
     .trim()
@@ -1825,6 +1826,7 @@ function selectAudioForVideo(videoFile: MergeCandidate, audioFiles: MergeCandida
     return {
       audioFile: bestDurationCandidate.audioFile,
       durationDiff: bestDurationCandidate.durationDiff,
+      nameScore: bestDurationCandidate.nameScore,
       matchReason: `duration ${bestDurationCandidate.durationDiff.toFixed(2)}s`,
     }
   }
@@ -1849,6 +1851,7 @@ function selectAudioForVideo(videoFile: MergeCandidate, audioFiles: MergeCandida
   return {
     audioFile: nameCandidate.audioFile,
     durationDiff: nameCandidate.durationDiff,
+    nameScore: nameCandidate.nameScore,
     matchReason: nameCandidate.nameScore === 0 ? 'exact name' : 'normalized name',
   }
 }
@@ -2029,6 +2032,7 @@ async function collectSingleMergePair(
     .filter((item): item is { videoFile: MergeCandidate; matchedAudio: NonNullable<ReturnType<typeof selectAudioForVideo>> } => item !== null)
     .sort((left, right) =>
       (left.matchedAudio.durationDiff ?? Number.POSITIVE_INFINITY) - (right.matchedAudio.durationDiff ?? Number.POSITIVE_INFINITY)
+      || left.matchedAudio.nameScore - right.matchedAudio.nameScore
       || parse(left.videoFile.path).base.localeCompare(parse(right.videoFile.path).base),
     )
 

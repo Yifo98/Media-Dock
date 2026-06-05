@@ -132,6 +132,8 @@ write_release_notes() {
 - 媒体工具改为主窗口内部工作区，不再从主界面弹出额外窗口
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
 - 批量合并优先按照媒体时长自动配对，名称只作为兜底辅助
+- 修复 B 站 / IDM 分离文件中 \`_2.m4s\` 这类尾号文件无法稳定识别配对的问题
+- 合并页选择待识别文件后会立即刷新流信息，直接显示音频流或视频流
 - 合并输出支持自定义文件名，批量任务会自动追加 01 02 序号避免覆盖
 - 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 \`Media Dock Data\` 目录
 - 刷新 3 号图标为新的桌面应用图标
@@ -171,6 +173,8 @@ This release refreshes the shared desktop package with local media merge support
 - Moved Media Tools into an in-window workspace instead of opening an extra window from the main UI
 - Added single-pair and batch-folder local audio/video merge workflows
 - Batch merge now prefers duration-based pairing, using names only as a fallback signal
+- Fixed unstable pairing for Bilibili / IDM separated files such as \`_2.m4s\`
+- Refresh stream inspection immediately after choosing a merge input so audio/video detection is visible
 - Merge output supports a custom base name, with 01 02 suffixes added automatically for batch jobs
 - Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling \`Media Dock Data\` folder
 - Refreshed the desktop app icon with option 3

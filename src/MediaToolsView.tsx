@@ -867,6 +867,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     if (!outputDir) {
       setOutputDir(getDirectoryFromPath(selected))
     }
+    await inspect(selected)
   }
 
   async function pickMergeAudioFile() {
@@ -876,6 +877,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     if (!outputDir) {
       setOutputDir(getDirectoryFromPath(selected))
     }
+    await inspect(selected)
   }
 
   async function pickMergeFolder() {
