@@ -240,6 +240,8 @@ function getText(language: Language) {
         cookieAdvisorMissing: '检测到 {service} 链接，但没有找到专用 Cookie。请把对应 by-service 文件放进认证目录。',
         cookieAdvisorMismatch: '当前选择不像 {service} 专用 Cookie，可能会无效或带入过多无关登录态。',
         cookieMeta: '{count} 条 Cookie · {domains}',
+        cookieExpiredWarning: '有 {count} 条 Cookie 已过期：{names}。登录态可能已失效，请重新导出 cookies.txt。',
+        cookieExpiringSoonWarning: '有 {count} 条 Cookie 24 小时内将过期：{names}。',
         extraOptions: '下载附加项',
         extraOptionsHint: '可选。用于给链接下载追加字幕、封面、简介、仅当前视频等参数；不选就是默认下载。',
         extraOptionsSummary: '已启用参数',
@@ -373,6 +375,8 @@ function getText(language: Language) {
         cookieAdvisorMissing: '{service} link detected, but no dedicated cookie file was found. Place the matching by-service file in the auth folder.',
         cookieAdvisorMismatch: 'The selected file does not look like a dedicated {service} cookie file.',
         cookieMeta: '{count} cookie(s) · {domains}',
+        cookieExpiredWarning: '{count} cookie(s) already expired: {names}. The login session may be stale; export cookies.txt again.',
+        cookieExpiringSoonWarning: '{count} cookie(s) expire within 24h: {names}.',
         extraOptions: 'Download add-ons',
         extraOptionsHint: 'Optional. Add subtitles, thumbnails, descriptions, current-video-only behavior, and similar link-download flags.',
         extraOptionsSummary: 'Enabled args',
@@ -545,6 +549,25 @@ function formatCookieMeta(item: CookieFileInfo, language: Language, text: Return
   return text.cookieMeta
     .replace('{count}', String(item.cookieCount))
     .replace('{domains}', `${domains}${suffix}`)
+}
+
+function formatCookieNames(names: string[], language: Language) {
+  if (names.length === 0) return language === 'zh' ? '未识别名称' : 'unknown names'
+  return names.join(', ')
+}
+
+function formatCookieHealth(item: CookieFileInfo, language: Language, text: ReturnType<typeof getText>) {
+  if (item.expiredCookieCount > 0) {
+    return text.cookieExpiredWarning
+      .replace('{count}', String(item.expiredCookieCount))
+      .replace('{names}', formatCookieNames(item.expiredCookieNames, language))
+  }
+  if (item.expiringSoonCookieCount > 0) {
+    return text.cookieExpiringSoonWarning
+      .replace('{count}', String(item.expiringSoonCookieCount))
+      .replace('{names}', formatCookieNames(item.expiringSoonCookieNames, language))
+  }
+  return ''
 }
 
 function classifyCookieFile(item: CookieFileInfo, language: Language) {
@@ -883,9 +906,11 @@ function App() {
     ? [
         classifyCookieFile(selectedCookieMeta, language).note,
         formatCookieMeta(selectedCookieMeta, language, text),
+        formatCookieHealth(selectedCookieMeta, language, text),
         cookieTarget && selectedCookieScore === 0 ? text.cookieAdvisorMismatch.replace('{service}', cookieTargetName) : '',
       ].filter(Boolean).join(' ')
     : text.cookieHint
+  const recommendedCookieHealth = recommendedCookieFile ? formatCookieHealth(recommendedCookieFile, language, text) : ''
   const canClearLinks = linkInputs.some((item) => item.trim().length > 0) || linkInputs.length > 1
 
   async function refreshRuntimeState() {
@@ -1347,11 +1372,16 @@ function App() {
               <small className="field-help">{text.cookieFallback}</small>
             </label>
           </div>
-          <div className={recommendedCookieFile ? 'cookie-advisor cookie-advisor--active' : 'cookie-advisor'}>
+          <div className={[
+            'cookie-advisor',
+            recommendedCookieFile ? 'cookie-advisor--active' : '',
+            recommendedCookieHealth ? 'cookie-advisor--warning' : '',
+          ].filter(Boolean).join(' ')}>
             <div>
               <span>{text.cookieAdvisor}</span>
               <p>{cookieAdvisorMessage}</p>
               {recommendedCookieFile ? <small>{formatCookieMeta(recommendedCookieFile, language, text)}</small> : null}
+              {recommendedCookieHealth ? <small>{recommendedCookieHealth}</small> : null}
             </div>
             {recommendedCookieFile ? (
               <button

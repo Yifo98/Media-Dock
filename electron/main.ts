@@ -17,7 +17,7 @@ type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
-type MediaMergeMode = 'single' | 'batch'
+type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv'
 type RuntimeToolInstallTarget = 'deno'
 
@@ -38,6 +38,10 @@ type CookieFileInfo = {
   path: string
   domains: string[]
   cookieCount: number
+  expiredCookieCount: number
+  expiredCookieNames: string[]
+  expiringSoonCookieCount: number
+  expiringSoonCookieNames: string[]
 }
 
 type SelfCheckItem = {
@@ -74,8 +78,7 @@ type MediaToolRequest = {
 
 type MediaMergeRequest = {
   mode: MediaMergeMode
-  videoPath: string | null
-  audioPath: string | null
+  inputPaths: string[]
   inputDir: string | null
   outputDir: string
   outputFormat: MediaMergeOutputFormat
@@ -87,7 +90,29 @@ type MediaMergePair = {
   audioPath: string
   outputPath: string
   durationDiff: number | null
+  durationSeconds: number | null
+  estimatedSizeBytes: number | null
+  videoAudioTracks: number
+  audioTracks: number
   matchReason: string
+}
+
+type MediaMergeSkippedItem = {
+  path: string
+  reason: string
+}
+
+type MediaMergePreviewResult = {
+  inputCount: number
+  videoCount: number
+  audioCount: number
+  pairCount: number
+  unmatchedVideoCount: number
+  unmatchedAudioCount: number
+  estimatedSizeBytes: number | null
+  estimatedDurationSeconds: number | null
+  pairs: MediaMergePair[]
+  skipped: MediaMergeSkippedItem[]
 }
 
 type UpdateCheckResult = {
@@ -247,7 +272,7 @@ const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
 ].join('\n')
 
 const GITHUB_OWNER = 'Yifo98'
-const GITHUB_REPO = 'YT-DLP-Studio'
+const GITHUB_REPO = 'Media-Dock'
 const GITHUB_LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
 const DENO_VERSION = '2.7.5'
 
@@ -1391,15 +1416,26 @@ function normalizeCookieDomain(value: string) {
   return value.trim().replace(/^\./, '').toLowerCase()
 }
 
-function inspectCookieFile(filePath: string): Pick<CookieFileInfo, 'domains' | 'cookieCount'> {
+function inspectCookieFile(filePath: string): Pick<CookieFileInfo, 'domains' | 'cookieCount' | 'expiredCookieCount' | 'expiredCookieNames' | 'expiringSoonCookieCount' | 'expiringSoonCookieNames'> {
   const domainCounts = new Map<string, number>()
+  const expiredNames = new Set<string>()
+  const expiringSoonNames = new Set<string>()
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const soonSeconds = nowSeconds + 24 * 60 * 60
   let cookieCount = 0
+  let expiredCookieCount = 0
+  let expiringSoonCookieCount = 0
 
   try {
     const content = readFileSync(filePath, 'utf8')
     content.split(/\r?\n/).forEach((rawLine) => {
-      const line = rawLine.trim()
-      if (!line || line.startsWith('#')) return
+      let line = rawLine.trim()
+      if (!line) return
+      if (line.startsWith('#HttpOnly_')) {
+        line = line.replace(/^#HttpOnly_/, '')
+      } else if (line.startsWith('#')) {
+        return
+      }
 
       const parts = line.split('\t')
       if (parts.length < 7) return
@@ -1407,18 +1443,41 @@ function inspectCookieFile(filePath: string): Pick<CookieFileInfo, 'domains' | '
       const domain = normalizeCookieDomain(parts[0])
       if (!domain) return
 
+      const expiry = Number.parseInt(parts[4] ?? '', 10)
+      const name = parts[5]?.trim() ?? ''
       cookieCount += 1
       domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1)
+      if (Number.isFinite(expiry) && expiry > 0 && expiry < nowSeconds) {
+        expiredCookieCount += 1
+        if (name) expiredNames.add(name)
+      } else if (Number.isFinite(expiry) && expiry > 0 && expiry < soonSeconds) {
+        expiringSoonCookieCount += 1
+        if (name) expiringSoonNames.add(name)
+      }
     })
   } catch {
-    return { domains: [], cookieCount: 0 }
+    return {
+      domains: [],
+      cookieCount: 0,
+      expiredCookieCount: 0,
+      expiredCookieNames: [],
+      expiringSoonCookieCount: 0,
+      expiringSoonCookieNames: [],
+    }
   }
 
   const domains = [...domainCounts.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
     .map(([domain]) => domain)
 
-  return { domains, cookieCount }
+  return {
+    domains,
+    cookieCount,
+    expiredCookieCount,
+    expiredCookieNames: [...expiredNames].sort().slice(0, 6),
+    expiringSoonCookieCount,
+    expiringSoonCookieNames: [...expiringSoonNames].sort().slice(0, 6),
+  }
 }
 
 function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): CookieFileInfo[] {
@@ -1446,6 +1505,10 @@ function listCookieFilesRecursive(rootDir: string, currentDir = rootDir): Cookie
       path: fullPath,
       domains: cookieMetadata.domains,
       cookieCount: cookieMetadata.cookieCount,
+      expiredCookieCount: cookieMetadata.expiredCookieCount,
+      expiredCookieNames: cookieMetadata.expiredCookieNames,
+      expiringSoonCookieCount: cookieMetadata.expiringSoonCookieCount,
+      expiringSoonCookieNames: cookieMetadata.expiringSoonCookieNames,
     })
   }
 
@@ -1696,23 +1759,6 @@ const mergeCandidateExtensions = new Set([
   '.webm',
 ])
 
-function normalizeMergeStem(filePath: string) {
-  const exactStem = parse(filePath).name.toLowerCase()
-  const normalized = exactStem
-    .normalize('NFKC')
-    .replace(/[[\](){}【】（）]/g, ' ')
-    .replace(/(?:音频|视频)/g, ' ')
-    .replace(/\b(?:video|audio|track|only|dash|idm|idman)\b/g, ' ')
-    .replace(/\b(?:avc1|hev1|h264|h265|aac|mp4a|m4s|f\d+|\d+p)\b/g, ' ')
-    .replace(/[._-]+\d{1,3}$/g, ' ')
-    .replace(/\s+\d{3,}$/g, ' ')
-    .replace(/(?:^|[\s._-])(?:v|a)\d*$/g, ' ')
-    .replace(/[\s._-]+/g, ' ')
-    .trim()
-
-  return normalized || exactStem
-}
-
 function getAvailableOutputPath(outputPath: string) {
   if (!existsSync(outputPath)) {
     return outputPath
@@ -1755,12 +1801,14 @@ function buildMergeOutputPath(
   outputFormat: MediaMergeOutputFormat,
   outputName?: string | null,
   sequenceIndex?: number,
+  ensureAvailable = true,
 ) {
   const customName = sanitizeOutputBaseName(outputName)
   const defaultName = `${parse(videoPath).name} - merged`
   const sequenceSuffix = customName && typeof sequenceIndex === 'number' ? ` ${String(sequenceIndex + 1).padStart(2, '0')}` : ''
   const baseName = customName ? `${customName}${sequenceSuffix}` : defaultName
-  return getAvailableOutputPath(join(outputDir, `${baseName}.${outputFormat}`))
+  const outputPath = outputDir ? join(outputDir, `${baseName}.${outputFormat}`) : `${baseName}.${outputFormat}`
+  return ensureAvailable ? getAvailableOutputPath(outputPath) : outputPath
 }
 
 function getMergeRole(inspection: MediaInspection) {
@@ -1775,9 +1823,10 @@ function getMergeRole(inspection: MediaInspection) {
 
 type MergeCandidate = {
   path: string
-  exactStem: string
-  matchStem: string
   duration: number | null
+  sizeBytes: number | null
+  videoStreamCount: number
+  audioStreamCount: number
 }
 
 function getDurationDiff(left: number | null, right: number | null) {
@@ -1787,19 +1836,12 @@ function getDurationDiff(left: number | null, right: number | null) {
   return Math.abs(left - right)
 }
 
-function getNameMatchScore(videoFile: MergeCandidate, audioFile: MergeCandidate) {
-  if (audioFile.exactStem === videoFile.exactStem) return 0
-  if (audioFile.matchStem === videoFile.matchStem) return 1
-  if (audioFile.matchStem.includes(videoFile.matchStem) || videoFile.matchStem.includes(audioFile.matchStem)) return 2
-  return 6
-}
-
 function getDurationPairThreshold(videoDuration: number | null) {
   if (videoDuration === null) {
     return 0
   }
 
-  return Math.max(2.5, Math.min(12, videoDuration * 0.03))
+  return Math.max(0.25, Math.min(5, videoDuration * 0.01))
 }
 
 function selectAudioForVideo(videoFile: MergeCandidate, audioFiles: MergeCandidate[], usedAudioPaths: Set<string>) {
@@ -1812,12 +1854,10 @@ function selectAudioForVideo(videoFile: MergeCandidate, audioFiles: MergeCandida
     .map((audioFile) => ({
       audioFile,
       durationDiff: getDurationDiff(videoFile.duration, audioFile.duration),
-      nameScore: getNameMatchScore(videoFile, audioFile),
     }))
-    .filter((item): item is { audioFile: MergeCandidate; durationDiff: number; nameScore: number } => item.durationDiff !== null)
+    .filter((item): item is { audioFile: MergeCandidate; durationDiff: number } => item.durationDiff !== null)
     .sort((left, right) =>
       left.durationDiff - right.durationDiff
-      || left.nameScore - right.nameScore
       || parse(left.audioFile.path).base.localeCompare(parse(right.audioFile.path).base),
     )
 
@@ -1826,234 +1866,205 @@ function selectAudioForVideo(videoFile: MergeCandidate, audioFiles: MergeCandida
     return {
       audioFile: bestDurationCandidate.audioFile,
       durationDiff: bestDurationCandidate.durationDiff,
-      nameScore: bestDurationCandidate.nameScore,
-      matchReason: `duration ${bestDurationCandidate.durationDiff.toFixed(2)}s`,
+      matchReason: `duration ${bestDurationCandidate.durationDiff.toFixed(3)}s`,
     }
   }
 
-  const nameCandidate = availableAudioFiles
-    .map((audioFile) => ({
-      audioFile,
-      durationDiff: getDurationDiff(videoFile.duration, audioFile.duration),
-      nameScore: getNameMatchScore(videoFile, audioFile),
-    }))
-    .filter((item) => item.nameScore <= 1)
-    .sort((left, right) =>
-      left.nameScore - right.nameScore
-      || (left.durationDiff ?? Number.POSITIVE_INFINITY) - (right.durationDiff ?? Number.POSITIVE_INFINITY)
-      || parse(left.audioFile.path).base.localeCompare(parse(right.audioFile.path).base),
-    )[0]
+  return null
+}
 
-  if (!nameCandidate) {
+function getCandidateSize(candidatePath: string) {
+  try {
+    return statSync(candidatePath).size
+  } catch {
     return null
-  }
-
-  return {
-    audioFile: nameCandidate.audioFile,
-    durationDiff: nameCandidate.durationDiff,
-    nameScore: nameCandidate.nameScore,
-    matchReason: nameCandidate.nameScore === 0 ? 'exact name' : 'normalized name',
   }
 }
 
-async function collectMergePairs(
-  inputDir: string,
-  outputDir: string,
-  outputFormat: MediaMergeOutputFormat,
-  outputName?: string | null,
-): Promise<MediaMergePair[]> {
-  const entries = readdirSync(inputDir, { withFileTypes: true })
-  const candidates = entries
-    .filter((entry) => entry.isFile() && mergeCandidateExtensions.has(extname(entry.name).toLowerCase()))
-    .map((entry) => join(inputDir, entry.name))
-    .sort((left, right) => parse(left).base.localeCompare(parse(right).base))
+function getMergedDuration(videoDuration: number | null, audioDuration: number | null) {
+  if (videoDuration !== null && audioDuration !== null) {
+    return Math.min(videoDuration, audioDuration)
+  }
+  return videoDuration ?? audioDuration
+}
+
+function addNullableSize(left: number | null, right: number | null) {
+  if (left === null || right === null) {
+    return null
+  }
+  return left + right
+}
+
+function collectMergeInputPaths(request: Pick<MediaMergeRequest, 'mode' | 'inputPaths' | 'inputDir'>, skipped: MediaMergeSkippedItem[]) {
+  if (request.mode === 'folder') {
+    if (!request.inputDir) {
+      return []
+    }
+
+    return readdirSync(request.inputDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(request.inputDir!, entry.name))
+      .sort((left, right) => parse(left).base.localeCompare(parse(right).base))
+  }
+
+  const uniquePaths = new Set<string>()
+  for (const inputPath of request.inputPaths) {
+    const normalized = inputPath.trim()
+    if (!normalized || uniquePaths.has(normalized)) {
+      continue
+    }
+    uniquePaths.add(normalized)
+  }
+
+  return [...uniquePaths].filter((inputPath) => {
+    if (!existsSync(inputPath)) {
+      skipped.push({ path: inputPath, reason: 'file not found' })
+      return false
+    }
+    if (!statSync(inputPath).isFile()) {
+      skipped.push({ path: inputPath, reason: 'not a file' })
+      return false
+    }
+    return true
+  })
+}
+
+async function inspectMergeCandidate(candidatePath: string): Promise<{ role: ReturnType<typeof getMergeRole>; candidate: MergeCandidate }> {
+  const inspection = await inspectMedia(candidatePath)
+  return {
+    role: getMergeRole(inspection),
+    candidate: {
+      path: candidatePath,
+      duration: inspection.duration,
+      sizeBytes: getCandidateSize(candidatePath),
+      videoStreamCount: inspection.streams.filter((stream) => stream.codecType === 'video').length,
+      audioStreamCount: inspection.streams.filter((stream) => stream.codecType === 'audio').length,
+    },
+  }
+}
+
+async function buildMediaMergePreview(
+  request: MediaMergeRequest,
+  options: { emitLogs: boolean; ensureOutputAvailable: boolean },
+): Promise<MediaMergePreviewResult> {
+  const skipped: MediaMergeSkippedItem[] = []
+  const inputPaths = collectMergeInputPaths(request, skipped)
+    .filter((inputPath) => {
+      if (mergeCandidateExtensions.has(extname(inputPath).toLowerCase())) {
+        return true
+      }
+      skipped.push({ path: inputPath, reason: 'unsupported extension' })
+      return false
+    })
 
   const videoFiles: MergeCandidate[] = []
   const audioFiles: MergeCandidate[] = []
 
-  for (const candidatePath of candidates) {
+  for (const candidatePath of inputPaths) {
     if (mediaCancelled) {
       throw new Error('Media tool action was cancelled.')
     }
 
     try {
-      const inspection = await inspectMedia(candidatePath)
-      const role = getMergeRole(inspection)
-      const item = {
-        path: candidatePath,
-        exactStem: parse(candidatePath).name.toLowerCase(),
-        matchStem: normalizeMergeStem(candidatePath),
-        duration: inspection.duration,
-      }
-
+      const { role, candidate } = await inspectMergeCandidate(candidatePath)
       if (role === 'video') {
-        videoFiles.push(item)
+        videoFiles.push(candidate)
       } else if (role === 'audio') {
-        audioFiles.push(item)
+        audioFiles.push(candidate)
       } else {
-        emitMedia({ type: 'log', line: `[scan] skipped non audio/video file: ${parse(candidatePath).base}`, stream: 'stderr' })
+        skipped.push({ path: candidatePath, reason: 'no audio/video stream' })
+        if (options.emitLogs) {
+          emitMedia({ type: 'log', line: `[scan] skipped non audio/video file: ${parse(candidatePath).base}`, stream: 'stderr' })
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'ffprobe failed'
-      emitMedia({ type: 'log', line: `[scan] skipped ${parse(candidatePath).base}: ${message}`, stream: 'stderr' })
+      skipped.push({ path: candidatePath, reason: message })
+      if (options.emitLogs) {
+        emitMedia({ type: 'log', line: `[scan] skipped ${parse(candidatePath).base}: ${message}`, stream: 'stderr' })
+      }
     }
   }
 
   const usedAudioPaths = new Set<string>()
   const pairs: MediaMergePair[] = []
+  const sortedVideos = [...videoFiles].sort((left, right) =>
+    (left.duration ?? Number.POSITIVE_INFINITY) - (right.duration ?? Number.POSITIVE_INFINITY)
+    || parse(left.path).base.localeCompare(parse(right.path).base),
+  )
 
-  for (const videoFile of videoFiles) {
+  for (const videoFile of sortedVideos) {
     const matchedAudio = selectAudioForVideo(videoFile, audioFiles, usedAudioPaths)
 
     if (!matchedAudio) {
-      emitMedia({ type: 'log', line: `[scan] no matching audio file for: ${parse(videoFile.path).base}`, stream: 'stderr' })
+      if (options.emitLogs) {
+        emitMedia({ type: 'log', line: `[scan] no duration-matched audio file for: ${parse(videoFile.path).base}`, stream: 'stderr' })
+      }
       continue
     }
 
     const audioFile = matchedAudio.audioFile
     usedAudioPaths.add(audioFile.path)
+    const estimatedSizeBytes = addNullableSize(videoFile.sizeBytes, audioFile.sizeBytes)
+    const durationSeconds = getMergedDuration(videoFile.duration, audioFile.duration)
     pairs.push({
       videoPath: videoFile.path,
       audioPath: audioFile.path,
-      outputPath: buildMergeOutputPath(videoFile.path, outputDir, outputFormat, outputName, pairs.length),
+      outputPath: '',
       durationDiff: matchedAudio.durationDiff,
+      durationSeconds,
+      estimatedSizeBytes,
+      videoAudioTracks: videoFile.audioStreamCount,
+      audioTracks: audioFile.audioStreamCount,
       matchReason: matchedAudio.matchReason,
     })
-    emitMedia({
-      type: 'log',
-      line: `[scan] paired ${parse(videoFile.path).base} + ${parse(audioFile.path).base} (${matchedAudio.matchReason})`,
-      stream: 'stdout',
-    })
-  }
 
-  return pairs
-}
-
-async function collectSingleMergePair(
-  selectedPath: string,
-  manualAudioPath: string | null | undefined,
-  outputDir: string,
-  outputFormat: MediaMergeOutputFormat,
-  outputName?: string | null,
-): Promise<MediaMergePair[]> {
-  const selectedInspection = await inspectMedia(selectedPath)
-  const selectedRole = getMergeRole(selectedInspection)
-
-  if (manualAudioPath) {
-    const manualInspection = await inspectMedia(manualAudioPath)
-    const manualRole = getMergeRole(manualInspection)
-
-    if (selectedRole === 'unknown') {
-      throw new Error(`Selected file is not a video or audio stream: ${parse(selectedPath).base}`)
-    }
-    if (manualRole !== 'audio' && manualRole !== 'video') {
-      throw new Error(`Manual file is not a video or audio stream: ${parse(manualAudioPath).base}`)
-    }
-    if (selectedRole === manualRole) {
-      throw new Error(`Manual pairing needs one video stream and one audio stream: ${parse(selectedPath).base}, ${parse(manualAudioPath).base}`)
-    }
-
-    const videoPath = selectedRole === 'audio' && manualRole === 'video' ? manualAudioPath : selectedPath
-    const audioPath = selectedRole === 'audio' && manualRole === 'video' ? selectedPath : manualAudioPath
-
-    emitMedia({
-      type: 'log',
-      line: `[scan] manual pair ${parse(videoPath).base} + ${parse(audioPath).base}`,
-      stream: 'stdout',
-    })
-
-    return [{
-      videoPath,
-      audioPath,
-      outputPath: buildMergeOutputPath(videoPath, outputDir, outputFormat, outputName),
-      durationDiff: getDurationDiff(
-        selectedRole === 'audio' && manualRole === 'video' ? manualInspection.duration : selectedInspection.duration,
-        selectedRole === 'audio' && manualRole === 'video' ? selectedInspection.duration : manualInspection.duration,
-      ),
-      matchReason: 'manual pair',
-    }]
-  }
-
-  const inputDir = dirname(selectedPath)
-  const entries = readdirSync(inputDir, { withFileTypes: true })
-  const candidates = entries
-    .filter((entry) => entry.isFile() && mergeCandidateExtensions.has(extname(entry.name).toLowerCase()))
-    .map((entry) => join(inputDir, entry.name))
-    .filter((candidatePath) => candidatePath !== selectedPath)
-    .sort((left, right) => parse(left).base.localeCompare(parse(right).base))
-
-  const selectedCandidate: MergeCandidate = {
-    path: selectedPath,
-    exactStem: parse(selectedPath).name.toLowerCase(),
-    matchStem: normalizeMergeStem(selectedPath),
-    duration: selectedInspection.duration,
-  }
-  const videoFiles: MergeCandidate[] = selectedRole === 'video' ? [selectedCandidate] : []
-  const audioFiles: MergeCandidate[] = selectedRole === 'audio' ? [selectedCandidate] : []
-
-  for (const candidatePath of candidates) {
-    if (mediaCancelled) {
-      throw new Error('Media tool action was cancelled.')
-    }
-
-    try {
-      const inspection = await inspectMedia(candidatePath)
-      const role = getMergeRole(inspection)
-      const item = {
-        path: candidatePath,
-        exactStem: parse(candidatePath).name.toLowerCase(),
-        matchStem: normalizeMergeStem(candidatePath),
-        duration: inspection.duration,
-      }
-
-      if (role === 'video') {
-        videoFiles.push(item)
-      } else if (role === 'audio') {
-        audioFiles.push(item)
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'ffprobe failed'
-      emitMedia({ type: 'log', line: `[scan] skipped ${parse(candidatePath).base}: ${message}`, stream: 'stderr' })
+    if (options.emitLogs) {
+      emitMedia({
+        type: 'log',
+        line: `[scan] paired ${parse(videoFile.path).base} + ${parse(audioFile.path).base} (${matchedAudio.matchReason})`,
+        stream: 'stdout',
+      })
     }
   }
 
-  if (selectedRole !== 'video' && selectedRole !== 'audio') {
-    throw new Error(`Selected file is not a video or audio stream: ${parse(selectedPath).base}`)
+  const finalizedPairs = pairs.map((pair, index) => ({
+    ...pair,
+    outputPath: buildMergeOutputPath(
+      pair.videoPath,
+      request.outputDir,
+      request.outputFormat,
+      request.outputName,
+      pairs.length > 1 ? index : undefined,
+      options.ensureOutputAvailable,
+    ),
+  }))
+
+  const estimatedSizeBytes = finalizedPairs.reduce<number | null>((total, pair) => {
+    if (total === null || pair.estimatedSizeBytes === null) {
+      return null
+    }
+    return total + pair.estimatedSizeBytes
+  }, 0)
+  const estimatedDurationSeconds = finalizedPairs.reduce<number | null>((total, pair) => {
+    if (pair.durationSeconds === null) {
+      return total
+    }
+    return (total ?? 0) + pair.durationSeconds
+  }, null)
+
+  return {
+    inputCount: inputPaths.length,
+    videoCount: videoFiles.length,
+    audioCount: audioFiles.length,
+    pairCount: finalizedPairs.length,
+    unmatchedVideoCount: videoFiles.length - finalizedPairs.length,
+    unmatchedAudioCount: audioFiles.length - usedAudioPaths.size,
+    estimatedSizeBytes,
+    estimatedDurationSeconds,
+    pairs: finalizedPairs,
+    skipped,
   }
-
-  const selectedVideoFiles = selectedRole === 'video' ? [selectedCandidate] : videoFiles
-  const selectedAudioFiles = selectedRole === 'audio' ? [selectedCandidate] : audioFiles
-  const usedAudioPaths = new Set<string>()
-  const possiblePairs = selectedVideoFiles
-    .map((videoFile) => {
-      const matchedAudio = selectAudioForVideo(videoFile, selectedAudioFiles, usedAudioPaths)
-      return matchedAudio ? { videoFile, matchedAudio } : null
-    })
-    .filter((item): item is { videoFile: MergeCandidate; matchedAudio: NonNullable<ReturnType<typeof selectAudioForVideo>> } => item !== null)
-    .sort((left, right) =>
-      (left.matchedAudio.durationDiff ?? Number.POSITIVE_INFINITY) - (right.matchedAudio.durationDiff ?? Number.POSITIVE_INFINITY)
-      || left.matchedAudio.nameScore - right.matchedAudio.nameScore
-      || parse(left.videoFile.path).base.localeCompare(parse(right.videoFile.path).base),
-    )
-
-  const bestPair = possiblePairs[0]
-  if (!bestPair) {
-    throw new Error(`No matching separated file was found near: ${parse(selectedPath).base}`)
-  }
-
-  emitMedia({
-    type: 'log',
-    line: `[scan] auto paired ${parse(bestPair.videoFile.path).base} + ${parse(bestPair.matchedAudio.audioFile.path).base} (${bestPair.matchedAudio.matchReason})`,
-    stream: 'stdout',
-  })
-
-  return [{
-    videoPath: bestPair.videoFile.path,
-    audioPath: bestPair.matchedAudio.audioFile.path,
-    outputPath: buildMergeOutputPath(bestPair.videoFile.path, outputDir, outputFormat, outputName),
-    durationDiff: bestPair.matchedAudio.durationDiff,
-    matchReason: `auto ${bestPair.matchedAudio.matchReason}`,
-  }]
 }
 
 async function runMergePair(ffmpegPath: string, pair: MediaMergePair, outputFormat: MediaMergeOutputFormat, outputDir: string) {
@@ -2258,12 +2269,11 @@ async function runMediaMerge(request: MediaMergeRequest) {
   emitMedia({
     type: 'status',
     status: 'running',
-    message: request.mode === 'single' ? 'Preparing media merge...' : 'Scanning folder for media pairs...',
+    message: request.mode === 'selection' ? 'Scanning selected files for media pairs...' : 'Scanning folder for media pairs...',
   })
 
-  const pairs: MediaMergePair[] = request.mode === 'single'
-    ? await collectSingleMergePair(request.videoPath ?? '', request.audioPath, request.outputDir, request.outputFormat, request.outputName)
-    : await collectMergePairs(request.inputDir ?? '', request.outputDir, request.outputFormat, request.outputName)
+  const mergePreview = await buildMediaMergePreview(request, { emitLogs: true, ensureOutputAvailable: true })
+  const { pairs } = mergePreview
 
   if (pairs.length === 0) {
     throw new Error('No matching video/audio pairs were found.')
@@ -2303,7 +2313,7 @@ async function runMediaMerge(request: MediaMergeRequest) {
   emitMedia({
     type: 'status',
     status: 'success',
-    message: request.mode === 'single' ? 'Video and audio merged.' : `Merged ${outputs.length} video/audio pair(s).`,
+    message: `Merged ${outputs.length} video/audio pair(s).`,
     outputs,
   })
 
@@ -2743,6 +2753,23 @@ ipcMain.handle('dialog:pickMediaFile', async (event, currentPath?: string) => {
   return result.filePaths[0] ?? null
 })
 
+ipcMain.handle('dialog:pickMediaFiles', async (event, currentPath?: string) => {
+  const result = await dialog.showOpenDialog(getHostWindow(event.sender), {
+    defaultPath: resolveDialogStartDirectory(currentPath),
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Media files', extensions: ['mp4', 'mkv', 'webm', 'mov', 'm4v', 'avi', 'flv', 'ts', 'm4s', 'mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'opus'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  })
+
+  if (result.canceled) {
+    return []
+  }
+
+  return result.filePaths
+})
+
 ipcMain.handle('dialog:pickSubtitleFile', async (event, currentPath?: string) => {
   const result = await dialog.showOpenDialog(getHostWindow(event.sender), {
     defaultPath: resolveDialogStartDirectory(currentPath),
@@ -2848,28 +2875,57 @@ ipcMain.handle('media:run', async (_event, request: MediaToolRequest) => {
   return await runMediaTool(request)
 })
 
+ipcMain.handle('media:merge-preview', async (_event, request: MediaMergeRequest) => {
+  const normalizedRequest = {
+    ...request,
+    inputPaths: Array.isArray(request.inputPaths) ? request.inputPaths : [],
+    outputDir: request.outputDir ?? '',
+  }
+
+  mediaCancelled = false
+  if (!existsSync(getFfprobePath())) {
+    throw new Error(`ffprobe was not found at ${getFfprobePath()}`)
+  }
+  if (normalizedRequest.mode === 'selection') {
+    if (normalizedRequest.inputPaths.length === 0) {
+      return await buildMediaMergePreview(normalizedRequest, { emitLogs: false, ensureOutputAvailable: false })
+    }
+  } else if (!normalizedRequest.inputDir || !existsSync(normalizedRequest.inputDir) || !statSync(normalizedRequest.inputDir).isDirectory()) {
+    throw new Error(`Input directory does not exist: ${normalizedRequest.inputDir ?? ''}`)
+  }
+
+  return await buildMediaMergePreview(normalizedRequest, { emitLogs: false, ensureOutputAvailable: false })
+})
+
 ipcMain.handle('media:merge', async (_event, request: MediaMergeRequest) => {
+  const normalizedRequest = {
+    ...request,
+    inputPaths: Array.isArray(request.inputPaths) ? request.inputPaths : [],
+  }
+
   if (activeMediaProcess || activeSubtitleCleanupAbort) {
     throw new Error('Another media tool action is already running.')
   }
   if (!existsSync(getFfmpegPath())) {
     throw new Error(`ffmpeg was not found at ${getFfmpegPath()}`)
   }
-  if (!request.outputDir || !existsSync(request.outputDir) || !statSync(request.outputDir).isDirectory()) {
-    throw new Error(`Output directory does not exist: ${request.outputDir}`)
+  if (!normalizedRequest.outputDir || !existsSync(normalizedRequest.outputDir) || !statSync(normalizedRequest.outputDir).isDirectory()) {
+    throw new Error(`Output directory does not exist: ${normalizedRequest.outputDir}`)
   }
-  if (request.mode === 'single') {
-    if (!request.videoPath || !existsSync(request.videoPath)) {
-      throw new Error(`Selected media file does not exist: ${request.videoPath ?? ''}`)
+  if (normalizedRequest.mode === 'selection') {
+    if (normalizedRequest.inputPaths.length === 0) {
+      throw new Error('Choose at least one media file first.')
     }
-    if (request.audioPath && !existsSync(request.audioPath)) {
-      throw new Error(`Audio file does not exist: ${request.audioPath ?? ''}`)
+    for (const inputPath of normalizedRequest.inputPaths) {
+      if (!inputPath || !existsSync(inputPath)) {
+        throw new Error(`Selected media file does not exist: ${inputPath}`)
+      }
     }
-  } else if (!request.inputDir || !existsSync(request.inputDir) || !statSync(request.inputDir).isDirectory()) {
-    throw new Error(`Batch input directory does not exist: ${request.inputDir ?? ''}`)
+  } else if (!normalizedRequest.inputDir || !existsSync(normalizedRequest.inputDir) || !statSync(normalizedRequest.inputDir).isDirectory()) {
+    throw new Error(`Input directory does not exist: ${normalizedRequest.inputDir ?? ''}`)
   }
 
-  return await runMediaMerge(request)
+  return await runMediaMerge(normalizedRequest)
 })
 
 ipcMain.handle('subtitle-cleanup:run', async (_event, request: SubtitleCleanupRunRequest) => {

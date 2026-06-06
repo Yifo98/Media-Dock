@@ -1,7 +1,7 @@
 {
-  "name": "yt-dlp-studio",
+  "name": "media-dock",
   "private": true,
-  "version": "2.0.3",
+  "version": "2.0.4",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "A compact local media download and processing desktop app.",

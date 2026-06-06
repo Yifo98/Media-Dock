@@ -1,4 +1,4 @@
-# Media Dock 2.0.3
+# Media Dock 2.0.4
 
 ## 中文说明
 
@@ -6,8 +6,8 @@
 
 ## 包含内容
 
-- `Media Dock-2.0.3-arm64-mac.zip`
-- `Media Dock-2.0.3-win.zip`
+- `Media Dock-2.0.4-arm64-mac.zip`
+- `Media Dock-2.0.4-win.zip`
 - `Launch Media Dock.bat` Windows ZIP 根目录启动脚本
 - `README-windows.txt`
 - `Launch Media Dock.command` macOS ZIP 根目录启动脚本
@@ -17,10 +17,11 @@
 
 - 媒体工具改为主窗口内部工作区，不再从主界面弹出额外窗口
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
-- 批量合并优先按照媒体时长自动配对，名称只作为兜底辅助
+- 多文件合并优先按照媒体流类型和时长配对，不再依赖文件名相似度
 - 修复 B 站 / IDM 分离文件中 `_2.m4s` 这类尾号文件无法稳定识别配对的问题
 - 合并页选择待识别文件后会立即刷新流信息，直接显示音频流或视频流
 - 合并输出支持自定义文件名，批量任务会自动追加 01 02 序号避免覆盖
+- Cookie 选择会提示过期和临期状态，减少误选失效登录态
 - 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 `Media Dock Data` 目录
 - 刷新 3 号图标为新的桌面应用图标
 - 压缩主界面实时信息区域，让日志和最近任务更靠上
@@ -47,8 +48,8 @@ This release refreshes the shared desktop package with local media merge support
 
 ## Included artifacts
 
-- `Media Dock-2.0.3-arm64-mac.zip`
-- `Media Dock-2.0.3-win.zip`
+- `Media Dock-2.0.4-arm64-mac.zip`
+- `Media Dock-2.0.4-win.zip`
 - `Launch Media Dock.bat` at the Windows zip root
 - `README-windows.txt`
 - `Launch Media Dock.command` at the macOS zip root
@@ -58,10 +59,11 @@ This release refreshes the shared desktop package with local media merge support
 
 - Moved Media Tools into an in-window workspace instead of opening an extra window from the main UI
 - Added single-pair and batch-folder local audio/video merge workflows
-- Batch merge now prefers duration-based pairing, using names only as a fallback signal
+- Multi-file merge now pairs by stream type and duration instead of filename similarity
 - Fixed unstable pairing for Bilibili / IDM separated files such as `_2.m4s`
 - Refresh stream inspection immediately after choosing a merge input so audio/video detection is visible
 - Merge output supports a custom base name, with 01 02 suffixes added automatically for batch jobs
+- Cookie selection now warns about expired and soon-to-expire files to reduce bad login-state choices
 - Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling `Media Dock Data` folder
 - Refreshed the desktop app icon with option 3
 - Tightened the main telemetry rail so logs and recent jobs stay higher on screen

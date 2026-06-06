@@ -6,9 +6,9 @@ Media Dock 是一个本地媒体下载和整理工作台，把链接下载、`co
 
 ## 下载
 
-- [前往 GitHub Releases 下载](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
-- Windows：优先下载 `Media Dock-2.0.2-win.zip`
-- macOS：优先下载 `Media Dock-2.0.2-arm64-mac.zip`
+- [前往 GitHub Releases 下载](https://github.com/Yifo98/Media-Dock/releases/latest)
+- Windows：优先下载 `Media Dock-2.0.4-win.zip`
+- macOS：优先下载 `Media Dock-2.0.4-arm64-mac.zip`
 
 当前标准发布包目标就是“解压即用”。
 
@@ -59,7 +59,7 @@ brew install yt-dlp ffmpeg deno
 
 Windows 标准包提供脚本启动版：
 
-- `Media Dock-2.0.2-win.zip`
+- `Media Dock-2.0.4-win.zip`
 
 解压后双击根目录的 `Launch Media Dock.bat`。运行所需工具已经内置，不需要额外安装 Conda、ffmpeg、yt-dlp 或 Deno。
 
@@ -69,15 +69,16 @@ Windows 标准包提供脚本启动版：
 - 媒体工具台：音轨分离、字幕导出、流信息查看、字幕整理、音视频单个或批量合并
 - Cookies 管理：导入本地 `cookies.txt` 处理登录态或会员内容
 
-## 2.0.2 亮点
+## 2.0.4 亮点
 
 - 更名为 `Media Dock`，公开界面更简短
 - 新图标已接入 Windows `.ico` 和 macOS `.icns`
 - 标准 ZIP 改为脚本启动结构，根目录放启动脚本，核心运行组件放在 `core/`
 - 媒体工具改为主窗口内部工作区，不再弹出额外窗口
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
-- 批量合并优先按照媒体时长自动配对，名称只作为兜底辅助
+- 多文件合并优先按媒体流类型和时长配对，不再依赖文件名相似度
 - 合并输出支持自定义文件名，批量任务会自动追加 `01`、`02` 序号避免覆盖
+- Cookie 选择会提示过期和临期状态，减少误选失效登录态
 - 默认下载、Cookies、缓存、更新包和 Deno 自动安装都保存在同级 `Media Dock Data/`
 - Windows 端可自动调用 Bandizip `bz.exe` 解压运行时 zip，未安装时回退 PowerShell
 - 实时信息区域更紧凑，日志和最近任务位置更靠上
@@ -137,9 +138,9 @@ Media Dock is a local media download and cleanup workspace, combining downloads,
 
 ## Download
 
-- [Download from GitHub Releases](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
-- Windows: prefer `Media Dock-2.0.2-win.zip`
-- macOS: prefer `Media Dock-2.0.2-arm64-mac.zip`
+- [Download from GitHub Releases](https://github.com/Yifo98/Media-Dock/releases/latest)
+- Windows: prefer `Media Dock-2.0.4-win.zip`
+- macOS: prefer `Media Dock-2.0.4-arm64-mac.zip`
 
 The standard shared builds are now intended to be plug-and-play.
 
@@ -188,7 +189,7 @@ It calls `scripts/launch-mac.sh` for local development checks.
 
 Windows ships as a script-launched zip:
 
-- `Media Dock-2.0.2-win.zip`
+- `Media Dock-2.0.4-win.zip`
 
 Unzip it and double-click `Launch Media Dock.bat`. Required runtime tools are bundled, so users do not need to install Conda, ffmpeg, yt-dlp, or Deno separately.
 
@@ -198,15 +199,16 @@ Unzip it and double-click `Launch Media Dock.bat`. Required runtime tools are bu
 - Media tools workspace for audio extraction, subtitle export, stream inspection, subtitle cleanup, and audio/video merge
 - Local `cookies.txt` support for signed-in or member-only content
 
-## 2.0.2 Highlights
+## 2.0.4 Highlights
 
 - Renamed the public app surface to `Media Dock`
 - Added the selected option 3 icon as Windows `.ico` and macOS `.icns`
 - Standard zips now use root launch scripts, with runtime components kept in `core/`
 - Moved Media Tools into the main window instead of opening a separate window
 - Added single-pair and batch-folder local audio/video merge workflows
-- Batch merge now prefers duration-based pairing, using names only as a fallback signal
+- Multi-file merge now pairs by stream type and duration instead of filename similarity
 - Merge output supports a custom base name, with `01`, `02` suffixes added automatically for batch jobs
+- Cookie selection now warns about expired and soon-to-expire files to reduce bad login-state choices
 - Default downloads, cookies, cache, update zips, and auto-installed Deno stay in sibling `Media Dock Data/`
 - Windows can use Bandizip `bz.exe` for runtime zip extraction, with PowerShell fallback when Bandizip is not installed
 - Tightened the telemetry rail so logs and recent jobs stay higher on screen

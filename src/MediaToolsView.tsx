@@ -7,7 +7,7 @@ type Language = 'zh' | 'en'
 type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
-type MediaMergeMode = 'single' | 'batch'
+type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv'
 type CleanupConnectionState = 'idle' | 'success' | 'error'
 type CleanupBaseUrlPresetId = string | 'custom'
@@ -58,6 +58,18 @@ function formatDuration(seconds: number | null, language: Language) {
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
   return [h, m, s].map((part) => String(part).padStart(2, '0')).join(':')
+}
+
+function formatBytes(bytes: number | null, language: Language) {
+  if (bytes === null) return language === 'zh' ? '未知' : 'Unknown'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`
 }
 
 function compactPath(value: string | null | undefined, maxLength = 96) {
@@ -220,34 +232,51 @@ function getCopy(language: Language) {
         extractSubtitles: '字幕分离',
         extractSubtitlesDesc: '把文件里已有的字幕轨单独导出来。只有源文件本身带字幕流时才做得了。',
         mergeTitle: '分离文件合并',
-        mergeHint: '选一个分离文件或一个文件夹，系统会自动识别视频流和音频流，再按时长优先配对合并。',
-        mergeMode: '合并模式',
-        mergeModeSingle: '单个自动配对',
-        mergeModeBatch: '批量文件夹',
-        mergeVideoFile: '待识别文件',
-        mergeAudioFile: '手动指定音频（可选）',
+        mergeHint: '一次选择多个分离文件，或直接选择整个文件夹；系统按流类型和时长差配对，不再依赖文件名相似度。',
+        mergeMode: '选择范围',
+        mergeModeSingle: '多选文件',
+        mergeModeBatch: '整个文件夹',
+        mergeVideoFile: '已选文件',
+        mergeAudioFile: '音轨来源',
         mergeInputFolder: '待识别文件夹',
-        mergePickVideo: '选择待识别文件',
-        mergePickAudio: '手动选音频',
-        mergePickFolder: '选择批量文件夹',
+        mergePickVideo: '选择多个文件',
+        mergePickAudio: '自动识别音轨',
+        mergePickFolder: '选择文件夹',
         mergeOutputFormat: '输出封装',
         mergeFormatHint: 'MP4 通用，MKV 容错。',
         mergeOutputName: '输出名称',
         mergeOutputNamePlaceholder: '留空则按视频文件名自动命名',
-        mergeOutputNameHint: '单个合并会直接使用这个名称；批量合并会自动追加 01、02，避免互相覆盖。',
+        mergeOutputNameHint: '只有一组配对时会直接使用这个名称；多组配对会自动追加 01、02，避免互相覆盖。',
         mergeOutputPreview: '名称预览',
         mergeOutputPreviewDefault: '未填写自定义名称：{name}',
         mergeOutputPreviewCustom: '当前输出示例：{name}',
-        mergeOutputPreviewMissing: '选择视频或批量文件夹后会显示更贴近实际的文件名。',
-        mergeOutputHint: '批量会优先按视频和音轨时长配对，再用文件名兜底。合并优先无损复制，MP4 失败时自动把音频转成 AAC 再试一次。',
-        mergeRunSingle: '自动合并',
-        mergeRunBatch: '批量自动配对合并',
-        mergeMissingVideo: '先选择一个待识别的音频或视频文件。',
-        mergeMissingAudio: '音频文件可以不选，系统会自动扫描同目录。',
+        mergeOutputPreviewMissing: '选择文件或文件夹后会显示更贴近实际的文件名。',
+        mergeOutputHint: '配对只按视频和音轨的时长差判断；合并优先无损复制，MP4 失败时自动把音频转成 AAC 再试一次。',
+        mergePreviewTitle: '合并预览',
+        mergePreviewHint: '这里会显示识别到的流、预计配对、大小和时长。',
+        mergePreviewLoading: '正在读取媒体流...',
+        mergePreviewEmpty: '选择文件或文件夹后会自动预览。',
+        mergePreviewInputCount: '候选文件',
+        mergePreviewVideoCount: '视频流',
+        mergePreviewAudioCount: '音轨流',
+        mergePreviewPairCount: '可合并',
+        mergePreviewSize: '预计大小',
+        mergePreviewDuration: '预计时长',
+        mergePreviewPairs: '预计配对',
+        mergePreviewNoPairs: '还没有找到可合并的视频/音轨配对。',
+        mergePreviewDiff: '时长差',
+        mergePreviewTracks: '视频内音轨 {video} · 外部音轨 {audio}',
+        mergePreviewOutput: '输出',
+        mergePreviewUnmatched: '未配对：视频 {video}，音轨 {audio}',
+        mergePreviewSkipped: '已跳过 {count} 个不可用文件。',
+        mergeRunSingle: '合并已选配对',
+        mergeRunBatch: '合并文件夹配对',
+        mergeMissingVideo: '先选择至少一个分离媒体文件。',
+        mergeMissingAudio: '系统会自动识别哪些是视频、哪些是音轨。',
         mergeMissingFolder: '先选择一个待识别文件夹。',
         mergeMissingOutput: '先选择输出目录。',
-        mergeRunningSingle: '正在自动识别并合并当前分离文件。',
-        mergeRunningBatch: '正在批量扫描并合并分离文件。',
+        mergeRunningSingle: '正在扫描并合并已选文件。',
+        mergeRunningBatch: '正在扫描并合并文件夹内的分离文件。',
         subtitleUnavailable: '当前文件没有检测到字幕流，这项现在不能做。',
         subtitleExternalHint: '如果这是硬字幕或根本没有内封字幕，建议改用 Subtitle Edit 这类 OCR 工具来识别字幕。',
         subtitleExternalAction: '打开 Subtitle Edit',
@@ -402,34 +431,51 @@ function getCopy(language: Language) {
         extractSubtitles: 'Extract subtitles',
         extractSubtitlesDesc: 'Export subtitle streams already embedded in the file.',
         mergeTitle: 'Merge separated files',
-        mergeHint: 'Choose one separated file or a folder; the app detects video/audio streams and pairs them by duration first.',
-        mergeMode: 'Merge mode',
-        mergeModeSingle: 'Auto-pair one file',
-        mergeModeBatch: 'Batch folder',
-        mergeVideoFile: 'File to detect',
-        mergeAudioFile: 'Manual audio override',
+        mergeHint: 'Select multiple separated files or a whole folder. The app pairs by stream type and duration difference, not name similarity.',
+        mergeMode: 'Selection scope',
+        mergeModeSingle: 'Multiple files',
+        mergeModeBatch: 'Whole folder',
+        mergeVideoFile: 'Selected files',
+        mergeAudioFile: 'Audio source',
         mergeInputFolder: 'Folder to detect',
-        mergePickVideo: 'Choose file',
-        mergePickAudio: 'Choose audio',
-        mergePickFolder: 'Choose batch folder',
+        mergePickVideo: 'Choose files',
+        mergePickAudio: 'Auto-detect audio',
+        mergePickFolder: 'Choose folder',
         mergeOutputFormat: 'Output container',
         mergeFormatHint: 'MP4 is universal; MKV is more tolerant.',
         mergeOutputName: 'Output name',
         mergeOutputNamePlaceholder: 'Leave empty to use the video file name',
-        mergeOutputNameHint: 'Single merge uses this name directly. Batch merge appends 01, 02, and so on to avoid overwrites.',
+        mergeOutputNameHint: 'One pair uses this name directly. Multiple pairs append 01, 02, and so on to avoid overwrites.',
         mergeOutputPreview: 'Name preview',
         mergeOutputPreviewDefault: 'Without a custom name: {name}',
         mergeOutputPreviewCustom: 'Current output example: {name}',
-        mergeOutputPreviewMissing: 'Choose a video or batch folder to see a more realistic name.',
-        mergeOutputHint: 'Batch pairing prioritizes video/audio duration, then falls back to names. Merge uses lossless stream copy first and retries MP4 with AAC audio if needed.',
-        mergeRunSingle: 'Auto merge',
-        mergeRunBatch: 'Auto-pair and merge folder',
-        mergeMissingVideo: 'Choose one audio or video file first.',
-        mergeMissingAudio: 'The audio file is optional. The app can scan the same folder automatically.',
+        mergeOutputPreviewMissing: 'Choose files or a folder to see a more realistic name.',
+        mergeOutputHint: 'Pairing only uses video/audio duration difference. Merge uses lossless stream copy first and retries MP4 with AAC audio if needed.',
+        mergePreviewTitle: 'Merge preview',
+        mergePreviewHint: 'Shows detected streams, planned pairs, estimated size, and duration.',
+        mergePreviewLoading: 'Reading media streams...',
+        mergePreviewEmpty: 'Choose files or a folder to preview the merge plan.',
+        mergePreviewInputCount: 'Candidates',
+        mergePreviewVideoCount: 'Video streams',
+        mergePreviewAudioCount: 'Audio streams',
+        mergePreviewPairCount: 'Mergeable',
+        mergePreviewSize: 'Est. size',
+        mergePreviewDuration: 'Est. duration',
+        mergePreviewPairs: 'Planned pairs',
+        mergePreviewNoPairs: 'No mergeable video/audio pairs found yet.',
+        mergePreviewDiff: 'Duration diff',
+        mergePreviewTracks: 'video audio {video} · external audio {audio}',
+        mergePreviewOutput: 'Output',
+        mergePreviewUnmatched: 'Unmatched: video {video}, audio {audio}',
+        mergePreviewSkipped: 'Skipped {count} unusable file(s).',
+        mergeRunSingle: 'Merge selected pairs',
+        mergeRunBatch: 'Merge folder pairs',
+        mergeMissingVideo: 'Choose at least one separated media file first.',
+        mergeMissingAudio: 'The app automatically detects video files and audio files.',
         mergeMissingFolder: 'Choose a folder to scan first.',
         mergeMissingOutput: 'Choose an output folder first.',
-        mergeRunningSingle: 'Detecting and merging the selected separated file.',
-        mergeRunningBatch: 'Scanning and merging separated media files.',
+        mergeRunningSingle: 'Scanning and merging selected files.',
+        mergeRunningBatch: 'Scanning and merging separated files in the folder.',
         subtitleUnavailable: 'No subtitle stream was detected in this file.',
         subtitleExternalHint: 'If this is hardsubbed video or the file has no embedded subtitle track, use an OCR tool like Subtitle Edit instead.',
         subtitleExternalAction: 'Open Subtitle Edit',
@@ -591,12 +637,14 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   const [audioFormat, setAudioFormat] = useState<MediaAudioExportFormat>('wav')
   const [subtitleFormat, setSubtitleFormat] = useState<MediaSubtitleExportFormat>('srt')
   const [selectedSubtitleTracks, setSelectedSubtitleTracks] = useState<number[]>([])
-  const [mergeMode, setMergeMode] = useState<MediaMergeMode>('single')
-  const [mergeVideoPath, setMergeVideoPath] = useState('')
-  const [mergeAudioPath, setMergeAudioPath] = useState('')
+  const [mergeMode, setMergeMode] = useState<MediaMergeMode>('selection')
+  const [mergeInputPaths, setMergeInputPaths] = useState<string[]>([])
   const [mergeInputDir, setMergeInputDir] = useState('')
   const [mergeOutputFormat, setMergeOutputFormat] = useState<MediaMergeOutputFormat>('mp4')
   const [mergeOutputName, setMergeOutputName] = useState('')
+  const [mergePreview, setMergePreview] = useState<MediaMergePreviewResult | null>(null)
+  const [mergePreviewLoading, setMergePreviewLoading] = useState(false)
+  const [mergePreviewError, setMergePreviewError] = useState('')
   const [cleanupMode, setCleanupMode] = useState<SubtitleCleanupMode>('single')
   const [cleanupInputPath, setCleanupInputPath] = useState('')
   const [cleanupInputDir, setCleanupInputDir] = useState('')
@@ -642,13 +690,19 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   const isDeepSeekCleanupProvider = normalizedCleanupBaseUrl.includes('deepseek.com')
   const isBigModelCleanupProvider = normalizedCleanupBaseUrl.includes('bigmodel.cn') || normalizedCleanupBaseUrl.includes('z.ai')
   const mergeCustomBaseName = sanitizePreviewBaseName(mergeOutputName)
-  const mergeDefaultStem = mergeMode === 'single' && mergeVideoPath
-    ? getPathStem(mergeVideoPath)
+  const mergeFirstPreviewPath = mergePreview?.pairs[0]?.videoPath ?? mergeInputPaths[0] ?? ''
+  const mergeDefaultStem = mergeFirstPreviewPath
+    ? getPathStem(mergeFirstPreviewPath)
     : language === 'zh' ? '视频文件名' : 'video-file-name'
+  const mergePairCount = mergePreview?.pairCount ?? 0
   const mergePreviewName = mergeCustomBaseName
-    ? `${mergeCustomBaseName}${mergeMode === 'batch' ? ' 01' : ''}.${mergeOutputFormat}`
+    ? `${mergeCustomBaseName}${mergePairCount > 1 ? ' 01' : ''}.${mergeOutputFormat}`
     : `${mergeDefaultStem} - merged.${mergeOutputFormat}`
   const mergePreviewCaption = (mergeCustomBaseName ? copy.mergeOutputPreviewCustom : copy.mergeOutputPreviewDefault).replace('{name}', mergePreviewName)
+  const mergeSelectedSummary = mergeInputPaths.length > 0
+    ? `${mergeInputPaths.length} ${language === 'zh' ? '个文件' : mergeInputPaths.length === 1 ? 'file' : 'files'}`
+    : copy.waiting
+  const mergeSourceReady = mergeMode === 'selection' ? mergeInputPaths.length > 0 : Boolean(mergeInputDir)
   const runtimeSummary = runtimePaths
     ? [
         `${copy.runtimeSource}: ${runtimeToolsSource === 'bundled' ? (language === 'zh' ? '分享包内置' : 'Bundled') : (language === 'zh' ? '系统环境' : 'System')}`,
@@ -666,6 +720,48 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   useEffect(() => {
     persistUiPrefs({ language })
   }, [language])
+
+  useEffect(() => {
+    if (!appApi) return
+    if (!mergeSourceReady) {
+      setMergePreview(null)
+      setMergePreviewError('')
+      setMergePreviewLoading(false)
+      return
+    }
+
+    let active = true
+    const timer = window.setTimeout(() => {
+      setMergePreviewLoading(true)
+      setMergePreviewError('')
+      void appApi.previewMediaMerge({
+        mode: mergeMode,
+        inputPaths: mergeMode === 'selection' ? mergeInputPaths : [],
+        inputDir: mergeMode === 'folder' ? mergeInputDir : null,
+        outputDir,
+        outputFormat: mergeOutputFormat,
+        outputName: mergeOutputName.trim() || null,
+      })
+        .then((preview) => {
+          if (!active) return
+          setMergePreview(preview)
+        })
+        .catch((error) => {
+          if (!active) return
+          setMergePreview(null)
+          setMergePreviewError(error instanceof Error ? error.message : 'Preview failed.')
+        })
+        .finally(() => {
+          if (!active) return
+          setMergePreviewLoading(false)
+        })
+    }, 280)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [mergeInputDir, mergeInputPaths, mergeMode, mergeOutputFormat, mergeOutputName, mergeSourceReady, outputDir])
 
   async function refreshRuntimeState() {
     if (!appApi) return
@@ -860,29 +956,21 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     if (selected) setOutputDir(selected)
   }
 
-  async function pickMergeVideoFile() {
-    const selected = await appApi.pickMediaFile(mergeVideoPath || inputPath || outputDir || undefined)
-    if (!selected) return
-    setMergeVideoPath(selected)
+  async function pickMergeFiles() {
+    const selected = await appApi.pickMediaFiles(mergeInputPaths[0] || inputPath || outputDir || undefined)
+    if (selected.length === 0) return
+    setMergeMode('selection')
+    setMergeInputPaths(selected)
     if (!outputDir) {
-      setOutputDir(getDirectoryFromPath(selected))
+      setOutputDir(getDirectoryFromPath(selected[0]))
     }
-    await inspect(selected)
-  }
-
-  async function pickMergeAudioFile() {
-    const selected = await appApi.pickMediaFile(mergeAudioPath || mergeVideoPath || outputDir || undefined)
-    if (!selected) return
-    setMergeAudioPath(selected)
-    if (!outputDir) {
-      setOutputDir(getDirectoryFromPath(selected))
-    }
-    await inspect(selected)
+    await inspect(selected[0])
   }
 
   async function pickMergeFolder() {
     const selected = await appApi.pickDirectory(mergeInputDir || outputDir || undefined)
     if (!selected) return
+    setMergeMode('folder')
     setMergeInputDir(selected)
     if (!outputDir) {
       setOutputDir(selected)
@@ -1141,12 +1229,12 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
       setStatusMessage(copy.mergeMissingOutput)
       return
     }
-    if (mode === 'single' && !mergeVideoPath) {
+    if (mode === 'selection' && mergeInputPaths.length === 0) {
       setStatus('error')
       setStatusMessage(copy.mergeMissingVideo)
       return
     }
-    if (mode === 'batch' && !mergeInputDir) {
+    if (mode === 'folder' && !mergeInputDir) {
       setStatus('error')
       setStatusMessage(copy.mergeMissingFolder)
       return
@@ -1157,15 +1245,14 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     setCurrentCommand('')
     setTaskProgress(null)
     setStatus('running')
-    setStatusMessage(mode === 'single' ? copy.mergeRunningSingle : copy.mergeRunningBatch)
-    setRunningTaskLabel(mode === 'single' ? copy.mergeRunSingle : copy.mergeRunBatch)
+    setStatusMessage(mode === 'selection' ? copy.mergeRunningSingle : copy.mergeRunningBatch)
+    setRunningTaskLabel(mode === 'selection' ? copy.mergeRunSingle : copy.mergeRunBatch)
 
     try {
       await appApi.runMediaMerge({
         mode,
-        videoPath: mode === 'single' ? mergeVideoPath : null,
-        audioPath: mode === 'single' ? mergeAudioPath : null,
-        inputDir: mode === 'batch' ? mergeInputDir : null,
+        inputPaths: mode === 'selection' ? mergeInputPaths : [],
+        inputDir: mode === 'folder' ? mergeInputDir : null,
         outputDir,
         outputFormat: mergeOutputFormat,
         outputName: mergeOutputName.trim() || null,
@@ -1297,7 +1384,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
           <div className="status-card media-status-card">
             <span className="status-card__label">{copy.inputFile}</span>
             <strong>{inspection?.fileName ?? copy.waiting}</strong>
-            <p>{inspection ? `${inspection.formatName} · ${formatDuration(inspection.duration, language)}` : inputPath || mergeVideoPath || mergeAudioPath || mergeInputDir || cleanupInputPath || cleanupInputDir || copy.waiting}</p>
+            <p>{inspection ? `${inspection.formatName} · ${formatDuration(inspection.duration, language)}` : inputPath || mergeInputPaths[0] || mergeInputDir || cleanupInputPath || cleanupInputDir || copy.waiting}</p>
           </div>
           <div className="status-card media-status-card">
             <span className="status-card__label">{copy.status}</span>
@@ -1365,7 +1452,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                   </div>
                   <div className="action-row media-toolbar-actions">
                     <button className="ghost-button" type="button" onClick={() => void inspect()}>{inspection ? copy.refresh : copy.inspect}</button>
-                    <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir || inputPath || mergeVideoPath || mergeAudioPath || mergeInputDir || cleanupInputPath || cleanupInputDir)}>{copy.openFolder}</button>
+                    <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir || inputPath || mergeInputPaths[0] || mergeInputDir || cleanupInputPath || cleanupInputDir)}>{copy.openFolder}</button>
                     <button className="ghost-button" type="button" onClick={() => embedded ? onBack?.() : window.close()}>
                       {embedded ? copy.backToDownload : copy.closeWindow}
                     </button>
@@ -1497,35 +1584,34 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                 <div className="field">
                   <span>{copy.mergeMode}</span>
                   <div className="segmented media-cleanup-segmented">
-                    <button className={mergeMode === 'single' ? 'segmented__item active' : 'segmented__item'} type="button" onClick={() => setMergeMode('single')}>
+                    <button className={mergeMode === 'selection' ? 'segmented__item active' : 'segmented__item'} type="button" onClick={() => setMergeMode('selection')}>
                       {copy.mergeModeSingle}
                     </button>
-                    <button className={mergeMode === 'batch' ? 'segmented__item active' : 'segmented__item'} type="button" onClick={() => setMergeMode('batch')}>
+                    <button className={mergeMode === 'folder' ? 'segmented__item active' : 'segmented__item'} type="button" onClick={() => setMergeMode('folder')}>
                       {copy.mergeModeBatch}
                     </button>
                   </div>
                 </div>
 
-                {mergeMode === 'single' ? (
+                {mergeMode === 'selection' ? (
                   <>
                     <div className="media-path-group">
                       <label className="field field--grow media-path-field">
                         <span>{copy.mergeVideoFile}</span>
-                        <input value={mergeVideoPath} onChange={(event) => setMergeVideoPath(event.target.value)} placeholder={copy.mergeVideoFile} />
+                        <input value={mergeSelectedSummary} readOnly placeholder={copy.mergeVideoFile} />
                       </label>
-                      <button className="ghost-button media-side-button media-path-button" type="button" onClick={() => void pickMergeVideoFile()}>
+                      <button className="ghost-button media-side-button media-path-button" type="button" onClick={() => void pickMergeFiles()}>
                         {copy.mergePickVideo}
                       </button>
                     </div>
-                    <div className="media-path-group">
-                      <label className="field field--grow media-path-field">
-                        <span>{copy.mergeAudioFile}</span>
-                        <input value={mergeAudioPath} onChange={(event) => setMergeAudioPath(event.target.value)} placeholder={copy.mergeAudioFile} />
-                      </label>
-                      <button className="ghost-button media-side-button media-path-button" type="button" onClick={() => void pickMergeAudioFile()}>
-                        {copy.mergePickAudio}
-                      </button>
-                    </div>
+                    {mergeInputPaths.length > 0 ? (
+                      <div className="merge-file-list">
+                        {mergeInputPaths.slice(0, 6).map((filePath) => (
+                          <span key={filePath}>{getPathBaseName(filePath)}</span>
+                        ))}
+                        {mergeInputPaths.length > 6 ? <small>+{mergeInputPaths.length - 6}</small> : null}
+                      </div>
+                    ) : null}
                     <small className="field-help merge-wide-help">{copy.mergeMissingAudio}</small>
                   </>
                 ) : (
@@ -1572,17 +1658,92 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                   <span>{copy.mergeOutputPreview}</span>
                   <strong>{mergePreviewName}</strong>
                   <small>{mergePreviewCaption}</small>
-                  {!mergeCustomBaseName && mergeMode === 'batch' ? <small>{copy.mergeOutputPreviewMissing}</small> : null}
+                  {!mergeCustomBaseName && !mergeSourceReady ? <small>{copy.mergeOutputPreviewMissing}</small> : null}
+                </div>
+
+                <div className="merge-preview-panel">
+                  <div className="section-title section-title--tight">
+                    <span>{copy.mergePreviewTitle}</span>
+                    <small>{mergePreviewLoading ? copy.mergePreviewLoading : copy.mergePreviewHint}</small>
+                  </div>
+                  {mergePreviewError ? (
+                    <div className="media-inline-note media-inline-note--warning">
+                      <span>{mergePreviewError}</span>
+                    </div>
+                  ) : !mergeSourceReady ? (
+                    <div className="command-box media-selection-box">
+                      <code>{copy.mergePreviewEmpty}</code>
+                    </div>
+                  ) : mergePreview ? (
+                    <>
+                      <div className="merge-preview-grid">
+                        <div>
+                          <span>{copy.mergePreviewInputCount}</span>
+                          <strong>{mergePreview.inputCount}</strong>
+                        </div>
+                        <div>
+                          <span>{copy.mergePreviewVideoCount}</span>
+                          <strong>{mergePreview.videoCount}</strong>
+                        </div>
+                        <div>
+                          <span>{copy.mergePreviewAudioCount}</span>
+                          <strong>{mergePreview.audioCount}</strong>
+                        </div>
+                        <div>
+                          <span>{copy.mergePreviewPairCount}</span>
+                          <strong>{mergePreview.pairCount}</strong>
+                        </div>
+                        <div>
+                          <span>{copy.mergePreviewSize}</span>
+                          <strong>{formatBytes(mergePreview.estimatedSizeBytes, language)}</strong>
+                        </div>
+                        <div>
+                          <span>{copy.mergePreviewDuration}</span>
+                          <strong>{formatDuration(mergePreview.estimatedDurationSeconds, language)}</strong>
+                        </div>
+                      </div>
+                      <div className="merge-pair-list">
+                        <span>{copy.mergePreviewPairs}</span>
+                        {mergePreview.pairs.length === 0 ? (
+                          <small>{copy.mergePreviewNoPairs}</small>
+                        ) : (
+                          mergePreview.pairs.slice(0, 5).map((pair) => (
+                            <div className="merge-pair-item" key={`${pair.videoPath}-${pair.audioPath}`}>
+                              <strong>{getPathBaseName(pair.videoPath)}</strong>
+                              <span>{getPathBaseName(pair.audioPath)}</span>
+                              <small>
+                                {copy.mergePreviewDiff}: {pair.durationDiff === null ? copy.waiting : `${pair.durationDiff.toFixed(3)}s`} · {copy.mergePreviewTracks.replace('{video}', String(pair.videoAudioTracks)).replace('{audio}', String(pair.audioTracks))}
+                              </small>
+                              <small>
+                                {copy.mergePreviewSize}: {formatBytes(pair.estimatedSizeBytes, language)} · {copy.mergePreviewDuration}: {formatDuration(pair.durationSeconds, language)}
+                              </small>
+                              <small>{copy.mergePreviewOutput}: {getPathBaseName(pair.outputPath)}</small>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      {(mergePreview.unmatchedVideoCount > 0 || mergePreview.unmatchedAudioCount > 0) ? (
+                        <small className="field-help">{copy.mergePreviewUnmatched.replace('{video}', String(mergePreview.unmatchedVideoCount)).replace('{audio}', String(mergePreview.unmatchedAudioCount))}</small>
+                      ) : null}
+                      {mergePreview.skipped.length > 0 ? (
+                        <small className="field-help">{copy.mergePreviewSkipped.replace('{count}', String(mergePreview.skipped.length))}</small>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="command-box media-selection-box">
+                      <code>{copy.mergePreviewLoading}</code>
+                    </div>
+                  )}
                 </div>
 
                 <div className="action-row media-primary-actions">
                   <button
                     className="primary-button media-run-button"
                     type="button"
-                    disabled={status === 'running'}
+                    disabled={status === 'running' || !mergeSourceReady || (mergePreview !== null && mergePreview.pairCount === 0)}
                     onClick={() => void runMerge(mergeMode)}
                   >
-                    {mergeMode === 'single' ? copy.mergeRunSingle : copy.mergeRunBatch}
+                    {mergeMode === 'selection' ? copy.mergeRunSingle : copy.mergeRunBatch}
                   </button>
                   <button className="ghost-button" type="button" disabled={status !== 'running'} onClick={() => void appApi.cancelMediaTool()}>
                     {copy.cancel}

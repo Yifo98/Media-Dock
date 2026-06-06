@@ -4,17 +4,17 @@
 
 ## 下载入口
 
-- [GitHub Releases 页面](https://github.com/Yifo98/YT-DLP-Studio/releases)
-- [最新版本下载](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
+- [GitHub Releases 页面](https://github.com/Yifo98/Media-Dock/releases)
+- [最新版本下载](https://github.com/Yifo98/Media-Dock/releases/latest)
 
 ## 当前推荐资产
 
-- `Media Dock-2.0.2-win.zip`
+- `Media Dock-2.0.4-win.zip`
   说明：Windows 推荐下载，解压后双击 `Launch Media Dock.bat`
 - macOS 资产
-  说明：推荐发布 `Media Dock-2.0.2-arm64-mac.zip`，解压后双击 `Launch Media Dock.command`
+  说明：推荐发布 `Media Dock-2.0.4-arm64-mac.zip`，解压后双击 `Launch Media Dock.command`
 
-## 2.0.2 更新摘要
+## 2.0.4 更新摘要
 
 - 公开应用名改为 `Media Dock`，界面和包名更简短
 - 3 号图标已接入 Windows `.ico` 和 macOS `.icns`
@@ -24,8 +24,9 @@
 - Windows 端可自动调用 Bandizip `bz.exe` 做运行时 zip 解压，未安装时回退 PowerShell
 - 打包流程会剔除 cookies、用户配置、缓存和字幕整理 API 配置，避免把本机敏感信息带进分享包
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
-- 批量合并优先按照媒体时长配对，名称只作为兜底辅助
+- 多文件合并优先按照媒体流类型和时长配对，不再依赖文件名相似度
 - 合并输出支持自定义文件名，批量任务会自动追加 `01`、`02` 序号避免覆盖
+- Cookie 选择会提示过期和临期状态，减少误选失效登录态
 - 本地媒体工具台新增字幕整理能力，支持 OpenAI-compatible 接口、模型拉取、连接测试、批量清洗和停止任务
 - 桌面控制台压缩实时信息区域，日志和最近任务不再被挤到最底部
 - 修复 Windows 下载标题乱码，下载任务与实时信息会按本地编码正常显示
@@ -86,22 +87,22 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## 资产命名建议
 
-- `Media Dock-2.0.2-win.zip`
-- `Media Dock-2.0.2-arm64-mac.zip`
+- `Media Dock-2.0.4-win.zip`
+- `Media Dock-2.0.4-arm64-mac.zip`
 
 ## English
 
 ## Download Links
 
-- [GitHub Releases page](https://github.com/Yifo98/YT-DLP-Studio/releases)
-- [Latest release](https://github.com/Yifo98/YT-DLP-Studio/releases/latest)
+- [GitHub Releases page](https://github.com/Yifo98/Media-Dock/releases)
+- [Latest release](https://github.com/Yifo98/Media-Dock/releases/latest)
 
 ## Recommended Asset
 
-- `Media Dock-2.0.2-win.zip`
+- `Media Dock-2.0.4-win.zip`
   Notes: recommended Windows build, unzip and run `Launch Media Dock.bat`
 - macOS assets
-  Notes: prefer `Media Dock-2.0.2-arm64-mac.zip`, unzip and run `Launch Media Dock.command`
+  Notes: prefer `Media Dock-2.0.4-arm64-mac.zip`, unzip and run `Launch Media Dock.command`
 
 ## Recommended Release Copy
 

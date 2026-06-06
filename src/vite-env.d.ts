@@ -21,6 +21,10 @@ type CookieFileInfo = {
   path: string
   domains: string[]
   cookieCount: number
+  expiredCookieCount: number
+  expiredCookieNames: string[]
+  expiringSoonCookieCount: number
+  expiringSoonCookieNames: string[]
 }
 
 type SelfCheckItem = {
@@ -56,7 +60,7 @@ type MediaToolAction = 'extractAudio' | 'extractSubtitles'
 type MediaAudioExportFormat = 'mp3' | 'wav' | 'flac' | 'm4a'
 type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
-type MediaMergeMode = 'single' | 'batch'
+type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv'
 
 type SubtitleCleanupConfig = {
@@ -95,6 +99,40 @@ type MediaInspection = {
   duration: number | null
   formatName: string
   streams: MediaStreamInfo[]
+}
+
+type MediaMergePair = {
+  videoPath: string
+  audioPath: string
+  outputPath: string
+  durationDiff: number | null
+  durationSeconds: number | null
+  estimatedSizeBytes: number | null
+  videoAudioTracks: number
+  audioTracks: number
+  matchReason: string
+}
+
+type MediaMergePreviewResult = {
+  inputCount: number
+  videoCount: number
+  audioCount: number
+  pairCount: number
+  unmatchedVideoCount: number
+  unmatchedAudioCount: number
+  estimatedSizeBytes: number | null
+  estimatedDurationSeconds: number | null
+  pairs: MediaMergePair[]
+  skipped: { path: string; reason: string }[]
+}
+
+type MediaMergeRequest = {
+  mode: MediaMergeMode
+  inputPaths: string[]
+  inputDir: string | null
+  outputDir: string
+  outputFormat: MediaMergeOutputFormat
+  outputName: string | null
 }
 
 type DownloadRequest = {
@@ -183,6 +221,7 @@ interface Window {
     openMediaTools: () => Promise<void>
     pickDirectory: (currentPath?: string) => Promise<string | null>
     pickMediaFile: (currentPath?: string) => Promise<string | null>
+    pickMediaFiles: (currentPath?: string) => Promise<string[]>
     pickSubtitleFile: (currentPath?: string) => Promise<string | null>
     exportConfig: (config: unknown) => Promise<string | null>
     importConfig: () => Promise<unknown | null>
@@ -197,15 +236,8 @@ interface Window {
       subtitleFormat: MediaSubtitleExportFormat
       subtitleStreamIndexes: number[]
     }) => Promise<string[]>
-    runMediaMerge: (request: {
-      mode: MediaMergeMode
-      videoPath: string | null
-      audioPath: string | null
-      inputDir: string | null
-      outputDir: string
-      outputFormat: MediaMergeOutputFormat
-      outputName: string | null
-    }) => Promise<string[]>
+    previewMediaMerge: (request: MediaMergeRequest) => Promise<MediaMergePreviewResult>
+    runMediaMerge: (request: MediaMergeRequest) => Promise<string[]>
     cancelMediaTool: () => Promise<void>
     getSubtitleCleanupConfig: () => Promise<SubtitleCleanupConfig>
     saveSubtitleCleanupConfig: (config: Partial<SubtitleCleanupConfig>) => Promise<SubtitleCleanupConfig>
