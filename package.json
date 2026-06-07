@@ -20,8 +20,6 @@
     "preview": "vite preview",
     "start": "electron .",
     "launch:mac": "zsh scripts/launch-mac.sh",
-    "extension:build": "node browser-extension/media-dock-cookie-exporter/scripts/build.mjs",
-    "extension:pack": "node browser-extension/media-dock-cookie-exporter/scripts/build.mjs && node browser-extension/media-dock-cookie-exporter/scripts/package.mjs",
     "dist": "npm run build && electron-builder",
     "dist:mac": "zsh scripts/build-mac-share.sh",
     "dist:win": "zsh scripts/build-win-share.sh",

@@ -16,7 +16,8 @@ YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
 DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip}"
-COOKIE_EXTENSION_DIST_DIR="$PROJECT_ROOT/browser-extension/media-dock-cookie-exporter/dist"
+COOKIE_EXTENSION_PROJECT_DIR="${MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR:-$PROJECT_ROOT/browser-extension/media-dock-cookie-exporter}"
+COOKIE_EXTENSION_DIST_DIR="$COOKIE_EXTENSION_PROJECT_DIR/dist"
 COOKIE_EXTENSION_RELEASE_DIR="$RELEASE_DIR/extensions"
 ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
 
@@ -52,15 +53,32 @@ copy_cookie_extension_assets() {
   local extension_zip
 
   extension_zip="$(find "$COOKIE_EXTENSION_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | sort | tail -n 1)"
-  if [[ ! -d "$COOKIE_EXTENSION_DIST_DIR" || -z "$extension_zip" ]]; then
-    echo "MediaCookies extension assets were not found. Run npm run extension:pack first."
+  if [[ -z "$extension_zip" ]]; then
+    echo "MediaCookies extension zip was not found in $COOKIE_EXTENSION_RELEASE_DIR."
+    echo "Build it in the separate MediaCookies project first, then copy media-dock-cookie-exporter-*.zip here."
     exit 1
   fi
 
   mkdir -p "$package_dir/extensions"
-  rm -rf "$package_dir/extensions/media-dock-cookie-exporter"
-  cp -R "$COOKIE_EXTENSION_DIST_DIR" "$package_dir/extensions/media-dock-cookie-exporter"
   cp "$extension_zip" "$package_dir/extensions/"
+
+  if [[ -d "$COOKIE_EXTENSION_DIST_DIR" ]]; then
+    rm -rf "$package_dir/extensions/media-dock-cookie-exporter"
+    cp -R "$COOKIE_EXTENSION_DIST_DIR" "$package_dir/extensions/media-dock-cookie-exporter"
+  fi
+}
+
+prepare_cookie_extension_assets() {
+  mkdir -p "$COOKIE_EXTENSION_RELEASE_DIR"
+
+  if [[ -f "$COOKIE_EXTENSION_PROJECT_DIR/scripts/build.mjs" && -f "$COOKIE_EXTENSION_PROJECT_DIR/scripts/package.mjs" ]]; then
+    node "$COOKIE_EXTENSION_PROJECT_DIR/scripts/build.mjs"
+    node "$COOKIE_EXTENSION_PROJECT_DIR/scripts/package.mjs"
+  elif ! find "$COOKIE_EXTENSION_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | grep -q .; then
+    echo "MediaCookies extension project was not found at $COOKIE_EXTENSION_PROJECT_DIR."
+    echo "Copy a prebuilt media-dock-cookie-exporter-*.zip into $COOKIE_EXTENSION_RELEASE_DIR before packaging."
+    exit 1
+  fi
 }
 
 repack_windows_launcher_zip() {
@@ -287,7 +305,7 @@ cp "$FFMPEG_EXE" "$TOOLS_BIN_DIR/ffmpeg.exe"
 cp "$FFPROBE_EXE" "$TOOLS_BIN_DIR/ffprobe.exe"
 
 npm run build
-npm run extension:pack
+prepare_cookie_extension_assets
 npx electron-builder --win zip --x64
 
 WIN_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*win*.zip' | head -n 1)"
