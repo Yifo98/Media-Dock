@@ -1,14 +1,14 @@
 # Media Dock
 
-![Media Dock icon](build/icon.png)
+![Media Dock](build/readme-hero.png)
 
 Media Dock 是一个本地媒体下载和整理工作台，把链接下载、`cookies.txt` 选择、音视频合并和本地媒体后处理整理到同一个界面里。
 
 ## 下载
 
 - [前往 GitHub Releases 下载](https://github.com/Yifo98/Media-Dock/releases/latest)
-- Windows：优先下载 `Media Dock-2.0.4-win.zip`
-- macOS：优先下载 `Media Dock-2.0.4-arm64-mac.zip`
+- Windows：优先下载 `Media.Dock-2.0.11-win.zip`
+- macOS：优先下载 `Media.Dock-2.0.11-arm64-mac.zip`
 
 当前标准发布包目标就是“解压即用”。
 
@@ -59,7 +59,7 @@ brew install yt-dlp ffmpeg deno
 
 Windows 标准包提供脚本启动版：
 
-- `Media Dock-2.0.4-win.zip`
+- `Media.Dock-2.0.11-win.zip`
 
 解压后双击根目录的 `Launch Media Dock.bat`。运行所需工具已经内置，不需要额外安装 Conda、ffmpeg、yt-dlp 或 Deno。
 
@@ -69,22 +69,23 @@ Windows 标准包提供脚本启动版：
 - 媒体工具台：音轨分离、字幕导出、流信息查看、字幕整理、音视频单个或批量合并
 - Cookies 管理：导入本地 `cookies.txt` 处理登录态或会员内容
 
-## 2.0.4 亮点
+## 2.0.11 亮点
 
-- 更名为 `Media Dock`，公开界面更简短
-- 新图标已接入 Windows `.ico` 和 macOS `.icns`
+- Windows / macOS 分享包都内置当前 MediaCookies 插件包，解压后可直接加载插件 ZIP
 - 标准 ZIP 改为脚本启动结构，根目录放启动脚本，核心运行组件放在 `core/`
 - 媒体工具改为主窗口内部工作区，不再弹出额外窗口
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
 - 多文件合并优先按媒体流类型和时长配对，不再依赖文件名相似度
+- 下载任务支持并发队列、任务编号、任务日志复制和导出
+- 下载任务按“进行中 / 已完成 / 异常”分组，避免状态混在一起
+- 抖音 / TikTok 链接会提前检查，减少把推荐流入口误当成具体视频下载
+- 默认避免展开播放列表，减少误下载整组列表的情况
+- 本地 MOV / DaVinci 输出会显示更明确的合并进度和处理日志
 - 合并输出支持自定义文件名，批量任务会自动追加 `01`、`02` 序号避免覆盖
-- Cookie 选择会提示过期和临期状态，减少误选失效登录态
+- Cookie 选择和导入逻辑会提示过期、临期和来源匹配状态，减少误选失效登录态
 - 默认下载、Cookies、缓存、更新包和 Deno 自动安装都保存在同级 `Media Dock Data/`
 - Windows 端可自动调用 Bandizip `bz.exe` 解压运行时 zip，未安装时回退 PowerShell
-- 实时信息区域更紧凑，日志和最近任务位置更靠上
-- 媒体工具台新增 OpenAI-compatible 字幕整理能力
-- 支持模型拉取、连接测试、批量整理、自定义服务保存
-- 修复 Windows 下载面板标题乱码，实时任务名称会按本地编码正常显示
+- 自动更新和 Deno 缺失修复会下载到同级数据目录，不写入系统用户目录
 
 ## 版本规则
 
@@ -142,8 +143,8 @@ Media Dock is a local media download and cleanup workspace, combining downloads,
 ## Download
 
 - [Download from GitHub Releases](https://github.com/Yifo98/Media-Dock/releases/latest)
-- Windows: prefer `Media Dock-2.0.4-win.zip`
-- macOS: prefer `Media Dock-2.0.4-arm64-mac.zip`
+- Windows: prefer `Media.Dock-2.0.11-win.zip`
+- macOS: prefer `Media.Dock-2.0.11-arm64-mac.zip`
 
 The standard shared builds are now intended to be plug-and-play.
 
@@ -192,7 +193,7 @@ It calls `scripts/launch-mac.sh` for local development checks.
 
 Windows ships as a script-launched zip:
 
-- `Media Dock-2.0.4-win.zip`
+- `Media.Dock-2.0.11-win.zip`
 
 Unzip it and double-click `Launch Media Dock.bat`. Required runtime tools are bundled, so users do not need to install Conda, ffmpeg, yt-dlp, or Deno separately.
 
@@ -202,22 +203,23 @@ Unzip it and double-click `Launch Media Dock.bat`. Required runtime tools are bu
 - Media tools workspace for audio extraction, subtitle export, stream inspection, subtitle cleanup, and audio/video merge
 - Local `cookies.txt` support for signed-in or member-only content
 
-## 2.0.4 Highlights
+## 2.0.11 Highlights
 
-- Renamed the public app surface to `Media Dock`
-- Added the selected option 3 icon as Windows `.ico` and macOS `.icns`
+- Windows and macOS share packages both include the current MediaCookies extension ZIP
 - Standard zips now use root launch scripts, with runtime components kept in `core/`
 - Moved Media Tools into the main window instead of opening a separate window
 - Added single-pair and batch-folder local audio/video merge workflows
 - Multi-file merge now pairs by stream type and duration instead of filename similarity
+- Download tasks now support concurrent queues, task numbers, and per-task log copy/export
+- Download tasks are grouped into Active / Done / Issues views
+- Douyin / TikTok links are checked early to avoid treating feed pages as concrete video URLs
+- Playlist expansion is disabled by default to reduce accidental full-list downloads
+- Local MOV / DaVinci output now reports clearer merge progress and processing logs
 - Merge output supports a custom base name, with `01`, `02` suffixes added automatically for batch jobs
-- Cookie selection now warns about expired and soon-to-expire files to reduce bad login-state choices
+- Cookie selection and import now warn about expiry, soon-expiry, and source matching state
 - Default downloads, cookies, cache, update zips, and auto-installed Deno stay in sibling `Media Dock Data/`
 - Windows can use Bandizip `bz.exe` for runtime zip extraction, with PowerShell fallback when Bandizip is not installed
-- Tightened the telemetry rail so logs and recent jobs stay higher on screen
-- Added OpenAI-compatible subtitle cleanup in the media tools window
-- Added model fetching, connection testing, batch cleanup, and custom provider presets
-- Fixed mojibake in Windows download titles by decoding yt-dlp output with the local code page
+- Update downloads and Deno repair files stay in the sibling data folder instead of system user folders
 
 ## Versioning Rules
 
