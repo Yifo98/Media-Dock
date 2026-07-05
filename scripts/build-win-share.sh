@@ -19,6 +19,7 @@ FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/downloa
 DEFAULT_COOKIE_EXTENSION_PROJECT_DIR="$(cd "$PROJECT_ROOT/.." && pwd)/MediaCookies"
 COOKIE_EXTENSION_PROJECT_DIR="${MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR:-$DEFAULT_COOKIE_EXTENSION_PROJECT_DIR}"
 COOKIE_EXTENSION_DIST_DIR="$COOKIE_EXTENSION_PROJECT_DIR/dist"
+COOKIE_EXTENSION_PROJECT_RELEASE_DIR="$COOKIE_EXTENSION_PROJECT_DIR/release"
 COOKIE_EXTENSION_RELEASE_DIR="$RELEASE_DIR/extensions"
 ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
 
@@ -73,8 +74,15 @@ prepare_cookie_extension_assets() {
   mkdir -p "$COOKIE_EXTENSION_RELEASE_DIR"
 
   if [[ -f "$COOKIE_EXTENSION_PROJECT_DIR/scripts/build.mjs" && -f "$COOKIE_EXTENSION_PROJECT_DIR/scripts/package.mjs" ]]; then
-    node "$COOKIE_EXTENSION_PROJECT_DIR/scripts/build.mjs"
-    node "$COOKIE_EXTENSION_PROJECT_DIR/scripts/package.mjs"
+    (cd "$COOKIE_EXTENSION_PROJECT_DIR" && node scripts/build.mjs && node scripts/package.mjs)
+    local extension_zip
+    extension_zip="$(find "$COOKIE_EXTENSION_PROJECT_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | sort | tail -n 1)"
+    if [[ -z "$extension_zip" ]]; then
+      echo "MediaCookies extension zip was not produced in $COOKIE_EXTENSION_PROJECT_RELEASE_DIR."
+      exit 1
+    fi
+    rm -f "$COOKIE_EXTENSION_RELEASE_DIR"/media-dock-cookie-exporter-*.zip(N)
+    cp "$extension_zip" "$COOKIE_EXTENSION_RELEASE_DIR/"
   elif ! find "$COOKIE_EXTENSION_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | grep -q .; then
     echo "MediaCookies extension project was not found at $COOKIE_EXTENSION_PROJECT_DIR."
     echo "Copy a prebuilt media-dock-cookie-exporter-*.zip into $COOKIE_EXTENSION_RELEASE_DIR before packaging."
