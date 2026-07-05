@@ -110,7 +110,9 @@ npm run version:major
 推荐使用随桌面分享包附带的 MediaCookies 插件包：
 
 - Windows / macOS 分享 ZIP 里的 `extensions/media-dock-cookie-exporter-*.zip`
-- 如需本地开发插件，请在独立插件项目里维护源码，再把构建好的插件 ZIP 放到本项目的 `release/extensions/`，打包脚本会自动随桌面包带上
+- 插件源码已拆到独立仓库：[Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
+- 本地打包默认读取同级 `../MediaCookies`；如路径不同，可设置 `MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR=/path/to/MediaCookies`
+- 如只保留预构建包，可把构建好的插件 ZIP 放到本项目的 `release/extensions/`，打包脚本会自动随桌面包带上
 
 这个插件只导出用户选择的 Cookie，不读取密码，不上传网络。遇到登录态或会员内容时，建议先在同一个浏览器确认账号状态和目标内容可访问，再预览是否缺少关键登录标记。插件默认会先按 [yt-dlp 官方 supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) 筛出当前浏览器里可能用于下载的 Cookie 来源；用户也可以主动切换到“全部 Cookie”高级模式。官方支持列表代表 extractor 存在，不等于所有链接都稳定可下，仍可能受站点加密、会员权限、验证码和风控影响。
 
@@ -244,7 +246,9 @@ If a target site requires a signed-in or member session, export a cookie ZIP wit
 Recommended bundled MediaCookies extension package:
 
 - `extensions/media-dock-cookie-exporter-*.zip` inside the Windows / macOS share ZIP
-- If the extension needs local development, keep its source in a separate extension project, then copy the built extension ZIP into this repo's `release/extensions/`; the desktop packaging scripts will include it automatically
+- Extension source now lives in a separate repository: [Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
+- Local packaging defaults to the sibling `../MediaCookies` directory; set `MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR=/path/to/MediaCookies` when using a different location
+- If you only keep a prebuilt package, copy the built extension ZIP into this repo's `release/extensions/`; the desktop packaging scripts will include it automatically
 
 The extension exports only user-selected cookies. It does not read passwords or upload data. For signed-in or member-only content, confirm the account state and target content in the same browser profile before previewing key login markers. By default, the extension filters the browser cookie list against the [official yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md); users can explicitly switch to an advanced all-cookie mode. yt-dlp listing support does not guarantee every URL will download successfully.
 
