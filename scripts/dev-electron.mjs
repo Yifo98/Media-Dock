@@ -28,14 +28,34 @@ async function waitForRenderer() {
 }
 
 async function resolveElectronCommand() {
-  const localBin = process.platform === 'win32'
-    ? join(process.cwd(), 'node_modules', '.bin', 'electron.cmd')
-    : join(process.cwd(), 'node_modules', '.bin', 'electron')
+  return resolveLocalBin('electron')
+}
 
+async function resolveLocalBin(command) {
+  const executable = process.platform === 'win32' ? `${command}.cmd` : command
+  const localBin = join(process.cwd(), 'node_modules', '.bin', executable)
   await access(localBin, constants.F_OK)
   return localBin
 }
 
+async function buildElectronMain() {
+  const tscCommand = await resolveLocalBin('tsc')
+  const child = spawn(tscCommand, ['-p', 'tsconfig.electron.json'], {
+    stdio: 'inherit',
+    env: process.env,
+  })
+
+  const exitCode = await new Promise((resolve, reject) => {
+    child.on('error', reject)
+    child.on('exit', (code) => resolve(code ?? 0))
+  })
+
+  if (exitCode !== 0) {
+    throw new Error(`Electron main build failed with exit code ${exitCode}`)
+  }
+}
+
+await buildElectronMain()
 const devServerUrl = await waitForRenderer()
 
 const electronCommand = await resolveElectronCommand()

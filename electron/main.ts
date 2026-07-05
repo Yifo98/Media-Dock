@@ -518,7 +518,7 @@ function getCookiesDir() {
 function getCookieExtensionRuntimeDir() {
   return app.isPackaged
     ? join(getPortableRootDir(), 'extensions', 'media-dock-cookie-exporter')
-    : join(getDevRootDir(), 'browser-extension', 'media-dock-cookie-exporter', 'dist')
+    : join(process.env.MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR ?? join(getDevRootDir(), '..', 'MediaCookies'), 'dist')
 }
 
 function getCookieExtensionDir() {
@@ -1617,6 +1617,26 @@ function assertSafeExternalUrl(targetUrl: string) {
   return parsed.toString()
 }
 
+function assertSafeLocalPath(value: string) {
+  const targetPath = String(value ?? '').trim()
+  if (!targetPath) {
+    throw new Error('Path is required.')
+  }
+  if (targetPath.includes('\0')) {
+    throw new Error('Path contains an invalid character.')
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(targetPath)) {
+    throw new Error('Only local filesystem paths can be opened.')
+  }
+  if (!isAbsolute(targetPath)) {
+    throw new Error('Only absolute filesystem paths can be opened.')
+  }
+  if (!existsSync(targetPath)) {
+    throw new Error(`Path does not exist: ${targetPath}`)
+  }
+  return targetPath
+}
+
 function getHostWindow(webContentsId?: Electron.WebContents) {
   return (webContentsId ? BrowserWindow.fromWebContents(webContentsId) : null) ?? mediaToolsWindow ?? mainWindow!
 }
@@ -1760,6 +1780,57 @@ function tokenizeExtraArgs(value: string) {
   return tokens.map((token) => token.replace(/^['"]|['"]$/g, ''))
 }
 
+const allowedExtraArgFlags = new Set([
+  '--no-playlist',
+  '--embed-metadata',
+  '--write-subs',
+  '--write-auto-subs',
+  '--skip-download',
+  '-k',
+  '--extract-audio',
+  '--embed-thumbnail',
+  '--write-thumbnail',
+  '--write-description',
+  '--write-info-json',
+])
+
+const allowedExtraArgValues = new Map<string, Set<string>>([
+  ['--sub-langs', new Set(['all'])],
+  ['--audio-format', new Set(['mp3'])],
+  ['--audio-quality', new Set(['0'])],
+])
+
+function validateExtraArgs(args: string[]) {
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index]
+    const [inlineOption, inlineValue] = arg.split('=', 2)
+    const allowedInlineValues = allowedExtraArgValues.get(inlineOption)
+
+    if (allowedInlineValues && inlineValue !== undefined) {
+      if (!allowedInlineValues.has(inlineValue)) {
+        throw new Error(`Unsupported extra option value: ${inlineOption}=${inlineValue}`)
+      }
+      continue
+    }
+
+    if (allowedExtraArgFlags.has(arg)) {
+      continue
+    }
+
+    const allowedValues = allowedExtraArgValues.get(arg)
+    if (allowedValues) {
+      const value = args[index + 1]
+      if (!value || !allowedValues.has(value)) {
+        throw new Error(`Unsupported extra option value: ${arg}`)
+      }
+      index += 1
+      continue
+    }
+
+    throw new Error(`Unsupported extra option: ${arg}`)
+  }
+}
+
 function hasExtraArg(args: string[], option: string) {
   return args.some((arg) => arg === option || arg.startsWith(`${option}=`))
 }
@@ -1893,6 +1964,7 @@ function buildArgs(request: DownloadRequest, url: string, jobIndex: number) {
   const ffmpegPath = getFfmpegPath()
   const denoPath = getDenoPath()
   const extraArgs = tokenizeExtraArgs(request.extraArgs.trim())
+  validateExtraArgs(extraArgs)
   const skipDownload = extraArgs.includes('--skip-download')
   const cookieFile = getCookieFileForJob(request, jobIndex, url)
   const args = [
@@ -3299,14 +3371,14 @@ ipcMain.handle('shell:openPath', async (_event, targetPath: string) => {
   if (!targetPath) {
     return
   }
-  await shell.openPath(targetPath)
+  await shell.openPath(assertSafeLocalPath(targetPath))
 })
 
 ipcMain.handle('shell:showItemInFolder', async (_event, targetPath: string) => {
   if (!targetPath) {
     return
   }
-  shell.showItemInFolder(targetPath)
+  shell.showItemInFolder(assertSafeLocalPath(targetPath))
 })
 
 ipcMain.handle('shell:openExternal', async (_event, targetUrl: string) => {
