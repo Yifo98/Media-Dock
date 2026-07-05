@@ -109,8 +109,10 @@ npm run version:major
 
 推荐使用随桌面分享包附带的 MediaCookies 插件包：
 
+- Google 应用商店安装：[XF MediaCookies](https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek)
+- 其他 Chromium 浏览器也可以直接打开同一个 Google 应用商店链接安装；若浏览器不支持商店安装，则使用 GitHub 下载包
+- GitHub 插件仓库与下载包：[Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
 - Windows / macOS 分享 ZIP 里的 `extensions/media-dock-cookie-exporter-*.zip`
-- 插件源码已拆到独立仓库：[Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
 - 本地打包默认读取同级 `../MediaCookies`；如路径不同，可设置 `MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR=/path/to/MediaCookies`
 - 如只保留预构建包，可把构建好的插件 ZIP 放到本项目的 `release/extensions/`，打包脚本会自动随桌面包带上
 
@@ -245,8 +247,10 @@ If a target site requires a signed-in or member session, export a cookie ZIP wit
 
 Recommended bundled MediaCookies extension package:
 
+- Chrome Web Store install: [XF MediaCookies](https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek)
+- Other Chromium-based browsers can open the same Chrome Web Store link when their extension store flow supports Chrome extensions; otherwise use the GitHub package
+- GitHub extension repository and downloads: [Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
 - `extensions/media-dock-cookie-exporter-*.zip` inside the Windows / macOS share ZIP
-- Extension source now lives in a separate repository: [Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
 - Local packaging defaults to the sibling `../MediaCookies` directory; set `MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR=/path/to/MediaCookies` when using a different location
 - If you only keep a prebuilt package, copy the built extension ZIP into this repo's `release/extensions/`; the desktop packaging scripts will include it automatically
 

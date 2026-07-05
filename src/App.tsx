@@ -68,6 +68,8 @@ type StoredPreferences = {
 const STORAGE_KEY = 'yt-dlp-studio.preferences'
 const HISTORY_KEY = 'yt-dlp-studio.history'
 const YT_DLP_SUPPORTED_SITES_URL = 'https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md'
+const MEDIA_COOKIES_CHROME_STORE_URL = 'https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek'
+const MEDIA_COOKIES_GITHUB_URL = 'https://github.com/Yifo98/MediaCookies/releases/latest'
 
 const DEFAULT_PREFS: StoredPreferences = {
   outputDir: '',
@@ -204,6 +206,8 @@ function getText(language: Language) {
         browse: '选择目录',
         openCookiesDir: '打开 cookies 目录',
         openCookieExtension: '打开插件目录',
+        openCookieStore: 'Google 应用商店安装',
+        openCookieGitHub: 'GitHub 下载插件包',
         importCookieZip: '导入 Cookie ZIP',
         importingCookieZip: '导入中...',
         cookieImportSuccess: '已导入 {count} 个 Cookie 文件。',
@@ -227,7 +231,7 @@ function getText(language: Language) {
         cookieFile: '认证文件',
         cookieAuto: '自动按链接匹配',
         cookieHint: '建议保持自动模式，软件会按每条链接匹配对应站点 Cookie；手动选择只适合同一来源批量任务。',
-        cookieFallback: '插件安装好以后，在插件里预览并导出 Cookie ZIP，再回到这里点“导入 Cookie ZIP”。预览不会生成缓存文件。',
+        cookieFallback: '可从 Google 应用商店安装，也可去 GitHub 下载 ZIP。其他 Chromium 浏览器可直接打开同一个商店链接；安装好以后，在插件里预览并导出 Cookie ZIP，再回到这里点“导入 Cookie ZIP”。',
         supportedSitesLink: '查看 yt-dlp 官方支持站点',
         supportedSitesHint: '下载来源以 yt-dlp 官方 supported sites 为准；Cookie 推荐只保留当前更稳定的少数站点。官方支持不代表会员、验证码、加密或风控内容一定可下。',
         cookieAdvisor: 'Cookie 推荐',
@@ -377,6 +381,8 @@ function getText(language: Language) {
         browse: 'Browse',
         openCookiesDir: 'Open cookies folder',
         openCookieExtension: 'Open extension folder',
+        openCookieStore: 'Install from Chrome Web Store',
+        openCookieGitHub: 'Download from GitHub',
         importCookieZip: 'Import cookie ZIP',
         importingCookieZip: 'Importing...',
         cookieImportSuccess: 'Imported {count} cookie file(s).',
@@ -400,7 +406,7 @@ function getText(language: Language) {
         cookieFile: 'Auth file',
         cookieAuto: 'Auto match by URL',
         cookieHint: 'Auto mode is recommended. It matches a site cookie file for each URL; manual selection is best for same-site batches only.',
-        cookieFallback: 'After installing the extension, preview and export a cookie ZIP there, then return here and click “Import cookie ZIP”. Preview does not create cache files.',
+        cookieFallback: 'Install from the Chrome Web Store or download the ZIP from GitHub. Other Chromium-based browsers can open the same store link when supported. After installing, preview and export a cookie ZIP there, then return here and click “Import cookie ZIP”.',
         supportedSitesLink: 'View yt-dlp supported sites',
         supportedSitesHint: 'Download source coverage follows the official yt-dlp supported sites list. Cookie suggestions only keep the currently steadier services; official extractor support does not guarantee member, captcha, encrypted, or risk-controlled content will download.',
         cookieAdvisor: 'Cookie suggestion',
@@ -1868,6 +1874,8 @@ function App() {
               <span>Cookies</span>
               <div className="cookie-helper-actions">
                 <button className="ghost-button ghost-button--full" type="button" disabled={!cookieExtensionPath} onClick={() => void appApi.openPath(cookieExtensionPath)}>{text.openCookieExtension}</button>
+                <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(MEDIA_COOKIES_CHROME_STORE_URL)}>{text.openCookieStore}</button>
+                <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(MEDIA_COOKIES_GITHUB_URL)}>{text.openCookieGitHub}</button>
                 <button className="ghost-button ghost-button--full" type="button" disabled={cookieImporting} onClick={() => void handleImportCookieZip()}>{cookieImporting ? text.importingCookieZip : text.importCookieZip}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
               </div>
