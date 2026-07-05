@@ -14,8 +14,6 @@ type AppPaths = {
   defaultDownloadDir: string
   envName: string
   cookiesDir: string
-  cookieExtensionDir: string | null
-  cookieExtensionZipPath: string | null
 }
 
 type CookieFileInfo = {

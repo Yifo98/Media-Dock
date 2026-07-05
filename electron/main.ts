@@ -515,34 +515,6 @@ function getCookiesDir() {
   return ensureDirectory(targetDir)
 }
 
-function getCookieExtensionRuntimeDir() {
-  return app.isPackaged
-    ? join(getPortableRootDir(), 'extensions', 'media-dock-cookie-exporter')
-    : join(process.env.MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR ?? join(getDevRootDir(), '..', 'MediaCookies'), 'dist')
-}
-
-function getCookieExtensionDir() {
-  const extensionDir = getCookieExtensionRuntimeDir()
-  return existsSync(extensionDir) && statSync(extensionDir).isDirectory() ? extensionDir : null
-}
-
-function getCookieExtensionZipPath() {
-  const extensionDir = app.isPackaged
-    ? join(getPortableRootDir(), 'extensions')
-    : join(getDevRootDir(), 'release', 'extensions')
-
-  if (!existsSync(extensionDir) || !statSync(extensionDir).isDirectory()) {
-    return null
-  }
-
-  const candidates = readdirSync(extensionDir)
-    .filter((fileName) => /^media-dock-cookie-exporter-.*\.zip$/i.test(fileName))
-    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-
-  const latest = candidates.at(-1)
-  return latest ? join(extensionDir, latest) : null
-}
-
 function getCookieImportTempRoot() {
   return ensureDirectory(join(getPortableDataRootDir(), 'app-cache', 'cookie-imports'))
 }
@@ -3246,8 +3218,6 @@ ipcMain.handle('paths:get', () => ({
   defaultDownloadDir: resolveDefaultDownloads(),
   envName: getEnvironmentLabel(),
   cookiesDir: getCookiesDir(),
-  cookieExtensionDir: getCookieExtensionDir(),
-  cookieExtensionZipPath: getCookieExtensionZipPath(),
 }))
 
 ipcMain.handle('cookies:list', () => listCookieFilesRecursive(getCookiesDir()))

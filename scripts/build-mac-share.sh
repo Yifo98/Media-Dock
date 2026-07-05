@@ -17,12 +17,6 @@ ARCH_NAME="$(uname -m)"
 YTDLP_CHANNEL="${YTDLP_CHANNEL:-nightly}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.7.5}"
-DEFAULT_COOKIE_EXTENSION_PROJECT_DIR="$(cd "$PROJECT_ROOT/.." && pwd)/MediaCookies"
-COOKIE_EXTENSION_PROJECT_DIR="${MEDIA_DOCK_COOKIE_EXTENSION_PROJECT_DIR:-$DEFAULT_COOKIE_EXTENSION_PROJECT_DIR}"
-COOKIE_EXTENSION_DIST_DIR="$COOKIE_EXTENSION_PROJECT_DIR/dist"
-COOKIE_EXTENSION_PROJECT_RELEASE_DIR="$COOKIE_EXTENSION_PROJECT_DIR/release"
-COOKIE_EXTENSION_RELEASE_DIR="$RELEASE_DIR/extensions"
-
 case "$ARCH_NAME" in
   arm64)
     DENO_ARCHIVE_NAME="deno-aarch64-apple-darwin.zip"
@@ -63,49 +57,10 @@ prepare_release_dir() {
     fi
   done
   rm -rf "$RELEASE_DIR"/win-unpacked "$RELEASE_DIR"/mac-unpacked "$RELEASE_DIR"/mac-arm64
+  rm -rf "$RELEASE_DIR"/extensions
   rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
   rm -f "$RELEASE_DIR"/*mac*.zip(N) "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/*.txt(N) "$RELEASE_DIR"/latest-mac.yml(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
   rm -f "$VERSION_DIR"/*mac*.zip(N) "$VERSION_DIR"/*.txt(N) "$VERSION_DIR"/latest-mac.yml(N)
-}
-
-copy_cookie_extension_assets() {
-  local package_dir="$1"
-  local extension_zip
-
-  extension_zip="$(find "$COOKIE_EXTENSION_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | sort | tail -n 1)"
-  if [[ -z "$extension_zip" ]]; then
-    echo "MediaCookies extension zip was not found in $COOKIE_EXTENSION_RELEASE_DIR."
-    echo "Build it in the separate MediaCookies project first, then copy media-dock-cookie-exporter-*.zip here."
-    exit 1
-  fi
-
-  mkdir -p "$package_dir/extensions"
-  cp "$extension_zip" "$package_dir/extensions/"
-
-  if [[ -d "$COOKIE_EXTENSION_DIST_DIR" ]]; then
-    rm -rf "$package_dir/extensions/media-dock-cookie-exporter"
-    cp -R "$COOKIE_EXTENSION_DIST_DIR" "$package_dir/extensions/media-dock-cookie-exporter"
-  fi
-}
-
-prepare_cookie_extension_assets() {
-  mkdir -p "$COOKIE_EXTENSION_RELEASE_DIR"
-
-  if [[ -f "$COOKIE_EXTENSION_PROJECT_DIR/scripts/build.mjs" && -f "$COOKIE_EXTENSION_PROJECT_DIR/scripts/package.mjs" ]]; then
-    (cd "$COOKIE_EXTENSION_PROJECT_DIR" && node scripts/build.mjs && node scripts/package.mjs)
-    local extension_zip
-    extension_zip="$(find "$COOKIE_EXTENSION_PROJECT_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | sort | tail -n 1)"
-    if [[ -z "$extension_zip" ]]; then
-      echo "MediaCookies extension zip was not produced in $COOKIE_EXTENSION_PROJECT_RELEASE_DIR."
-      exit 1
-    fi
-    rm -f "$COOKIE_EXTENSION_RELEASE_DIR"/media-dock-cookie-exporter-*.zip(N)
-    cp "$extension_zip" "$COOKIE_EXTENSION_RELEASE_DIR/"
-  elif ! find "$COOKIE_EXTENSION_RELEASE_DIR" -maxdepth 1 -type f -name 'media-dock-cookie-exporter-*.zip' | grep -q .; then
-    echo "MediaCookies extension project was not found at $COOKIE_EXTENSION_PROJECT_DIR."
-    echo "Copy a prebuilt media-dock-cookie-exporter-*.zip into $COOKIE_EXTENSION_RELEASE_DIR before packaging."
-    exit 1
-  fi
 }
 
 repack_macos_launcher_zip() {
@@ -127,7 +82,6 @@ repack_macos_launcher_zip() {
     exit 1
   fi
   mv "$app_path" "$package_dir/core/Media Dock.app"
-  copy_cookie_extension_assets "$package_dir"
   cp "$README_PATH" "$package_dir/README-mac.txt"
   cat > "$package_dir/Launch Media Dock.command" <<'EOF'
 #!/bin/zsh
@@ -171,11 +125,11 @@ write_release_notes() {
 - \`README-windows.txt\`
 - \`Launch Media Dock.command\` macOS ZIP 根目录启动脚本
 - \`README-mac.txt\`
-- \`extensions/media-dock-cookie-exporter\` MediaCookies 浏览器插件
+- MediaCookies 浏览器插件请从 Google 应用商店安装，或从 GitHub 下载
 
 ## 主要更新
 
-- 内置 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
+- 推荐安装 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
 - MediaCookies 预览逻辑改为先扫描浏览器 Cookie，再按 yt-dlp 官方 supported sites 自动生成可导出来源
 - MediaCookies 默认只导出匹配 yt-dlp 官方支持站点的 Cookie，同时提供“全部 Cookie”高级模式
 - MediaCookies 支持预览后再执行全选 常用 清空，最后按当前选择导出 ZIP
@@ -221,11 +175,11 @@ This release refreshes the shared desktop package with local media merge support
 - \`README-windows.txt\`
 - \`Launch Media Dock.command\` at the macOS zip root
 - \`README-mac.txt\`
-- \`extensions/media-dock-cookie-exporter\` bundled MediaCookies browser extension
+- Install MediaCookies from the Chrome Web Store or download it from GitHub
 
 ## Highlights
 
-- Bundled the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
+- Recommended the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
 - MediaCookies now scans browser cookies first, then generates exportable sources from the official yt-dlp supported sites list
 - MediaCookies defaults to cookies matching yt-dlp supported sites, with an explicit advanced all-cookie mode
 - MediaCookies now supports preview first, then Select All, Common, Clear, and export ZIP from the current selection
@@ -356,7 +310,6 @@ for dylib in "$TOOLS_LIB_DIR"/*.dylib(N); do
 done
 
 npm run build
-prepare_cookie_extension_assets
 npx electron-builder --mac zip "$BUILDER_ARCH_FLAG"
 
 MAC_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*mac.zip' | head -n 1)"
@@ -372,7 +325,8 @@ This build is a script-launched portable folder packaged as a zip.
 Double-click "Launch Media Dock.command" from the unzipped folder.
 The actual runtime files are kept inside the "core" folder.
 yt-dlp, ffmpeg, ffprobe, and deno are bundled with the program.
-The MediaCookies browser extension is included in the "extensions" folder.
+Install MediaCookies from the Chrome Web Store or download it from GitHub
+when cookies are needed.
 Runtime data stays next to this launcher in "Media Dock Data".
 That folder contains downloads, cookies, cache, update zips, and any
 auto-installed Deno runtime files.

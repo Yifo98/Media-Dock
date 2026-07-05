@@ -205,7 +205,6 @@ function getText(language: Language) {
         outputFolder: '输出目录',
         browse: '选择目录',
         openCookiesDir: '打开 cookies 目录',
-        openCookieExtension: '打开插件目录',
         openCookieStore: 'Google 应用商店安装',
         openCookieGitHub: 'GitHub 下载插件包',
         importCookieZip: '导入 Cookie ZIP',
@@ -380,7 +379,6 @@ function getText(language: Language) {
         outputFolder: 'Output folder',
         browse: 'Browse',
         openCookiesDir: 'Open cookies folder',
-        openCookieExtension: 'Open extension folder',
         openCookieStore: 'Install from Chrome Web Store',
         openCookieGitHub: 'Download from GitHub',
         importCookieZip: 'Import cookie ZIP',
@@ -999,11 +997,7 @@ function App() {
   const logViewerRef = useRef<HTMLDivElement | null>(null)
   const text = getText(language)
   const normalizedHeroTitle = text.heroTitle.replace(/[。.]$/, '')
-  const cookiesPluginLabel = language === 'zh' ? '内置插件：MediaCookies' : 'Bundled extension: MediaCookies'
-  const cookiesPluginHint =
-    language === 'zh'
-      ? '步骤：打开插件目录 -> 浏览器扩展页打开开发者模式 -> 加载已解压的扩展程序 -> 选择 media-dock-cookie-exporter 文件夹。'
-      : 'Steps: open the extension folder -> enable Developer mode on the browser extensions page -> Load unpacked -> select the media-dock-cookie-exporter folder.'
+  const cookiesPluginLabel = language === 'zh' ? '推荐插件：MediaCookies' : 'Recommended extension: MediaCookies'
   const updateSummary = updateInfo
     ? updateInfo.updateAvailable
       ? `${text.updateReady}: ${updateInfo.currentVersion} -> ${updateInfo.latestVersion ?? '--'}`
@@ -1154,7 +1148,6 @@ function App() {
   const effectiveMessage = bootstrapError ?? statusMessage
   const visibleLogs = bootstrapError ? ['[bootstrap] window.appApi is unavailable'] : logs
   const denoHint = paths?.denoPath ? text.denoReady : text.denoMissing
-  const cookieExtensionPath = paths?.cookieExtensionDir ?? ''
   const sortedJobs = jobOrder.map((jobId) => jobs[jobId]).filter(Boolean)
   const activeDownloadJobs = sortedJobs.filter((job) => job.status === 'running')
   const finishedDownloadJobs = sortedJobs.filter((job) => job.status === 'success')
@@ -1873,14 +1866,12 @@ function App() {
             <label className="field field--button">
               <span>Cookies</span>
               <div className="cookie-helper-actions">
-                <button className="ghost-button ghost-button--full" type="button" disabled={!cookieExtensionPath} onClick={() => void appApi.openPath(cookieExtensionPath)}>{text.openCookieExtension}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(MEDIA_COOKIES_CHROME_STORE_URL)}>{text.openCookieStore}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(MEDIA_COOKIES_GITHUB_URL)}>{text.openCookieGitHub}</button>
                 <button className="ghost-button ghost-button--full" type="button" disabled={cookieImporting} onClick={() => void handleImportCookieZip()}>{cookieImporting ? text.importingCookieZip : text.importCookieZip}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
               </div>
               <small className="field-help">{cookiesPluginLabel}</small>
-              <small className="field-help">{cookiesPluginHint}</small>
               <small className="field-help">{text.cookieFallback}</small>
               <div className="supported-sites-link">
                 <button

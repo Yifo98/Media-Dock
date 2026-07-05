@@ -12,11 +12,11 @@
 - `README-windows.txt`
 - `Launch Media Dock.command` macOS ZIP 根目录启动脚本
 - `README-mac.txt`
-- `extensions/media-dock-cookie-exporter` MediaCookies 浏览器插件
+- MediaCookies 浏览器插件请从 Google 应用商店安装，或从 GitHub 下载
 
 ## 主要更新
 
-- 内置 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
+- 推荐安装 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
 - MediaCookies 预览逻辑改为先扫描浏览器 Cookie，再按 yt-dlp 官方 supported sites 自动生成可导出来源
 - MediaCookies 默认只导出匹配 yt-dlp 官方支持站点的 Cookie，同时提供“全部 Cookie”高级模式
 - MediaCookies 支持预览后再执行全选 常用 清空，最后按当前选择导出 ZIP
@@ -89,11 +89,11 @@ This release refreshes the shared desktop package with local media merge support
 - `README-windows.txt`
 - `Launch Media Dock.command` at the macOS zip root
 - `README-mac.txt`
-- `extensions/media-dock-cookie-exporter` bundled MediaCookies browser extension
+- Install MediaCookies from the Chrome Web Store or download it from GitHub
 
 ## Highlights
 
-- Bundled the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
+- Recommended the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
 - MediaCookies now scans browser cookies first, then generates exportable sources from the official yt-dlp supported sites list
 - MediaCookies defaults to cookies matching yt-dlp supported sites, with an explicit advanced all-cookie mode
 - MediaCookies now supports preview first, then Select All, Common, Clear, and export ZIP from the current selection
