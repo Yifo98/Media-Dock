@@ -694,6 +694,21 @@ function getWindowIconPath() {
   return existsSync(iconPath) ? iconPath : undefined
 }
 
+function applyDockIcon() {
+  if (process.platform !== 'darwin') {
+    return
+  }
+
+  const iconPath = getWindowIconPath()
+  if (iconPath) {
+    app.dock?.setIcon(iconPath)
+  }
+}
+
+function shouldOpenDevTools() {
+  return process.env.MEDIA_DOCK_OPEN_DEVTOOLS === '1'
+}
+
 function normalizeVersion(value: string) {
   return value.trim().replace(/^[^\d]*/, '').split(/[+-]/, 1)[0]
 }
@@ -3161,7 +3176,7 @@ function createAppWindow(hash = '') {
 
   if (devServerUrl) {
     void win.loadURL(`${devServerUrl}${hash}`)
-    if (!hash) {
+    if (!hash && shouldOpenDevTools()) {
       win.webContents.openDevTools({ mode: 'detach' })
     }
   } else {
@@ -3195,6 +3210,7 @@ function createMediaToolsWindow() {
 }
 
 app.whenReady().then(() => {
+  applyDockIcon()
   createWindow()
 
   app.on('activate', () => {
