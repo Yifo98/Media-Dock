@@ -19,7 +19,7 @@ type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
-type RuntimeToolInstallTarget = 'deno'
+type RuntimeToolInstallTarget = 'deno' | 'yt-dlp'
 
 type DownloadRequest = {
   urls: string[]
@@ -143,6 +143,114 @@ type RuntimeToolInstallResult = {
   tool: RuntimeToolInstallTarget
   path: string
   version: string
+}
+
+type RuntimeToolUpdateInfo = {
+  tool: 'yt-dlp' | 'deno'
+  currentVersion: string | null
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseUrl: string | null
+  detail: string | null
+}
+
+type RuntimeToolUpdateCheckResult = {
+  ytDlp: RuntimeToolUpdateInfo
+  deno: RuntimeToolUpdateInfo
+}
+
+type RuntimeToolProgressUpdate = {
+  tool: RuntimeToolInstallTarget
+  stage: 'checking' | 'downloading' | 'extracting' | 'installing' | 'complete' | 'error'
+  message: string
+  percent: number | null
+}
+
+type BilibiliApiEpisode = {
+  id?: number | string
+  ep_id?: number | string
+  title?: string
+  long_title?: string
+  badge?: string
+  status?: number | string
+  duration?: number
+  link?: string
+  share_url?: string
+}
+
+type BilibiliApiSection = {
+  title?: string
+  episodes?: BilibiliApiEpisode[]
+}
+
+type BilibiliApiSeasonResult = {
+  title?: string
+  season_title?: string
+  season_id?: number | string
+  media_id?: number | string
+  episodes?: BilibiliApiEpisode[]
+  section?: BilibiliApiSection[]
+}
+
+type BilibiliCheeseEpisode = {
+  id?: number | string
+  index?: number | string
+  title?: string
+  subtitle?: string
+  label?: string
+  status?: number | string
+  ep_status?: number | string
+  duration?: number
+  playable?: boolean
+  episode_can_view?: boolean
+}
+
+type BilibiliCheeseSeasonData = {
+  title?: string
+  season_id?: number | string
+  ep_count?: number
+  episodes?: BilibiliCheeseEpisode[]
+}
+
+type BilibiliSeasonResolveResult = {
+  sourceUrl: string
+  title: string
+  seasonId: string
+  mediaId: string | null
+  groups: BilibiliEpisodeGroup[]
+}
+
+type BilibiliEpisodeGroup = {
+  id: string
+  title: string
+  episodes: BilibiliEpisodeItem[]
+}
+
+type BilibiliEpisodeItem = {
+  id: string
+  title: string
+  subtitle: string
+  badge: string
+  link: string
+  status: string
+  duration: number | null
+  defaultSelected: boolean
+}
+
+type YtDlpFlatEntry = {
+  id?: string
+  title?: string
+  url?: string
+  webpage_url?: string
+  duration?: number
+}
+
+type YtDlpFlatPlaylist = {
+  id?: string
+  title?: string
+  webpage_url?: string
+  extractor?: string
+  entries?: YtDlpFlatEntry[]
 }
 
 type SubtitleCleanupConfig = {
@@ -284,7 +392,8 @@ const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
 const GITHUB_OWNER = 'Yifo98'
 const GITHUB_REPO = 'Media-Dock'
 const GITHUB_LATEST_RELEASE_API = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`
-const DENO_VERSION = '2.7.5'
+const YT_DLP_LATEST_RELEASE_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'
+const DENO_LATEST_RELEASE_API = 'https://api.github.com/repos/denoland/deno/releases/latest'
 
 function ensureDirectory(dirPath: string) {
   if (existsSync(dirPath)) {
@@ -344,10 +453,10 @@ function getManagedToolBinDirs() {
   const bundledToolsDir = getBundledToolsDir()
 
   return uniquePaths([
-    join(bundledToolsDir, 'bin'),
-    bundledToolsDir,
     join(getRuntimeToolsInstallRoot(), 'bin'),
     getRuntimeToolsInstallRoot(),
+    join(bundledToolsDir, 'bin'),
+    bundledToolsDir,
     join(getPortableRootDir(), 'tools', 'bin'),
     join(getPortableRootDir(), 'tools'),
     join(getDevRootDir(), 'tools', 'bin'),
@@ -359,8 +468,8 @@ function getManagedToolLibDirs() {
   const bundledToolsDir = getBundledToolsDir()
 
   return uniquePaths([
-    join(bundledToolsDir, 'lib'),
     join(getRuntimeToolsInstallRoot(), 'lib'),
+    join(bundledToolsDir, 'lib'),
     join(getPortableRootDir(), 'tools', 'lib'),
     join(getDevRootDir(), 'tools', 'lib'),
   ])
@@ -728,6 +837,500 @@ function compareVersions(left: string, right: string) {
   return 0
 }
 
+function normalizePipVersion(value: string) {
+  return normalizeVersion(value)
+    .split('.')
+    .map((part) => String(Number.parseInt(part, 10) || 0))
+    .join('.')
+}
+
+function scalarToString(value: unknown) {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
+function isBilibiliHost(hostname: string) {
+  return hostname === 'bilibili.com'
+    || hostname.endsWith('.bilibili.com')
+    || hostname === 'b23.tv'
+    || hostname.endsWith('.b23.tv')
+}
+
+function isYoutubeHost(hostname: string) {
+  return hostname === 'youtube.com'
+    || hostname.endsWith('.youtube.com')
+    || hostname === 'youtu.be'
+    || hostname.endsWith('.youtu.be')
+}
+
+function parseMediaCollectionUrl(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    throw new Error('A source URL is required.')
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    throw new Error('Please paste a valid source URL.')
+  }
+
+  const hostname = parsed.hostname.toLowerCase()
+  if (isBilibiliHost(hostname)) {
+    return { sourceUrl: parsed.toString(), service: 'bilibili' as const, parsed }
+  }
+  if (isYoutubeHost(hostname)) {
+    return { sourceUrl: parsed.toString(), service: 'youtube' as const, parsed }
+  }
+
+  throw new Error('Only Bilibili and YouTube collection URLs are supported.')
+}
+
+function parseBilibiliSeasonLookup(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    throw new Error('Bilibili URL is required.')
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    throw new Error('Please paste a valid Bilibili URL.')
+  }
+
+  if (!isBilibiliHost(parsed.hostname.toLowerCase())) {
+    throw new Error('Only Bilibili season or episode URLs are supported.')
+  }
+
+  const urlText = parsed.toString()
+  const epId = parsed.searchParams.get('ep_id')?.trim()
+    || urlText.match(/\/ep(\d+)/i)?.[1]
+    || urlText.match(/[?&]ep_id=(\d+)/i)?.[1]
+  const seasonId = parsed.searchParams.get('season_id')?.trim()
+    || urlText.match(/\/ss(\d+)/i)?.[1]
+    || urlText.match(/[?&]season_id=(\d+)/i)?.[1]
+  const mediaId = parsed.searchParams.get('media_id')?.trim()
+    || urlText.match(/\/md(\d+)/i)?.[1]
+    || urlText.match(/[?&]media_id=(\d+)/i)?.[1]
+
+  if (epId) {
+    return { sourceUrl: urlText, key: 'ep_id' as const, value: epId }
+  }
+  if (seasonId) {
+    return { sourceUrl: urlText, key: 'season_id' as const, value: seasonId }
+  }
+  if (mediaId) {
+    return { sourceUrl: urlText, key: 'media_id' as const, value: mediaId }
+  }
+
+  throw new Error('No ep, season, or media id was found in this Bilibili URL.')
+}
+
+function parseBilibiliCheeseLookup(input: string) {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    throw new Error('Bilibili Cheese URL is required.')
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmed)
+  } catch {
+    throw new Error('Please paste a valid Bilibili Cheese URL.')
+  }
+
+  if (!isBilibiliHost(parsed.hostname.toLowerCase())) {
+    throw new Error('Only Bilibili Cheese URLs are supported.')
+  }
+
+  const urlText = parsed.toString()
+  const epId = parsed.searchParams.get('ep_id')?.trim()
+    || urlText.match(/\/ep(\d+)/i)?.[1]
+    || urlText.match(/[?&]ep_id=(\d+)/i)?.[1]
+  const seasonId = parsed.searchParams.get('season_id')?.trim()
+    || urlText.match(/\/ss(\d+)/i)?.[1]
+    || urlText.match(/[?&]season_id=(\d+)/i)?.[1]
+
+  if (epId) {
+    return { sourceUrl: urlText, key: 'ep_id' as const, value: epId }
+  }
+  if (seasonId) {
+    return { sourceUrl: urlText, key: 'season_id' as const, value: seasonId }
+  }
+
+  throw new Error('No ep or season id was found in this Bilibili Cheese URL.')
+}
+
+function episodeBadgeText(episode: BilibiliApiEpisode) {
+  return scalarToString(episode.badge)
+}
+
+function isPreviewEpisode(episode: BilibiliApiEpisode) {
+  const badge = episodeBadgeText(episode)
+  const title = `${scalarToString(episode.title)} ${scalarToString(episode.long_title)}`
+  return badge.includes('预告') || /预告|trailer|preview/i.test(title)
+}
+
+function episodeSortKey(episode: BilibiliApiEpisode, fallbackIndex: number) {
+  const title = scalarToString(episode.title)
+  const numericTitle = Number.parseFloat(title)
+  return Number.isFinite(numericTitle) ? numericTitle : fallbackIndex
+}
+
+function scoreBilibiliEpisode(episode: BilibiliApiEpisode) {
+  const badge = episodeBadgeText(episode)
+  const status = Number(scalarToString(episode.status))
+  let score = 0
+
+  if (!isPreviewEpisode(episode)) score += 100
+  if (status === 13) score += 30
+  if (badge.includes('会员') || badge.includes('限免') || badge.includes('免费')) score += 16
+  if (scalarToString(episode.link) || scalarToString(episode.share_url)) score += 8
+
+  return score
+}
+
+function dedupeMainBilibiliEpisodes(episodes: BilibiliApiEpisode[]) {
+  const byTitle = new Map<string, { episode: BilibiliApiEpisode; index: number }>()
+
+  episodes.forEach((episode, index) => {
+    const title = scalarToString(episode.title)
+    const id = scalarToString(episode.id) || scalarToString(episode.ep_id)
+    const key = title || id || `episode-${index}`
+    const current = byTitle.get(key)
+    if (!current || scoreBilibiliEpisode(episode) > scoreBilibiliEpisode(current.episode)) {
+      byTitle.set(key, { episode, index })
+    }
+  })
+
+  return [...byTitle.values()]
+    .sort((left, right) => episodeSortKey(left.episode, left.index) - episodeSortKey(right.episode, right.index))
+    .map(({ episode }) => episode)
+}
+
+function normalizeBilibiliEpisode(episode: BilibiliApiEpisode, fallbackIndex: number, defaultSelected: boolean): BilibiliEpisodeItem | null {
+  const id = scalarToString(episode.id) || scalarToString(episode.ep_id)
+  if (!id) return null
+
+  const link = scalarToString(episode.link)
+    || scalarToString(episode.share_url)
+    || `https://www.bilibili.com/bangumi/play/ep${id}`
+  const title = scalarToString(episode.title) || String(fallbackIndex + 1)
+  const longTitle = scalarToString(episode.long_title)
+  const badge = episodeBadgeText(episode)
+  const duration = typeof episode.duration === 'number' && Number.isFinite(episode.duration) ? episode.duration : null
+
+  return {
+    id,
+    title,
+    subtitle: longTitle,
+    badge,
+    link,
+    status: scalarToString(episode.status),
+    duration,
+    defaultSelected,
+  }
+}
+
+function buildBilibiliEpisodeGroup(id: string, title: string, episodes: BilibiliApiEpisode[], defaultSelected: boolean): BilibiliEpisodeGroup | null {
+  const normalizedEpisodes = episodes
+    .map((episode, index) => normalizeBilibiliEpisode(episode, index, defaultSelected && !isPreviewEpisode(episode)))
+    .filter((episode): episode is BilibiliEpisodeItem => Boolean(episode))
+
+  if (normalizedEpisodes.length === 0) {
+    return null
+  }
+
+  return { id, title, episodes: normalizedEpisodes }
+}
+
+type CollectionLogger = (line: string) => void
+
+function normalizeBilibiliCheeseEpisode(episode: BilibiliCheeseEpisode, fallbackIndex: number): BilibiliEpisodeItem | null {
+  const id = scalarToString(episode.id)
+  if (!id) return null
+
+  const indexLabel = scalarToString(episode.index) || String(fallbackIndex + 1)
+  const isPlayable = episode.playable !== false
+  const badge = scalarToString(episode.label)
+    || (episode.episode_can_view === false || !isPlayable ? '需权限' : '')
+
+  return {
+    id,
+    title: indexLabel,
+    subtitle: scalarToString(episode.title) || scalarToString(episode.subtitle) || `ep${id}`,
+    badge,
+    link: `https://www.bilibili.com/cheese/play/ep${id}`,
+    status: scalarToString(episode.status || episode.ep_status),
+    duration: typeof episode.duration === 'number' && Number.isFinite(episode.duration) ? episode.duration : null,
+    defaultSelected: false,
+  }
+}
+
+async function resolveBilibiliMediaSeasonId(mediaId: string, sourceUrl: string, log?: CollectionLogger) {
+  const apiUrl = new URL('https://api.bilibili.com/pgc/review/user')
+  apiUrl.searchParams.set('media_id', mediaId)
+  log?.(`B 站 media_id ${mediaId} 正在转换 season_id。`)
+
+  const response = await fetch(apiUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 Media Dock',
+      Referer: sourceUrl,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Bilibili media request failed with status ${response.status}.`)
+  }
+
+  const payload = await response.json() as {
+    code?: number
+    message?: string
+    result?: {
+      media?: {
+        season_id?: number | string
+      }
+    }
+  }
+  const seasonId = scalarToString(payload.result?.media?.season_id)
+  if (payload.code !== 0 || !seasonId) {
+    throw new Error(payload.message || 'Bilibili did not return a season id for this media URL.')
+  }
+
+  return seasonId
+}
+
+async function resolveBilibiliCheese(sourceUrl: string, log?: CollectionLogger): Promise<BilibiliSeasonResolveResult> {
+  const lookup = parseBilibiliCheeseLookup(sourceUrl)
+  const apiUrl = new URL('https://api.bilibili.com/pugv/view/web/season')
+  apiUrl.searchParams.set(lookup.key, lookup.value)
+  log?.(`B 站课程目录解析：${lookup.key}=${lookup.value}`)
+
+  const response = await fetch(apiUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 Media Dock',
+      Referer: lookup.sourceUrl,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Bilibili Cheese request failed with status ${response.status}.`)
+  }
+
+  const payload = await response.json() as {
+    code?: number
+    message?: string
+    data?: BilibiliCheeseSeasonData
+  }
+  const season = payload.data
+  if (payload.code !== 0 || !season) {
+    throw new Error(payload.message || 'Bilibili did not return Cheese course data.')
+  }
+
+  const episodes = (season.episodes ?? [])
+    .map((episode, index) => normalizeBilibiliCheeseEpisode(episode, index))
+    .filter((episode): episode is BilibiliEpisodeItem => Boolean(episode))
+
+  if (episodes.length === 0) {
+    throw new Error('No course episode links were found in this Bilibili Cheese URL.')
+  }
+
+  log?.(`B 站课程解析完成：${episodes.length} 个课时。`)
+
+  return {
+    sourceUrl: lookup.sourceUrl,
+    title: scalarToString(season.title) || 'Bilibili course',
+    seasonId: scalarToString(season.season_id),
+    mediaId: null,
+    groups: [
+      {
+        id: 'course',
+        title: '课程课时',
+        episodes,
+      },
+    ],
+  }
+}
+
+async function resolveBilibiliSeason(sourceUrl: string, log?: CollectionLogger): Promise<BilibiliSeasonResolveResult> {
+  const lookup = parseBilibiliSeasonLookup(sourceUrl)
+  const apiUrl = new URL('https://api.bilibili.com/pgc/view/web/season')
+  const seasonLookup = lookup.key === 'media_id'
+    ? { key: 'season_id' as const, value: await resolveBilibiliMediaSeasonId(lookup.value, lookup.sourceUrl, log) }
+    : lookup
+  apiUrl.searchParams.set(seasonLookup.key, seasonLookup.value)
+  log?.(`B 站番剧解析：${seasonLookup.key}=${seasonLookup.value}`)
+
+  const response = await fetch(apiUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 Media Dock',
+      Referer: lookup.sourceUrl,
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`Bilibili season request failed with status ${response.status}.`)
+  }
+
+  const payload = await response.json() as {
+    code?: number
+    message?: string
+    result?: BilibiliApiSeasonResult
+  }
+  if (payload.code !== 0 || !payload.result) {
+    throw new Error(payload.message || 'Bilibili did not return season data.')
+  }
+
+  const season = payload.result
+  const mainEpisodes = dedupeMainBilibiliEpisodes(season.episodes ?? [])
+  const groups = [
+    buildBilibiliEpisodeGroup('main', '正片', mainEpisodes, true),
+    ...(season.section ?? []).map((section, index) => buildBilibiliEpisodeGroup(
+      `section-${index + 1}`,
+      scalarToString(section.title) || `Section ${index + 1}`,
+      section.episodes ?? [],
+      false,
+    )),
+  ].filter((group): group is BilibiliEpisodeGroup => Boolean(group))
+
+  if (groups.length === 0) {
+    throw new Error('No downloadable episode links were found in this Bilibili season.')
+  }
+
+  const episodeCount = groups.reduce((total, group) => total + group.episodes.length, 0)
+  log?.(`B 站番剧解析完成：${groups.length} 个分组，${episodeCount} 个条目。`)
+
+  return {
+    sourceUrl: lookup.sourceUrl,
+    title: scalarToString(season.title) || scalarToString(season.season_title) || 'Bilibili season',
+    seasonId: scalarToString(season.season_id),
+    mediaId: scalarToString(season.media_id) || null,
+    groups,
+  }
+}
+
+async function runProcessCollectOutput(command: string, args: string[], timeoutMs: number) {
+  return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: getDevRootDir(),
+      env: {
+        ...process.env,
+        PATH: buildToolPathEnv(),
+        DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+      },
+    })
+
+    let stdout = ''
+    let stderr = ''
+    const timeout = setTimeout(() => {
+      child.kill('SIGTERM')
+      reject(new Error(`${command} timed out after ${Math.round(timeoutMs / 1000)} seconds.`))
+    }, timeoutMs)
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf8')
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf8')
+    })
+    child.on('error', (error) => {
+      clearTimeout(timeout)
+      reject(error)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timeout)
+      if (code === 0) {
+        resolve({ stdout, stderr })
+        return
+      }
+      reject(new Error(stderr.trim() || `${command} exited with code ${code}`))
+    })
+  })
+}
+
+function normalizeYoutubeEntry(entry: YtDlpFlatEntry, index: number): BilibiliEpisodeItem | null {
+  const id = scalarToString(entry.id) || scalarToString(entry.url)
+  const rawUrl = scalarToString(entry.url) || scalarToString(entry.webpage_url)
+  const link = rawUrl.startsWith('http') ? rawUrl : id ? `https://www.youtube.com/watch?v=${id}` : ''
+  if (!id || !link) return null
+
+  return {
+    id,
+    title: String(index + 1),
+    subtitle: scalarToString(entry.title) || id,
+    badge: '',
+    link,
+    status: '',
+    duration: typeof entry.duration === 'number' && Number.isFinite(entry.duration) ? entry.duration : null,
+    defaultSelected: false,
+  }
+}
+
+async function resolveYoutubeCollection(sourceUrl: string, log?: CollectionLogger): Promise<BilibiliSeasonResolveResult> {
+  const parsed = parseMediaCollectionUrl(sourceUrl)
+  if (parsed.service !== 'youtube') {
+    throw new Error('Only YouTube collection URLs are supported here.')
+  }
+
+  const listId = parsed.parsed.searchParams.get('list')?.trim()
+  if (!listId) {
+    throw new Error('No YouTube playlist id was found in this URL.')
+  }
+
+  log?.(`YouTube 合集解析：list=${listId}`)
+  log?.('正在调用 yt-dlp 读取合集目录，只解析列表，不下载视频。')
+  const { stdout } = await runProcessCollectOutput(getYtDlpPath(), [
+    '--flat-playlist',
+    '--dump-single-json',
+    '--skip-download',
+    '--no-warnings',
+    parsed.sourceUrl,
+  ], 60000)
+  const payload = JSON.parse(stdout) as YtDlpFlatPlaylist
+  const entries = (payload.entries ?? [])
+    .map((entry, index) => normalizeYoutubeEntry(entry, index))
+    .filter((episode): episode is BilibiliEpisodeItem => Boolean(episode))
+
+  if (entries.length === 0) {
+    throw new Error('No YouTube playlist entries were found in this URL.')
+  }
+
+  log?.(`YouTube 合集解析完成：${entries.length} 个条目。`)
+
+  return {
+    sourceUrl: parsed.sourceUrl,
+    title: scalarToString(payload.title) || 'YouTube playlist',
+    seasonId: scalarToString(payload.id) || listId,
+    mediaId: null,
+    groups: [
+      {
+        id: 'youtube-playlist',
+        title: 'YouTube 合集',
+        episodes: entries,
+      },
+    ],
+  }
+}
+
+async function resolveMediaCollection(sourceUrl: string, log?: CollectionLogger): Promise<BilibiliSeasonResolveResult> {
+  const parsed = parseMediaCollectionUrl(sourceUrl)
+  if (parsed.service === 'youtube') {
+    log?.('识别为 YouTube 合集链接。')
+    return await resolveYoutubeCollection(parsed.sourceUrl, log)
+  }
+  if (parsed.parsed.pathname.toLowerCase().startsWith('/cheese/')) {
+    log?.('识别为 B 站课程链接。')
+    return await resolveBilibiliCheese(parsed.sourceUrl, log)
+  }
+  log?.('识别为 B 站番剧/剧集链接。')
+  return await resolveBilibiliSeason(parsed.sourceUrl, log)
+}
+
 type GitHubReleasePayload = {
   tag_name?: string
   name?: string
@@ -785,7 +1388,11 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
   }
 }
 
-async function downloadUrlToFile(url: string, targetPath: string) {
+async function downloadUrlToFile(
+  url: string,
+  targetPath: string,
+  onProgress?: (progress: { receivedBytes: number; totalBytes: number | null; percent: number | null }) => void,
+) {
   const response = await fetch(url)
   if (!response.ok) {
     throw new Error(`Download failed with status ${response.status}.`)
@@ -795,7 +1402,23 @@ async function downloadUrlToFile(url: string, targetPath: string) {
   }
 
   ensureDirectory(dirname(targetPath))
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(targetPath))
+  const totalBytesHeader = Number(response.headers.get('content-length') ?? 0)
+  const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0 ? totalBytesHeader : null
+  let receivedBytes = 0
+  const source = Readable.fromWeb(response.body)
+
+  onProgress?.({ receivedBytes, totalBytes, percent: totalBytes ? 0 : null })
+  source.on('data', (chunk: Buffer) => {
+    receivedBytes += chunk.byteLength
+    onProgress?.({
+      receivedBytes,
+      totalBytes,
+      percent: totalBytes ? Math.min(100, (receivedBytes / totalBytes) * 100) : null,
+    })
+  })
+
+  await pipeline(source, createWriteStream(targetPath))
+  onProgress?.({ receivedBytes, totalBytes, percent: 100 })
 }
 
 async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
@@ -816,6 +1439,162 @@ async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
   }
 }
 
+function selectYtDlpDownloadAsset(assets: NonNullable<GitHubReleasePayload['assets']>) {
+  const preferredName = isWindows ? 'yt-dlp.exe' : 'yt-dlp'
+  const normalizedAssets = assets
+    .map((asset) => ({
+      name: asset.name ?? '',
+      url: asset.browser_download_url ?? '',
+    }))
+    .filter((asset) => asset.name && asset.url)
+
+  return normalizedAssets.find((asset) => asset.name === preferredName)
+    ?? normalizedAssets.find((asset) => asset.name.toLowerCase() === preferredName.toLowerCase())
+    ?? null
+}
+
+async function fetchLatestYtDlpRelease() {
+  const response = await fetch(YT_DLP_LATEST_RELEASE_API)
+  if (!response.ok) {
+    throw new Error(`yt-dlp update check failed with status ${response.status}.`)
+  }
+
+  return await response.json() as GitHubReleasePayload
+}
+
+async function fetchLatestDenoRelease() {
+  const response = await fetch(DENO_LATEST_RELEASE_API)
+  if (!response.ok) {
+    throw new Error(`Deno update check failed with status ${response.status}.`)
+  }
+
+  return await response.json() as GitHubReleasePayload
+}
+
+async function getCurrentYtDlpVersion() {
+  try {
+    const result = await runProcessCollectOutput(getYtDlpPath(), ['--version'], 15000)
+    const versionLine = `${result.stdout}\n${result.stderr}`
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean)
+    return versionLine ? normalizeVersion(versionLine) : null
+  } catch {
+    return null
+  }
+}
+
+async function getCurrentDenoVersion() {
+  const denoPath = getDenoPath()
+  if (!denoPath) {
+    return null
+  }
+
+  try {
+    const result = await runProcessCollectOutput(denoPath, ['--version'], 15000)
+    const versionLine = `${result.stdout}\n${result.stderr}`
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^deno\s+\d/i.test(line))
+    const version = versionLine?.match(/^deno\s+([^\s]+)/i)?.[1]
+    return version ? normalizeVersion(version) : null
+  } catch {
+    return null
+  }
+}
+
+async function checkRuntimeToolUpdates(): Promise<RuntimeToolUpdateCheckResult> {
+  const [ytDlpRelease, currentYtDlpVersion, denoRelease, currentDenoVersion] = await Promise.all([
+    fetchLatestYtDlpRelease(),
+    getCurrentYtDlpVersion(),
+    fetchLatestDenoRelease(),
+    getCurrentDenoVersion(),
+  ])
+  const latestYtDlpVersion = ytDlpRelease.tag_name ? normalizeVersion(ytDlpRelease.tag_name) : null
+  const latestDenoVersion = denoRelease.tag_name ? normalizeVersion(denoRelease.tag_name) : null
+
+  return {
+    ytDlp: {
+      tool: 'yt-dlp',
+      currentVersion: currentYtDlpVersion,
+      latestVersion: latestYtDlpVersion,
+      updateAvailable: Boolean(currentYtDlpVersion && latestYtDlpVersion && compareVersions(currentYtDlpVersion, latestYtDlpVersion) < 0),
+      releaseUrl: ytDlpRelease.html_url ?? null,
+      detail: getYtDlpPath(),
+    },
+    deno: {
+      tool: 'deno',
+      currentVersion: currentDenoVersion,
+      latestVersion: latestDenoVersion,
+      updateAvailable: Boolean(latestDenoVersion && (!currentDenoVersion || compareVersions(currentDenoVersion, latestDenoVersion) < 0)),
+      releaseUrl: denoRelease.html_url ?? null,
+      detail: getDenoPath(),
+    },
+  }
+}
+
+function getCondaPythonPath() {
+  const candidate = isWindows
+    ? join(envRoot, 'python.exe')
+    : join(envRoot, 'bin', 'python')
+
+  return existsSync(candidate) ? candidate : null
+}
+
+async function installYtDlpRuntime(): Promise<RuntimeToolInstallResult> {
+  emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'checking', message: '正在检查 yt-dlp 最新版本...', percent: null })
+  const release = await fetchLatestYtDlpRelease()
+  const latestVersion = release.tag_name ? normalizeVersion(release.tag_name) : null
+  if (!latestVersion) {
+    throw new Error('Could not determine the latest yt-dlp version.')
+  }
+
+  const currentPath = getYtDlpPath()
+  const condaPythonPath = getCondaPythonPath()
+  if (condaPythonPath && isPathInside(envRoot, currentPath)) {
+    emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'installing', message: `正在更新 Conda 环境中的 yt-dlp 到 ${latestVersion}...`, percent: null })
+    await runSimpleProcess(
+      condaPythonPath,
+      ['-m', 'pip', 'install', '--upgrade', '--force-reinstall', `yt-dlp==${normalizePipVersion(latestVersion)}`],
+      getDevRootDir(),
+    )
+    const result: RuntimeToolInstallResult = {
+      tool: 'yt-dlp',
+      path: currentPath,
+      version: await getCurrentYtDlpVersion() ?? latestVersion,
+    }
+    emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'complete', message: `yt-dlp 已更新到 ${result.version}。`, percent: 100 })
+    return result
+  }
+
+  const asset = selectYtDlpDownloadAsset(release.assets ?? [])
+  if (!asset) {
+    throw new Error('No matching yt-dlp release asset was found for this platform.')
+  }
+
+  const targetPath = join(ensureDirectory(getRuntimeToolsInstallBinDir()), getExecutableName('yt-dlp'))
+  await downloadUrlToFile(asset.url, targetPath, ({ percent }) => {
+    emitRuntimeToolProgress({
+      tool: 'yt-dlp',
+      stage: 'downloading',
+      message: `正在下载 yt-dlp ${latestVersion}...`,
+      percent,
+    })
+  })
+  emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'installing', message: '正在写入 yt-dlp 可执行文件...', percent: null })
+  if (!isWindows) {
+    chmodSync(targetPath, 0o755)
+  }
+
+  const result: RuntimeToolInstallResult = {
+    tool: 'yt-dlp',
+    path: targetPath,
+    version: await getCurrentYtDlpVersion() ?? latestVersion,
+  }
+  emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'complete', message: `yt-dlp 已更新到 ${result.version}。`, percent: 100 })
+  return result
+}
+
 function getDenoArchiveName() {
   if (isWindows) {
     return 'deno-x86_64-pc-windows-msvc.zip'
@@ -832,8 +1611,18 @@ function getDenoArchiveName() {
   throw new Error(`Deno auto-install is not supported on ${process.platform}.`)
 }
 
-function getDenoDownloadUrl() {
-  return `https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${getDenoArchiveName()}`
+function selectDenoDownloadAsset(assets: NonNullable<GitHubReleasePayload['assets']>) {
+  const preferredName = getDenoArchiveName()
+  const normalizedAssets = assets
+    .map((asset) => ({
+      name: asset.name ?? '',
+      url: asset.browser_download_url ?? '',
+    }))
+    .filter((asset) => asset.name && asset.url)
+
+  return normalizedAssets.find((asset) => asset.name === preferredName)
+    ?? normalizedAssets.find((asset) => asset.name.toLowerCase() === preferredName.toLowerCase())
+    ?? null
 }
 
 function quotePowerShellPath(value: string) {
@@ -936,15 +1725,34 @@ function findFileRecursive(rootDir: string, fileName: string): string | null {
 }
 
 async function installDenoRuntime(): Promise<RuntimeToolInstallResult> {
+  emitRuntimeToolProgress({ tool: 'deno', stage: 'checking', message: '正在检查 Deno 最新版本...', percent: null })
+  const release = await fetchLatestDenoRelease()
+  const latestVersion = release.tag_name ? normalizeVersion(release.tag_name) : null
+  if (!latestVersion) {
+    throw new Error('Could not determine the latest Deno version.')
+  }
+  const asset = selectDenoDownloadAsset(release.assets ?? [])
+  if (!asset) {
+    throw new Error('No matching Deno release asset was found for this platform.')
+  }
+
   const binDir = ensureDirectory(getRuntimeToolsInstallBinDir())
   const downloadDir = ensureDirectory(getRuntimeToolsDownloadDir())
   const archiveName = getDenoArchiveName()
   const archivePath = join(downloadDir, archiveName)
-  const extractDir = join(downloadDir, `deno-${DENO_VERSION}`)
+  const extractDir = join(downloadDir, `deno-${latestVersion}`)
   const executableName = getExecutableName('deno')
   const targetPath = join(binDir, executableName)
 
-  await downloadUrlToFile(getDenoDownloadUrl(), archivePath)
+  await downloadUrlToFile(asset.url, archivePath, ({ percent }) => {
+    emitRuntimeToolProgress({
+      tool: 'deno',
+      stage: 'downloading',
+      message: `正在下载 Deno ${latestVersion}...`,
+      percent,
+    })
+  })
+  emitRuntimeToolProgress({ tool: 'deno', stage: 'extracting', message: '正在解压 Deno...', percent: null })
   await extractZip(archivePath, extractDir)
 
   const extractedDeno = findFileRecursive(extractDir, executableName)
@@ -952,6 +1760,7 @@ async function installDenoRuntime(): Promise<RuntimeToolInstallResult> {
     throw new Error(`Downloaded Deno archive did not contain ${executableName}.`)
   }
 
+  emitRuntimeToolProgress({ tool: 'deno', stage: 'installing', message: '正在写入 Deno 可执行文件...', percent: null })
   copyFileSync(extractedDeno, targetPath)
   if (!isWindows) {
     chmodSync(targetPath, 0o755)
@@ -959,11 +1768,13 @@ async function installDenoRuntime(): Promise<RuntimeToolInstallResult> {
 
   rmSync(downloadDir, { recursive: true, force: true })
 
-  return {
+  const result: RuntimeToolInstallResult = {
     tool: 'deno',
     path: targetPath,
-    version: DENO_VERSION,
+    version: await getCurrentDenoVersion() ?? latestVersion,
   }
+  emitRuntimeToolProgress({ tool: 'deno', stage: 'complete', message: `Deno 已安装到 ${result.version}。`, percent: 100 })
+  return result
 }
 
 function getSubtitleCleanupConfigPath() {
@@ -1544,6 +2355,10 @@ function emitMedia(payload: unknown) {
   }
 }
 
+function emitRuntimeToolProgress(payload: RuntimeToolProgressUpdate) {
+  mainWindow?.webContents.send('runtime-tools:update', payload)
+}
+
 function emitQueue(message?: string) {
   emit({
     type: 'queue',
@@ -1947,6 +2762,10 @@ function getCookieAutoFallbackHint(request: DownloadRequest, url: string, jobInd
   return '提示：检测到手动 Cookie 与当前链接来源不匹配，本任务已改用按链接自动匹配的 Cookie。'
 }
 
+function shouldUseYoutubeRemoteChallengeComponents(url: string, denoPath: string | null) {
+  return Boolean(denoPath && detectKnownCookieTarget(url) === 'youtube')
+}
+
 function buildArgs(request: DownloadRequest, url: string, jobIndex: number) {
   const ffmpegPath = getFfmpegPath()
   const denoPath = getDenoPath()
@@ -1977,6 +2796,10 @@ function buildArgs(request: DownloadRequest, url: string, jobIndex: number) {
 
   if (denoPath && !hasExtraArg(extraArgs, '--js-runtimes')) {
     args.push('--js-runtimes', `deno:${denoPath}`)
+  }
+
+  if (shouldUseYoutubeRemoteChallengeComponents(url, denoPath) && !hasExtraArg(extraArgs, '--remote-components')) {
+    args.push('--remote-components', 'ejs:github')
   }
 
   if (!skipDownload && request.mode === 'audio') {
@@ -2024,6 +2847,17 @@ function getDownloadHint(line: string, url: string) {
   if ((lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) && (lowerLine.includes('sign in to confirm') || lowerLine.includes('not a bot'))) {
     return '提示：YouTube 触发了登录/机器人校验。请确认本任务使用的是 YouTube 专用 Cookie；多来源批量下载时建议使用自动匹配 Cookie，不要把 B 站 Cookie 强制套给 YouTube。'
   }
+  if ((lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) && lowerLine.includes('challenge solver lib script version')) {
+    return '提示：YouTube challenge solver 组件过旧。Media Dock 会为 YouTube 自动启用 yt-dlp 官方 EJS 组件；若这里仍失败，请检查网络是否能访问 GitHub，或更新 yt-dlp 后重试。'
+  }
+  if ((lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) && (
+    lowerLine.includes('signature solving failed')
+    || lowerLine.includes('n challenge solving failed')
+    || lowerLine.includes('found 0 n function possibilities')
+    || lowerLine.includes('error solving')
+  )) {
+    return '提示：已进入 YouTube 播放器签名解析，但 n challenge / signature 求解失败。Cookie 不一定失效；建议先把并发降到 1，稍后重试，或更新 yt-dlp/Deno 后再跑。'
+  }
   if (lowerLine.includes('unsupported url') && lowerUrl.includes('tiktok.com/foryou')) {
     return '提示：这个 TikTok 链接是推荐流入口，yt-dlp 无法从 /foryou 判断要下载哪一条视频。请复制具体视频页或分享短链。'
   }
@@ -2039,7 +2873,10 @@ function getDownloadHint(line: string, url: string) {
   if (lowerUrl.includes('tiktok.com') && (lowerLine.includes('tls connect error') || lowerLine.includes('curl: (35)'))) {
     return '提示：TikTok 连接在 TLS 阶段失败，更像网络、代理或系统证书/加密库兼容问题。可以先换网络或代理节点，或稍后重试；Cookie 已经按 TikTok 来源使用。'
   }
-  if ((lowerLine.includes('http error 403') || lowerLine.includes('forbidden')) && (lowerUrl.includes('bilibili.com') || lowerUrl.includes('youtube.com'))) {
+  if ((lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) && (lowerLine.includes('http error 403') || lowerLine.includes('forbidden'))) {
+    return '提示：YouTube 返回 403。若命令里已经带 YouTube Cookie，通常不是“没加 Cookie”，更可能是签名 challenge、风控、并发或 Cookie 新鲜度问题；建议并发 1、重新导出 YouTube Cookie，或更新 yt-dlp/Deno 后重试。'
+  }
+  if ((lowerLine.includes('http error 403') || lowerLine.includes('forbidden')) && lowerUrl.includes('bilibili.com')) {
     return '提示：这个站点可能需要登录态或会员权限。请改用对应站点专用 cookies 文件后重试。'
   }
   return null
@@ -3226,11 +4063,13 @@ app.on('window-all-closed', () => {
   }
 })
 
-ipcMain.handle('paths:get', () => ({
+ipcMain.handle('paths:get', async () => ({
   ytDlpPath: getYtDlpPath(),
+  ytDlpVersion: await getCurrentYtDlpVersion(),
   ffmpegPath: getFfmpegPath(),
   ffprobePath: getFfprobePath(),
   denoPath: getDenoPath(),
+  denoVersion: await getCurrentDenoVersion(),
   defaultDownloadDir: resolveDefaultDownloads(),
   envName: getEnvironmentLabel(),
   cookiesDir: getCookiesDir(),
@@ -3268,8 +4107,49 @@ ipcMain.handle('updates:downloadLatest', async () => {
   return await downloadLatestUpdate()
 })
 
+ipcMain.handle('bilibili:resolveSeason', async (_event, sourceUrl: string) => {
+  return await resolveBilibiliSeason(sourceUrl)
+})
+
+ipcMain.handle('collections:resolve', async (event, sourceUrl: string) => {
+  const log: CollectionLogger = (line) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('collections:log', { line })
+    }
+  }
+  return await resolveMediaCollection(sourceUrl, log)
+})
+
 ipcMain.handle('runtime:installDeno', async () => {
-  return await installDenoRuntime()
+  try {
+    return await installDenoRuntime()
+  } catch (error) {
+    emitRuntimeToolProgress({
+      tool: 'deno',
+      stage: 'error',
+      message: error instanceof Error ? error.message : 'Deno install failed.',
+      percent: null,
+    })
+    throw error
+  }
+})
+
+ipcMain.handle('runtime:checkToolUpdates', async () => {
+  return await checkRuntimeToolUpdates()
+})
+
+ipcMain.handle('runtime:updateYtDlp', async () => {
+  try {
+    return await installYtDlpRuntime()
+  } catch (error) {
+    emitRuntimeToolProgress({
+      tool: 'yt-dlp',
+      stage: 'error',
+      message: error instanceof Error ? error.message : 'yt-dlp update failed.',
+      percent: null,
+    })
+    throw error
+  }
 })
 
 ipcMain.handle('window:openMediaTools', () => {

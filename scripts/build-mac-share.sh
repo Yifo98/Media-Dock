@@ -14,9 +14,9 @@ README_PATH="$VERSION_DIR/README-mac.txt"
 DEFAULT_ENV_ROOT="$HOME/.conda/envs/yt-dlp"
 ENV_ROOT="${YTDLP_ENV_ROOT:-$DEFAULT_ENV_ROOT}"
 ARCH_NAME="$(uname -m)"
-YTDLP_CHANNEL="${YTDLP_CHANNEL:-nightly}"
+YTDLP_CHANNEL="${YTDLP_CHANNEL:-stable}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
-DENO_VERSION="${DENO_VERSION:-2.7.5}"
+DENO_VERSION="${DENO_VERSION:-2.9.1}"
 case "$ARCH_NAME" in
   arm64)
     DENO_ARCHIVE_NAME="deno-aarch64-apple-darwin.zip"
@@ -129,6 +129,12 @@ write_release_notes() {
 
 ## 主要更新
 
+- 分享包已内置最新稳定下载内核：\`yt-dlp 2026.07.04\`、\`Deno 2.9.1\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
+- 下载面板重新整理为“顶部开始/清空/停止/打开目录 + Cookie 推荐 + 来源输入区”，常用操作不再埋在下方。
+- 新增“链接下载 / 剧集批量解析”模式切换，两个模式只显示当前需要的输入区，避免重复链接列表。
+- 链接列表改为更轻的输入区样式，弱化突兀外框。
+- 剧集批量解析的主链接增加“清空”按钮，可快速清掉主链接、解析结果和选集状态。
+- 启动自检只保留一个“检查更新”，聚焦 \`yt-dlp\` 和 \`Deno\` 这类核心工具，并在安装/更新时显示阶段和进度。
 - 推荐安装 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
 - MediaCookies 预览逻辑改为先扫描浏览器 Cookie，再按 yt-dlp 官方 supported sites 自动生成可导出来源
 - MediaCookies 默认只导出匹配 yt-dlp 官方支持站点的 Cookie，同时提供“全部 Cookie”高级模式
@@ -179,6 +185,12 @@ This release refreshes the shared desktop package with local media merge support
 
 ## Highlights
 
+- The shared packages now bundle the latest stable download core: \`yt-dlp 2026.07.04\`, \`Deno 2.9.1\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
+- Reworked the download panel into a top preparation area with Start / Clear / Stop / Open folder, Cookie suggestion, and then the source input area.
+- Added the Link download / Collection picker mode switch, with only the relevant input area visible in each mode.
+- Restyled the URL list as a lighter input area instead of a heavy framed block.
+- Added a Clear button for the collection source URL, clearing the source link, resolved collection, and current episode selection.
+- Kept a single Check updates button in startup checks, focused on \`yt-dlp\` and \`Deno\`, with visible install/update stages and progress.
 - Recommended the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
 - MediaCookies now scans browser cookies first, then generates exportable sources from the official yt-dlp supported sites list
 - MediaCookies defaults to cookies matching yt-dlp supported sites, with an explicit advanced all-cookie mode

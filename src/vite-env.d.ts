@@ -8,9 +8,11 @@ type DownloadStatus = 'idle' | 'running' | 'success' | 'error' | 'cancelled'
 
 type AppPaths = {
   ytDlpPath: string
+  ytDlpVersion: string | null
   ffmpegPath: string
   ffprobePath: string
   denoPath: string | null
+  denoVersion: string | null
   defaultDownloadDir: string
   envName: string
   cookiesDir: string
@@ -57,9 +59,48 @@ type UpdateDownloadResult = {
 }
 
 type RuntimeToolInstallResult = {
-  tool: 'deno'
+  tool: 'deno' | 'yt-dlp'
   path: string
   version: string
+}
+
+type RuntimeToolUpdateInfo = {
+  tool: 'yt-dlp' | 'deno'
+  currentVersion: string | null
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseUrl: string | null
+  detail: string | null
+}
+
+type RuntimeToolUpdateCheckResult = {
+  ytDlp: RuntimeToolUpdateInfo
+  deno: RuntimeToolUpdateInfo
+}
+
+type BilibiliEpisodeItem = {
+  id: string
+  title: string
+  subtitle: string
+  badge: string
+  link: string
+  status: string
+  duration: number | null
+  defaultSelected: boolean
+}
+
+type BilibiliEpisodeGroup = {
+  id: string
+  title: string
+  episodes: BilibiliEpisodeItem[]
+}
+
+type BilibiliSeasonResolveResult = {
+  sourceUrl: string
+  title: string
+  seasonId: string
+  mediaId: string | null
+  groups: BilibiliEpisodeGroup[]
 }
 
 type MediaToolAction = 'extractAudio' | 'extractSubtitles'
@@ -213,8 +254,19 @@ type MediaToolsUpdate =
         current: number
         total: number
         currentPath?: string
-      }
+        }
     }
+
+type CollectionResolveUpdate = {
+  line: string
+}
+
+type RuntimeToolProgressUpdate = {
+  tool: 'deno' | 'yt-dlp'
+  stage: 'checking' | 'downloading' | 'extracting' | 'installing' | 'complete' | 'error'
+  message: string
+  percent: number | null
+}
 
 type Unsubscribe = () => void
 
@@ -227,7 +279,11 @@ interface Window {
     getSelfCheck: () => Promise<{ items: SelfCheckItem[]; toolsSource: 'bundled' | 'external' }>
     checkForUpdates: () => Promise<UpdateCheckResult>
     downloadLatestUpdate: () => Promise<UpdateDownloadResult>
+    resolveBilibiliSeason: (sourceUrl: string) => Promise<BilibiliSeasonResolveResult>
+    resolveMediaCollection: (sourceUrl: string) => Promise<BilibiliSeasonResolveResult>
     installDenoRuntime: () => Promise<RuntimeToolInstallResult>
+    checkRuntimeToolUpdates: () => Promise<RuntimeToolUpdateCheckResult>
+    updateYtDlpRuntime: () => Promise<RuntimeToolInstallResult>
     openMediaTools: () => Promise<void>
     pickDirectory: (currentPath?: string) => Promise<string | null>
     pickMediaFile: (currentPath?: string) => Promise<string | null>
@@ -267,5 +323,7 @@ interface Window {
     exportTextLog: (defaultName: string, content: string) => Promise<string | null>
     onDownloadUpdate: (listener: (payload: DownloadUpdate) => void) => Unsubscribe
     onMediaToolsUpdate: (listener: (payload: MediaToolsUpdate) => void) => Unsubscribe
+    onCollectionLog: (listener: (payload: CollectionResolveUpdate) => void) => Unsubscribe
+    onRuntimeToolUpdate: (listener: (payload: RuntimeToolProgressUpdate) => void) => Unsubscribe
   }
 }

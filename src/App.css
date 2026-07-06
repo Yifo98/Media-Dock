@@ -54,9 +54,9 @@
 }
 
 .hero {
-  margin: 0 auto 24px;
+  margin: 0 auto 18px;
   max-width: 1440px;
-  padding: 24px 26px;
+  padding: 20px 24px;
   border-radius: 18px;
 }
 
@@ -260,7 +260,7 @@
 
 .hero__copy {
   max-width: 680px;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   color: var(--text-muted);
   font-size: 0.94rem;
   line-height: 1.65;
@@ -269,17 +269,36 @@
 .hero__status-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 22px;
+  gap: 12px;
+  margin-top: 16px;
   align-items: stretch;
 }
 
 .hero-checks {
-  margin-top: 16px;
+  gap: 9px;
+  margin-top: 12px;
+  margin-bottom: 0;
+  padding: 12px 14px;
+}
+
+.hero-checks code {
+  max-height: 78px;
+  overflow: auto;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.hero-checks .section-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hero-checks .progress-meta {
+  font-size: 0.76rem;
 }
 
 .status-card {
-  padding: 15px 16px;
+  padding: 12px 14px;
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.052), rgba(255, 255, 255, 0.018));
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -297,7 +316,7 @@
 
 .status-card strong {
   display: block;
-  margin-top: 6px;
+  margin-top: 5px;
   font-size: 0.98rem;
   color: var(--text-strong);
   line-height: 1.35;
@@ -314,7 +333,8 @@
 }
 
 .status-card p {
-  line-height: 1.5;
+  font-size: 0.86rem;
+  line-height: 1.42;
 }
 
 .status-card__label {
@@ -337,6 +357,16 @@
   line-height: 1.5;
 }
 
+.status-card__meta {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) minmax(360px, 0.92fr);
@@ -349,7 +379,8 @@
 .control-room,
 .telemetry,
 .logs,
-.history {
+.history,
+.collection-logs {
   border-radius: 16px;
   padding: 20px;
   min-width: 0;
@@ -369,7 +400,8 @@
 
 .right-rail .telemetry,
 .right-rail .logs,
-.right-rail .history {
+.right-rail .history,
+.right-rail .collection-logs {
   padding: 16px;
 }
 
@@ -424,6 +456,106 @@
   border-radius: 14px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(118, 223, 196, 0.025), rgba(255, 255, 255, 0.018));
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.download-command-stack {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+  align-items: stretch;
+}
+
+.control-room__quickbar--top {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  margin-bottom: 0;
+  padding: 12px 14px;
+}
+
+.control-room__quickbar--top .control-room__stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.control-room__quickbar--top .control-room__stat {
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.control-room__quickbar--top .action-row--top {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.control-room__quickbar--top .primary-button {
+  min-width: 0;
+}
+
+.control-room__quickbar--top .primary-button,
+.control-room__quickbar--top .ghost-button {
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+}
+
+.download-source-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 0;
+}
+
+.download-flow-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 520px);
+  gap: 16px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.026);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.download-flow-switch .section-title {
+  display: grid;
+  gap: 4px;
+  align-items: start;
+  justify-content: start;
+  margin-bottom: 0;
+}
+
+.download-flow-switch .section-title small {
+  text-align: left;
+}
+
+.segmented--flow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  max-width: none;
+}
+
+.source-editor {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-2) 5%, transparent), transparent 62%),
+    rgba(255, 255, 255, 0.018);
+  border: 1px solid rgba(255, 255, 255, 0.058);
+}
+
+.source-editor .section-title {
+  margin-bottom: 0;
+}
+
+.source-editor__actions {
+  margin-top: 0;
 }
 
 .control-room__stats {
@@ -513,18 +645,33 @@
 .link-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .link-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 8px;
   align-items: center;
 }
 
 .link-row__input {
   width: 100%;
+}
+
+.source-editor--links .link-row__input {
+  min-height: 44px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.032);
+  border-color: rgba(255, 255, 255, 0.065);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.018);
+}
+
+.link-row .ghost-button--icon {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  font-size: 1rem;
 }
 
 .link-advisor {
@@ -610,6 +757,261 @@
   color: #ffd6da;
 }
 
+.bilibili-assistant {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent-2) 5%, transparent), transparent 62%),
+    rgba(255, 255, 255, 0.018);
+  border: 1px solid rgba(255, 255, 255, 0.058);
+}
+
+.bilibili-lookup-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  align-self: end;
+}
+
+.bilibili-lookup-actions .ghost-button {
+  min-width: 108px;
+}
+
+.bilibili-lookup-actions .ghost-button--small {
+  min-width: 68px;
+}
+
+.collection-queue-note {
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--text-strong);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  background: color-mix(in srgb, var(--accent-2) 11%, rgba(255, 255, 255, 0.035));
+  border: 1px solid color-mix(in srgb, var(--accent-2) 26%, rgba(255, 255, 255, 0.08));
+}
+
+.bilibili-lookup-row {
+  align-items: end;
+}
+
+.bilibili-lookup-row .field {
+  margin-bottom: 0;
+}
+
+.bilibili-season {
+  display: grid;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.bilibili-season__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bilibili-season__header div {
+  min-width: 0;
+}
+
+.bilibili-season__header strong {
+  display: block;
+  color: var(--text-strong);
+  font-size: 0.98rem;
+  line-height: 1.3;
+}
+
+.bilibili-season__header small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bilibili-season__header > span {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.bilibili-season__actions {
+  margin-top: 0;
+  flex-wrap: wrap;
+}
+
+.bilibili-group-list {
+  display: grid;
+  gap: 12px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.bilibili-group {
+  display: grid;
+  gap: 8px;
+}
+
+.bilibili-group__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bilibili-group__title span {
+  color: var(--text-strong);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.bilibili-group__title small {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.bilibili-episode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+  gap: 8px;
+}
+
+.bilibili-episode {
+  position: relative;
+  contain: layout paint style;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 3px 8px;
+  min-height: 76px;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.032);
+  color: var(--text-muted);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.bilibili-episode * {
+  user-select: none;
+}
+
+.bilibili-episode:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent-2) 38%, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2) 12%, transparent);
+}
+
+.bilibili-episode.active {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--accent) 66%, rgba(255, 255, 255, 0.1));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent-2) 8%, transparent)),
+    rgba(255, 255, 255, 0.05);
+}
+
+.bilibili-episode__check {
+  display: grid;
+  place-items: center;
+  grid-row: 1 / span 3;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bilibili-episode.active .bilibili-episode__check {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.bilibili-episode.active .bilibili-episode__check::after {
+  content: "";
+  display: block;
+  width: 8px;
+  height: 5px;
+  border-left: 2px solid #07101b;
+  border-bottom: 2px solid #07101b;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.bilibili-episode strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-strong);
+  font-size: 0.94rem;
+  line-height: 1.25;
+}
+
+.bilibili-episode span:not(.bilibili-episode__check) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.bilibili-episode__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #080b12;
+  background: linear-gradient(135deg, #ffd36f, #ffae62);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 18px rgba(255, 184, 92, 0.18);
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bilibili-episode__badge--member {
+  color: #fff7fb;
+  background: linear-gradient(135deg, #ff75a6, #e0528a);
+  box-shadow: 0 8px 18px rgba(224, 82, 138, 0.22);
+}
+
+.bilibili-episode__badge--limited {
+  color: #091015;
+  background: linear-gradient(135deg, #ffe186, #74d9ff);
+  box-shadow: 0 8px 18px rgba(116, 217, 255, 0.2);
+}
+
+.bilibili-episode__badge--preview {
+  color: var(--text-strong);
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
 .field-group {
   display: flex;
   gap: 12px;
@@ -685,6 +1087,18 @@
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.028);
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.cookie-advisor--top {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin: 0;
+  border-radius: 14px;
+}
+
+.cookie-advisor--top .ghost-button {
+  align-self: flex-start;
 }
 
 .cookie-advisor--active {
@@ -914,6 +1328,11 @@
 }
 
 .ghost-button--small {
+  min-height: 0;
+  padding: 10px 14px;
+}
+
+.primary-button--small {
   min-height: 0;
   padding: 10px 14px;
 }
@@ -1336,6 +1755,65 @@
   line-height: 1.55;
 }
 
+.runtime-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.runtime-progress__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.runtime-progress__header span,
+.runtime-progress small {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+
+.runtime-progress__header strong {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.runtime-progress__bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.runtime-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 180ms ease;
+}
+
+.runtime-progress__bar--indeterminate .runtime-progress__fill {
+  animation: runtime-progress-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes runtime-progress-pulse {
+  from {
+    transform: translateX(-18%);
+  }
+  to {
+    transform: translateX(180%);
+  }
+}
+
 .log-viewer {
   height: 360px;
   overflow: auto;
@@ -1349,6 +1827,10 @@
   height: 220px;
   padding: 12px;
   border-radius: 14px;
+}
+
+.right-rail .log-viewer--compact {
+  height: 150px;
 }
 
 .log-placeholder,
@@ -2334,7 +2816,8 @@
   .control-room,
   .telemetry,
   .logs,
-  .history {
+  .history,
+  .collection-logs {
     padding: 20px;
     border-radius: 20px;
   }
@@ -2342,7 +2825,8 @@
   .action-row,
   .field-group,
   .section-actions,
-  .cookie-advisor {
+  .cookie-advisor,
+  .bilibili-season__header {
     flex-direction: column;
     align-items: stretch;
   }
@@ -2350,6 +2834,22 @@
   .control-room__quickbar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .control-room__quickbar--top .action-row--top {
+    justify-content: flex-start;
+  }
+
+  .download-flow-switch {
+    grid-template-columns: 1fr;
+  }
+
+  .bilibili-lookup-actions {
+    align-self: stretch;
+  }
+
+  .bilibili-lookup-actions .ghost-button {
+    flex: 1;
   }
 
   .control-room__stats {
@@ -2374,6 +2874,10 @@
   }
 
   .preset-list {
+    grid-template-columns: 1fr;
+  }
+
+  .bilibili-episode-grid {
     grid-template-columns: 1fr;
   }
 

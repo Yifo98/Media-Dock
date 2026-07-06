@@ -7,7 +7,11 @@ const appApi = {
   getSelfCheck: () => ipcRenderer.invoke('self-check:get'),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadLatestUpdate: () => ipcRenderer.invoke('updates:downloadLatest'),
+  resolveBilibiliSeason: (sourceUrl) => ipcRenderer.invoke('bilibili:resolveSeason', sourceUrl),
+  resolveMediaCollection: (sourceUrl) => ipcRenderer.invoke('collections:resolve', sourceUrl),
   installDenoRuntime: () => ipcRenderer.invoke('runtime:installDeno'),
+  checkRuntimeToolUpdates: () => ipcRenderer.invoke('runtime:checkToolUpdates'),
+  updateYtDlpRuntime: () => ipcRenderer.invoke('runtime:updateYtDlp'),
   openMediaTools: () => ipcRenderer.invoke('window:openMediaTools'),
   pickDirectory: (currentPath) => ipcRenderer.invoke('dialog:pickDirectory', currentPath),
   pickMediaFile: (currentPath) => ipcRenderer.invoke('dialog:pickMediaFile', currentPath),
@@ -41,6 +45,16 @@ const appApi = {
     const wrapped = (_event, payload) => listener(payload)
     ipcRenderer.on('media-tools:update', wrapped)
     return () => ipcRenderer.removeListener('media-tools:update', wrapped)
+  },
+  onCollectionLog: (listener) => {
+    const wrapped = (_event, payload) => listener(payload)
+    ipcRenderer.on('collections:log', wrapped)
+    return () => ipcRenderer.removeListener('collections:log', wrapped)
+  },
+  onRuntimeToolUpdate: (listener) => {
+    const wrapped = (_event, payload) => listener(payload)
+    ipcRenderer.on('runtime-tools:update', wrapped)
+    return () => ipcRenderer.removeListener('runtime-tools:update', wrapped)
   },
 }
 

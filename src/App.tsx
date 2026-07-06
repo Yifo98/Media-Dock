@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import MediaToolsView from './MediaToolsView'
 import { appApi } from './services/appApi'
@@ -7,6 +7,7 @@ import { getThemeLabel, isTheme, THEME_OPTIONS, type Theme } from './themeOption
 
 type Language = 'zh' | 'en'
 type ActiveWorkspace = 'download' | 'media'
+type DownloadFlowMode = 'links' | 'collection'
 type JobView = 'active' | 'finished' | 'issues'
 type DownloadConcurrency = 1 | 2 | 3
 type ExtraPresetId =
@@ -176,10 +177,31 @@ function getText(language: Language) {
         updateDownloading: '下载中...',
         updateDownloaded: '更新包已下载。',
         updateMissingAsset: '没有找到适合当前系统的更新包。',
+        checkToolUpdates: '检查更新',
+        checkingToolUpdates: '检查中...',
+        toolUpdateReady: '下载内核有新版本',
+        toolUpdateNone: '核心工具已是最新版本。',
+        toolUpdateUnknown: '还没有检查核心工具更新。',
+        toolUpdateAllReady: '核心工具有新版本',
+        updateYtDlp: '更新 yt-dlp',
+        updateDeno: '更新 Deno',
+        updatingYtDlp: '更新中...',
+        ytDlpUpdated: 'yt-dlp 已更新完成。',
+        ytDlpUpdateFailed: 'yt-dlp 更新失败。',
+        downloadCoreVersion: 'yt-dlp 版本',
+        denoVersion: 'Deno 版本',
+        denoUpdateReady: 'Deno 有新版本',
+        runtimeProgressTitle: '安装进度',
+        runtimeProgressIdle: '暂无安装任务。',
+        downloadFlow: '下载方式',
+        linkDownloadMode: '链接下载',
+        linkDownloadHint: '适合单个视频、多个独立链接，在这里直接维护下载链接。',
+        collectionDownloadMode: '剧集批量解析',
+        collectionDownloadHint: '适合 B 站番剧/课程或 YouTube 合集，先解析集数，再勾选加入统一下载列表。',
         installDenoAuto: '自动安装 Deno',
         installingDeno: '安装中...',
-        denoInstalled: 'Deno 已安装完成。',
-        denoInstallAutoHint: '检测到 Deno 缺失时，可自动下载官方 Deno zip，并放入同级数据目录的 tools/bin。',
+        denoInstalled: 'Deno 已安装 / 更新完成。',
+        denoInstallAutoHint: '检测到 Deno 缺失或版本落后时，可自动下载官方 Deno zip，并放入同级数据目录的 tools/bin。',
         workspace: '工作区',
         mediaTools: '媒体工具',
         engine: '核心工具',
@@ -194,12 +216,31 @@ function getText(language: Language) {
         denoReady: '已检测到 Deno，YouTube 解析更稳。',
         denoMissing: '未检测到 Deno，多数站点仍可用。',
         downloadPanel: '下载面板',
-        downloadPanelHint: '一行一个链接，默认顺序下载。',
+        downloadPanelHint: '先选择来源方式，再开始下载。',
         urls: '链接列表',
         urlsPlaceholder: '每行一个链接',
         urlsHint: '支持一次粘贴多行链接，系统会自动拆成多条。',
         linkCheck: '链接检查',
         linkCheckHint: '抖音/TikTok 这类站点更依赖具体视频页；这里会提前提示明显不适合下载的入口。',
+        bilibiliAssistant: '剧集批量解析',
+        bilibiliAssistantHint: '粘贴 B 站番剧/课程或 YouTube 合集链接，解析后勾选加入下载列表。',
+        bilibiliLookupUrl: '主链接',
+        bilibiliLookupPlaceholder: '例如：B 站 ep/ss/md 链接，或 YouTube watch?list=...',
+        bilibiliResolve: '解析列表',
+        bilibiliResolving: '解析中...',
+        clearLookupUrl: '清空',
+        bilibiliSelectAll: '全选',
+        bilibiliSelectMain: '默认选择',
+        bilibiliClearSelection: '清空',
+        bilibiliAddSelected: '加入下载列表',
+        bilibiliResolved: '已解析 {title} · {count} 条可选链接。',
+        bilibiliSelectedCount: '已选 {selected}/{total}',
+        bilibiliNoSelection: '先勾选要下载的集数。',
+        bilibiliAdded: '已加入 {count} 条链接。',
+        collectionQueuedLinks: '已加入 {count} 条下载链接。可直接点上方“开始”，也可切回“链接下载”查看或调整。',
+        bilibiliHelp: 'B 站会员/课程内容仍需要有效 Cookie；YouTube 大合集默认不全选，建议按范围勾选后并发 1-2。',
+        bilibiliNoUrl: '先粘贴一个 B 站番剧/课程或 YouTube 合集链接。',
+        bilibiliMainGroup: '正片',
         addLink: '添加链接',
         clearLinks: '清空链接',
         outputFolder: '输出目录',
@@ -256,6 +297,9 @@ function getText(language: Language) {
         openFolder: '打开目录',
         telemetry: '实时信息',
         telemetryHint: '这里能看到总进度、单任务进度、速度和 ETA。',
+        collectionLog: '解析日志',
+        collectionLogHint: '保留最近一次列表解析过程。',
+        collectionLogIdle: '还没有解析记录。',
         queueSummary: '任务总览',
         queueProgress: '队列进度',
         queueProgressHint: '总进度会把当前下载中的实时百分比也算进去，不再只看完成数。',
@@ -350,10 +394,31 @@ function getText(language: Language) {
         updateDownloading: 'Downloading...',
         updateDownloaded: 'Update package downloaded.',
         updateMissingAsset: 'No update package matched this platform.',
+        checkToolUpdates: 'Check updates',
+        checkingToolUpdates: 'Checking...',
+        toolUpdateReady: 'Download core update available',
+        toolUpdateNone: 'Core tools are up to date.',
+        toolUpdateUnknown: 'Core tool updates have not been checked yet.',
+        toolUpdateAllReady: 'Core tool updates available',
+        updateYtDlp: 'Update yt-dlp',
+        updateDeno: 'Update Deno',
+        updatingYtDlp: 'Updating...',
+        ytDlpUpdated: 'yt-dlp has been updated.',
+        ytDlpUpdateFailed: 'Failed to update yt-dlp.',
+        downloadCoreVersion: 'yt-dlp version',
+        denoVersion: 'Deno version',
+        denoUpdateReady: 'Deno update available',
+        runtimeProgressTitle: 'Install progress',
+        runtimeProgressIdle: 'No install task yet.',
+        downloadFlow: 'Download mode',
+        linkDownloadMode: 'Link download',
+        linkDownloadHint: 'For single videos or independent URLs. Manage the download URLs here.',
+        collectionDownloadMode: 'Collection picker',
+        collectionDownloadHint: 'For Bilibili seasons/courses or YouTube playlists. Resolve items first, then add selected items to the shared download list.',
         installDenoAuto: 'Install Deno automatically',
         installingDeno: 'Installing...',
-        denoInstalled: 'Deno has been installed.',
-        denoInstallAutoHint: 'When Deno is missing, download the official Deno zip and place it in the sibling data folder tools/bin.',
+        denoInstalled: 'Deno has been installed / updated.',
+        denoInstallAutoHint: 'When Deno is missing or outdated, download the official Deno zip and place it in the sibling data folder tools/bin.',
         workspace: 'Workspace',
         mediaTools: 'Media tools',
         engine: 'Core tools',
@@ -368,12 +433,31 @@ function getText(language: Language) {
         denoReady: 'Deno detected. YouTube support should be more stable.',
         denoMissing: 'Deno not found. Most sites still work.',
         downloadPanel: 'Download panel',
-        downloadPanelHint: 'One URL per line. Downloads run sequentially by default.',
+        downloadPanelHint: 'Choose a source mode first, then start downloading.',
         urls: 'URL list',
         urlsPlaceholder: 'One URL per line',
         urlsHint: 'Paste multiple lines at once and they will be split into separate URLs.',
         linkCheck: 'Link check',
         linkCheckHint: 'Douyin/TikTok work best with direct video links. Obvious feed or landing-page links are flagged before download.',
+        bilibiliAssistant: 'Collection picker',
+        bilibiliAssistantHint: 'Resolve a Bilibili season/course or YouTube playlist link, then add selected items to the download list.',
+        bilibiliLookupUrl: 'Source URL',
+        bilibiliLookupPlaceholder: 'Example: Bilibili ep/ss/md URL, or YouTube watch?list=...',
+        bilibiliResolve: 'Resolve list',
+        bilibiliResolving: 'Resolving...',
+        clearLookupUrl: 'Clear',
+        bilibiliSelectAll: 'Select all',
+        bilibiliSelectMain: 'Default',
+        bilibiliClearSelection: 'Clear',
+        bilibiliAddSelected: 'Add to URL list',
+        bilibiliResolved: 'Resolved {title} · {count} selectable link(s).',
+        bilibiliSelectedCount: 'Selected {selected}/{total}',
+        bilibiliNoSelection: 'Select the episodes to add first.',
+        bilibiliAdded: 'Added {count} link(s).',
+        collectionQueuedLinks: 'Added {count} download link(s). Click Start above, or switch back to Link download to review and edit them.',
+        bilibiliHelp: 'Bilibili member/course items still need valid cookies. YouTube large playlists are not selected by default; select a range and use concurrency 1-2.',
+        bilibiliNoUrl: 'Paste a Bilibili season/course or YouTube playlist URL first.',
+        bilibiliMainGroup: 'Main episodes',
         addLink: 'Add link',
         clearLinks: 'Clear links',
         outputFolder: 'Output folder',
@@ -430,6 +514,9 @@ function getText(language: Language) {
         openFolder: 'Open folder',
         telemetry: 'Telemetry',
         telemetryHint: 'See total progress, per-job progress, speed, and ETA.',
+        collectionLog: 'Resolve log',
+        collectionLogHint: 'Keeps the latest collection resolve steps.',
+        collectionLogIdle: 'No collection resolve log yet.',
         queueSummary: 'Queue summary',
         queueProgress: 'Queue progress',
         queueProgressHint: 'Aggregate progress includes the live percent from the running job, not just completed items.',
@@ -719,6 +806,84 @@ function inspectDownloadLinks(urls: string[], language: Language) {
     .filter((item): item is LinkInspection => Boolean(item))
 }
 
+function isCollectionSourceUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    const hostname = parsed.hostname.toLowerCase()
+    const isBilibili = hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com') || hostname === 'b23.tv' || hostname.endsWith('.b23.tv')
+    const isYoutube = hostname === 'youtube.com' || hostname.endsWith('.youtube.com') || hostname === 'youtu.be' || hostname.endsWith('.youtu.be')
+    return isBilibili || isYoutube
+  } catch {
+    return false
+  }
+}
+
+function getBilibiliEpisodeItems(season: BilibiliSeasonResolveResult | null) {
+  return season?.groups.flatMap((group) => group.episodes.map((episode) => ({ ...episode, groupId: group.id }))) ?? []
+}
+
+function getBilibiliBadgeTone(badge: string) {
+  if (badge.includes('会员')) return 'member'
+  if (badge.includes('限免') || badge.includes('免费')) return 'limited'
+  if (badge.includes('预告')) return 'preview'
+  return 'default'
+}
+
+function mergeLinkInputValues(current: string[], nextUrls: string[]) {
+  const merged: string[] = []
+  const seen = new Set<string>()
+
+  ;[...current, ...nextUrls].forEach((value) => {
+    const trimmed = value.trim()
+    if (!trimmed || seen.has(trimmed)) {
+      return
+    }
+    seen.add(trimmed)
+    merged.push(trimmed)
+  })
+
+  return merged.length > 0 ? merged : ['']
+}
+
+type BilibiliEpisodeCardProps = {
+  episode: BilibiliEpisodeItem
+  selected: boolean
+  onToggle: (episodeId: string, shiftKey: boolean) => void
+}
+
+const BilibiliEpisodeCard = memo(function BilibiliEpisodeCard({
+  episode,
+  selected,
+  onToggle,
+}: BilibiliEpisodeCardProps) {
+  const badgeTone = getBilibiliBadgeTone(episode.badge)
+
+  return (
+    <button
+      className={selected ? 'bilibili-episode active' : 'bilibili-episode'}
+      type="button"
+      role="checkbox"
+      aria-checked={selected}
+      onMouseDown={(event) => {
+        if (event.shiftKey) {
+          event.preventDefault()
+        }
+      }}
+      onClick={(event) => {
+        if (event.shiftKey) {
+          event.preventDefault()
+        }
+        onToggle(episode.id, event.shiftKey)
+      }}
+    >
+      <span className="bilibili-episode__check" aria-hidden="true" />
+      <strong>{episode.title}</strong>
+      <span>{episode.subtitle || episode.link}</span>
+      {episode.badge ? <em className={`bilibili-episode__badge bilibili-episode__badge--${badgeTone}`}>{episode.badge}</em> : null}
+    </button>
+  )
+})
+
 function scoreCookieForTarget(item: CookieFileInfo, target: (typeof COOKIE_TARGETS)[number]) {
   const labelText = normalizeCookieText(item.label)
   const fullText = cookieSearchText(item)
@@ -952,6 +1117,10 @@ function upsertHistoryItem(currentHistory: HistoryItem[], nextItem: HistoryItem)
   return [nextItem, ...filtered].slice(0, 20)
 }
 
+function formatLogTime() {
+  return new Date().toLocaleTimeString([], { hour12: false })
+}
+
 function App() {
   const initialPreferences = useMemo(() => readPreferences(), [])
   const initialOutputDirRef = useRef(initialPreferences.outputDir)
@@ -971,6 +1140,7 @@ function App() {
   const [enabledExtraPresets, setEnabledExtraPresets] = useState<ExtraPresetId[]>(initialPreferences.enabledExtraPresets)
   const [concurrency, setConcurrency] = useState<DownloadConcurrency>(initialPreferences.concurrency)
   const [logs, setLogs] = useState<string[]>([])
+  const [collectionLogs, setCollectionLogs] = useState<string[]>([])
   const [jobLogs, setJobLogs] = useState<Record<string, string[]>>({})
   const [selectedLogJobId, setSelectedLogJobId] = useState<string | null>(null)
   const [jobView, setJobView] = useState<JobView>('active')
@@ -984,26 +1154,48 @@ function App() {
   const [selfCheckItems, setSelfCheckItems] = useState<SelfCheckItem[]>([])
   const [toolsSource, setToolsSource] = useState<'bundled' | 'external'>('external')
   const [runtimeRefreshing, setRuntimeRefreshing] = useState(false)
-  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null)
-  const [updateChecking, setUpdateChecking] = useState(false)
-  const [updateDownloading, setUpdateDownloading] = useState(false)
+  const [runtimeToolUpdateInfo, setRuntimeToolUpdateInfo] = useState<RuntimeToolUpdateCheckResult | null>(null)
+  const [runtimeToolUpdateChecking, setRuntimeToolUpdateChecking] = useState(false)
+  const [runtimeInstallProgress, setRuntimeInstallProgress] = useState<RuntimeToolProgressUpdate | null>(null)
+  const [ytDlpUpdating, setYtDlpUpdating] = useState(false)
   const [denoInstalling, setDenoInstalling] = useState(false)
   const [cookieImporting, setCookieImporting] = useState(false)
+  const [bilibiliLookupUrl, setBilibiliLookupUrl] = useState('')
+  const [bilibiliResolving, setBilibiliResolving] = useState(false)
+  const [bilibiliSeason, setBilibiliSeason] = useState<BilibiliSeasonResolveResult | null>(null)
+  const [bilibiliSelectedIds, setBilibiliSelectedIds] = useState<Set<string>>(() => new Set())
   const [activeWorkspace, setActiveWorkspace] = useState<ActiveWorkspace>('download')
+  const [downloadFlow, setDownloadFlow] = useState<DownloadFlowMode>('links')
   const activeQueueSnapshotRef = useRef<ActiveQueueSnapshot>({
     mode: initialPreferences.mode,
     outputDir: initialPreferences.outputDir,
   })
+  const lastAutoFilledBilibiliUrlRef = useRef('')
+  const lastBilibiliSelectedIndexRef = useRef<number | null>(null)
+  const lastBilibiliSelectionActionRef = useRef<'select' | 'deselect' | null>(null)
   const logViewerRef = useRef<HTMLDivElement | null>(null)
   const text = getText(language)
   const normalizedHeroTitle = text.heroTitle.replace(/[。.]$/, '')
   const cookiesPluginLabel = language === 'zh' ? '推荐插件：MediaCookies' : 'Recommended extension: MediaCookies'
-  const updateSummary = updateInfo
-    ? updateInfo.updateAvailable
-      ? `${text.updateReady}: ${updateInfo.currentVersion} -> ${updateInfo.latestVersion ?? '--'}`
-      : `${text.updateCurrent}: ${updateInfo.currentVersion} · ${text.updateNone}`
-    : text.updateUnknown
+  const runtimeToolSummary = runtimeToolUpdateInfo
+    ? [
+        runtimeToolUpdateInfo.ytDlp.updateAvailable
+          ? `${text.toolUpdateReady}: ${runtimeToolUpdateInfo.ytDlp.currentVersion ?? '--'} -> ${runtimeToolUpdateInfo.ytDlp.latestVersion ?? '--'}`
+          : `${text.downloadCoreVersion}: ${runtimeToolUpdateInfo.ytDlp.currentVersion ?? '--'}`,
+        runtimeToolUpdateInfo.deno.updateAvailable
+          ? `${text.denoUpdateReady}: ${runtimeToolUpdateInfo.deno.currentVersion ?? '--'} -> ${runtimeToolUpdateInfo.deno.latestVersion ?? '--'}`
+          : `${text.denoVersion}: ${runtimeToolUpdateInfo.deno.currentVersion ?? '--'}`,
+        (!runtimeToolUpdateInfo.ytDlp.updateAvailable && !runtimeToolUpdateInfo.deno.updateAvailable) ? text.toolUpdateNone : '',
+      ].filter(Boolean).join(' · ')
+    : text.toolUpdateUnknown
+  const runtimeProgressPercent = typeof runtimeInstallProgress?.percent === 'number'
+    ? Math.min(100, Math.max(0, runtimeInstallProgress.percent))
+    : null
   const presetCopy = EXTRA_PRESETS[language]
+
+  const appendCollectionLog = useCallback((line: string) => {
+    setCollectionLogs((current) => [...current, `[${formatLogTime()}] ${line}`].slice(-120))
+  }, [])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -1030,18 +1222,6 @@ function App() {
         if (initialCookieFileRef.current && !cookieItems.some((item) => item.path === initialCookieFileRef.current)) {
           setCookieFile('')
         }
-        void appApi.checkForUpdates()
-          .then((result) => {
-            setUpdateInfo(result)
-            if (result.updateAvailable) {
-              setStatus('success')
-              setStatusMessage(`${getText(initialLanguageRef.current).updateReady}: ${result.currentVersion} -> ${result.latestVersion ?? '--'}`)
-            }
-          })
-          .catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : 'Update check failed.'
-            setLogs((current) => [...current, `[update] ${message}`].slice(-600))
-          })
       } finally {
         setRuntimeRefreshing(false)
       }
@@ -1106,6 +1286,29 @@ function App() {
       })
       if (nextJob.command) setActiveCommand(nextJob.command)
       if (nextJob.message) setStatusMessage(nextJob.message)
+    })
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (!appApi) return
+
+    const unsubscribe = appApi.onCollectionLog((event) => {
+      if (event.line) appendCollectionLog(event.line)
+    })
+    return unsubscribe
+  }, [appendCollectionLog])
+
+  useEffect(() => {
+    if (!appApi) return
+
+    const unsubscribe = appApi.onRuntimeToolUpdate((event) => {
+      setRuntimeInstallProgress(event)
+      if (event.stage !== 'complete' && event.stage !== 'error') {
+        setStatus('running')
+        setStatusMessage(event.message)
+      }
+      setLogs((current) => [...current, `[runtime] ${event.tool}: ${event.message}`].slice(-600))
     })
     return unsubscribe
   }, [])
@@ -1256,6 +1459,29 @@ function App() {
     : text.cookieHint
   const recommendedCookieHealth = recommendedCookieFile ? formatCookieHealth(recommendedCookieFile, language, text) : ''
   const canClearLinks = linkInputs.some((item) => item.trim().length > 0) || linkInputs.length > 1
+  const defaultBilibiliLookupUrl = useMemo(() => urls.find((url) => isCollectionSourceUrl(url)) ?? '', [urls])
+  const bilibiliEpisodes = useMemo(() => getBilibiliEpisodeItems(bilibiliSeason), [bilibiliSeason])
+  const selectedBilibiliEpisodes = useMemo(
+    () => bilibiliEpisodes.filter((episode) => bilibiliSelectedIds.has(episode.id)),
+    [bilibiliEpisodes, bilibiliSelectedIds],
+  )
+  const bilibiliSelectedLabel = useMemo(
+    () => text.bilibiliSelectedCount
+      .replace('{selected}', String(selectedBilibiliEpisodes.length))
+      .replace('{total}', String(bilibiliEpisodes.length)),
+    [bilibiliEpisodes.length, selectedBilibiliEpisodes.length, text.bilibiliSelectedCount],
+  )
+
+  useEffect(() => {
+    if (
+      defaultBilibiliLookupUrl
+      && !bilibiliLookupUrl.trim()
+      && lastAutoFilledBilibiliUrlRef.current !== defaultBilibiliLookupUrl
+    ) {
+      lastAutoFilledBilibiliUrlRef.current = defaultBilibiliLookupUrl
+      setBilibiliLookupUrl(defaultBilibiliLookupUrl)
+    }
+  }, [bilibiliLookupUrl, defaultBilibiliLookupUrl])
 
   useEffect(() => {
     if (!cookieFile || urls.length === 0 || !selectedCookieMeta) {
@@ -1299,62 +1525,18 @@ function App() {
     }
   }
 
-  async function checkForUpdates(silent = false) {
-    if (!appApi) return
-
-    setUpdateChecking(true)
-    try {
-      const result = await appApi.checkForUpdates()
-      setUpdateInfo(result)
-      if (!silent || result.updateAvailable) {
-        setStatus(result.updateAvailable ? 'success' : 'idle')
-        setStatusMessage(
-          result.updateAvailable
-            ? `${text.updateReady}: ${result.currentVersion} -> ${result.latestVersion ?? '--'}`
-            : text.updateNone,
-        )
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Update check failed.'
-      if (!silent) {
-        setStatus('error')
-        setStatusMessage(message)
-      }
-      setLogs((current) => [...current, `[update] ${message}`].slice(-600))
-    } finally {
-      setUpdateChecking(false)
-    }
-  }
-
-  async function downloadLatestUpdate() {
-    if (!appApi) return
-
-    setUpdateDownloading(true)
-    try {
-      const result = await appApi.downloadLatestUpdate()
-      setStatus('success')
-      setStatusMessage(`${text.updateDownloaded} ${result.filePath}`)
-      setLogs((current) => [...current, `[update] ${result.assetName} -> ${result.filePath}`].slice(-600))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : text.updateMissingAsset
-      setStatus('error')
-      setStatusMessage(message)
-      setLogs((current) => [...current, `[update] ${message}`].slice(-600))
-    } finally {
-      setUpdateDownloading(false)
-    }
-  }
-
   async function installDenoRuntime() {
     if (!appApi) return
 
     setDenoInstalling(true)
+    setRuntimeInstallProgress({ tool: 'deno', stage: 'checking', message: text.installingDeno, percent: null })
     try {
       const result = await appApi.installDenoRuntime()
       setStatus('success')
       setStatusMessage(`${text.denoInstalled} ${result.path}`)
       setLogs((current) => [...current, `[runtime] deno ${result.version} -> ${result.path}`].slice(-600))
       await refreshRuntimeState()
+      await checkRuntimeToolUpdates(true)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Deno install failed.'
       setStatus('error')
@@ -1362,6 +1544,59 @@ function App() {
       setLogs((current) => [...current, `[runtime] ${message}`].slice(-600))
     } finally {
       setDenoInstalling(false)
+    }
+  }
+
+  async function checkRuntimeToolUpdates(silent = false) {
+    if (!appApi) return
+
+    setRuntimeToolUpdateChecking(true)
+    try {
+      const result = await appApi.checkRuntimeToolUpdates()
+      setRuntimeToolUpdateInfo(result)
+      const updates = [
+        result.ytDlp.updateAvailable ? `${text.toolUpdateReady}: ${result.ytDlp.currentVersion ?? '--'} -> ${result.ytDlp.latestVersion ?? '--'}` : '',
+        result.deno.updateAvailable ? `${text.denoUpdateReady}: ${result.deno.currentVersion ?? '--'} -> ${result.deno.latestVersion ?? '--'}` : '',
+      ].filter(Boolean)
+      if (!silent || updates.length > 0) {
+        setStatus(updates.length > 0 ? 'success' : 'idle')
+        setStatusMessage(
+          updates.length > 0
+            ? `${text.toolUpdateAllReady}: ${updates.join('；')}`
+            : text.toolUpdateNone,
+        )
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : text.ytDlpUpdateFailed
+      if (!silent) {
+        setStatus('error')
+        setStatusMessage(message)
+      }
+      setLogs((current) => [...current, `[runtime] ${message}`].slice(-600))
+    } finally {
+      setRuntimeToolUpdateChecking(false)
+    }
+  }
+
+  async function updateYtDlpRuntime() {
+    if (!appApi) return
+
+    setYtDlpUpdating(true)
+    setRuntimeInstallProgress({ tool: 'yt-dlp', stage: 'checking', message: text.updatingYtDlp, percent: null })
+    try {
+      const result = await appApi.updateYtDlpRuntime()
+      setStatus('success')
+      setStatusMessage(`${text.ytDlpUpdated} ${result.version}`)
+      setLogs((current) => [...current, `[runtime] yt-dlp ${result.version} -> ${result.path}`].slice(-600))
+      await refreshRuntimeState()
+      await checkRuntimeToolUpdates(true)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : text.ytDlpUpdateFailed
+      setStatus('error')
+      setStatusMessage(message)
+      setLogs((current) => [...current, `[runtime] ${message}`].slice(-600))
+    } finally {
+      setYtDlpUpdating(false)
     }
   }
 
@@ -1554,6 +1789,123 @@ function App() {
     setCookieFile('')
   }
 
+  function setBilibiliSelection(ids: string[]) {
+    lastBilibiliSelectedIndexRef.current = null
+    lastBilibiliSelectionActionRef.current = null
+    setBilibiliSelectedIds(new Set(ids))
+  }
+
+  async function resolveBilibiliSeasonLinks() {
+    if (!appApi) return
+
+    const sourceUrl = bilibiliLookupUrl.trim() || defaultBilibiliLookupUrl
+    if (!sourceUrl) {
+      setStatus('error')
+      setStatusMessage(text.bilibiliNoUrl)
+      return
+    }
+
+    setBilibiliResolving(true)
+    setCollectionLogs([])
+    appendCollectionLog(`准备解析：${sourceUrl}`)
+    setStatus('running')
+    setStatusMessage(`${text.bilibiliResolving} ${sourceUrl}`)
+    try {
+      const result = await appApi.resolveMediaCollection(sourceUrl)
+      const episodes = getBilibiliEpisodeItems(result)
+      setBilibiliSeason(result)
+      setBilibiliLookupUrl(result.sourceUrl)
+      setBilibiliSelection(episodes.filter((episode) => episode.defaultSelected).map((episode) => episode.id))
+      setStatus('success')
+      setStatusMessage(
+        text.bilibiliResolved
+          .replace('{title}', result.title)
+          .replace('{count}', String(episodes.length)),
+      )
+      appendCollectionLog(`解析完成：${result.title} · ${episodes.length} 条。`)
+      appendCollectionLog(`默认勾选：${episodes.filter((episode) => episode.defaultSelected).length} 条。`)
+      setLogs((current) => [...current, `[bilibili] ${result.title}: ${episodes.length} episode link(s)`].slice(-600))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to resolve Bilibili season.'
+      setStatus('error')
+      setStatusMessage(message)
+      appendCollectionLog(`解析失败：${message}`)
+      setLogs((current) => [...current, `[bilibili] ${message}`].slice(-600))
+    } finally {
+      setBilibiliResolving(false)
+    }
+  }
+
+  const toggleBilibiliEpisode = useCallback((episodeId: string, shiftKey = false) => {
+    const episodeIndex = bilibiliEpisodes.findIndex((episode) => episode.id === episodeId)
+    if (episodeIndex < 0) {
+      return
+    }
+
+    setBilibiliSelectedIds((current) => {
+      const next = new Set(current)
+      const anchorIndex = lastBilibiliSelectedIndexRef.current
+      const clickAction = current.has(episodeId) ? 'deselect' : 'select'
+
+      if (shiftKey && anchorIndex !== null) {
+        const start = Math.min(anchorIndex, episodeIndex)
+        const end = Math.max(anchorIndex, episodeIndex)
+        const shouldSelectRange = (lastBilibiliSelectionActionRef.current ?? clickAction) === 'select'
+        bilibiliEpisodes.slice(start, end + 1).forEach((episode) => {
+          if (shouldSelectRange) {
+            next.add(episode.id)
+          } else {
+            next.delete(episode.id)
+          }
+        })
+        return next
+      }
+
+      if (next.has(episodeId)) {
+        next.delete(episodeId)
+      } else {
+        next.add(episodeId)
+      }
+      lastBilibiliSelectionActionRef.current = clickAction
+      return next
+    })
+    lastBilibiliSelectedIndexRef.current = episodeIndex
+  }, [bilibiliEpisodes])
+
+  function selectDefaultBilibiliEpisodes() {
+    setBilibiliSelection(bilibiliEpisodes.filter((episode) => episode.defaultSelected).map((episode) => episode.id))
+  }
+
+  function selectAllBilibiliEpisodes() {
+    setBilibiliSelection(bilibiliEpisodes.map((episode) => episode.id))
+  }
+
+  function clearBilibiliSelection() {
+    setBilibiliSelection([])
+  }
+
+  function clearBilibiliLookup() {
+    setBilibiliLookupUrl('')
+    setBilibiliSeason(null)
+    setBilibiliSelection([])
+    setCollectionLogs([])
+  }
+
+  function addSelectedBilibiliEpisodes() {
+    const selectedUrls = selectedBilibiliEpisodes.map((episode) => episode.link).filter(Boolean)
+    if (selectedUrls.length === 0) {
+      setStatus('error')
+      setStatusMessage(text.bilibiliNoSelection)
+      return
+    }
+
+    setLinkInputs((current) => mergeLinkInputValues(current, selectedUrls))
+    setCookieFile('')
+    setStatus('success')
+    setStatusMessage(text.bilibiliAdded.replace('{count}', String(selectedUrls.length)))
+    appendCollectionLog(`已加入下载列表：${selectedUrls.length} 条。`)
+  }
+
   function togglePreset(preset: ExtraPresetId) {
     setEnabledExtraPresets((current) => current.includes(preset) ? current.filter((item) => item !== preset) : [...current, preset])
   }
@@ -1683,11 +2035,13 @@ function App() {
             <span className="status-card__label">{text.engine}</span>
             <strong>{paths?.envName ?? text.loading}</strong>
             <p title={paths?.ytDlpPath}>{paths?.ytDlpPath ? compactPath(paths.ytDlpPath, 86) : text.loadingPath}</p>
+            {paths?.ytDlpVersion ? <small className="status-card__meta">{text.downloadCoreVersion}: {paths.ytDlpVersion}</small> : null}
           </div>
           <div className="status-card">
             <span className="status-card__label">{text.compatibility}</span>
             <strong>{paths?.denoPath ? text.readyForYoutube : text.basicMode}</strong>
             <p>{denoHint}</p>
+            {paths?.denoVersion ? <small className="status-card__meta">{text.denoVersion}: {paths.denoVersion}</small> : null}
             {!paths?.denoPath ? (
               <div className="status-card__actions">
                 <button
@@ -1716,19 +2070,52 @@ function App() {
             <button className="ghost-button ghost-button--small" type="button" disabled={runtimeRefreshing || queue.running > 0 || queue.pending > 0} onClick={() => void refreshRuntimeState()}>
               {runtimeRefreshing ? text.refreshingTools : text.refreshTools}
             </button>
-            <button className="ghost-button ghost-button--small" type="button" disabled={updateChecking} onClick={() => void checkForUpdates(false)}>
-              {updateChecking ? text.checkingUpdates : text.checkUpdates}
+            <button className="ghost-button ghost-button--small" type="button" disabled={runtimeToolUpdateChecking} onClick={() => void checkRuntimeToolUpdates(false)}>
+              {runtimeToolUpdateChecking ? text.checkingToolUpdates : text.checkToolUpdates}
             </button>
-            {updateInfo?.updateAvailable ? (
-              <button className="ghost-button ghost-button--small" type="button" disabled={updateDownloading || !updateInfo.assetUrl} onClick={() => void downloadLatestUpdate()}>
-                {updateDownloading ? text.updateDownloading : text.updateDownload}
+            {runtimeToolUpdateInfo?.ytDlp.updateAvailable ? (
+              <button
+                className="ghost-button ghost-button--small"
+                type="button"
+                disabled={ytDlpUpdating || queue.running > 0 || queue.pending > 0}
+                onClick={() => void updateYtDlpRuntime()}
+              >
+                {ytDlpUpdating ? text.updatingYtDlp : text.updateYtDlp}
+              </button>
+            ) : null}
+            {runtimeToolUpdateInfo?.deno.updateAvailable ? (
+              <button
+                className="ghost-button ghost-button--small"
+                type="button"
+                disabled={denoInstalling || queue.running > 0 || queue.pending > 0}
+                onClick={() => void installDenoRuntime()}
+              >
+                {denoInstalling ? text.installingDeno : text.updateDeno}
               </button>
             ) : null}
           </div>
+          {runtimeInstallProgress ? (
+            <div className="runtime-progress">
+              <div className="runtime-progress__header">
+                <span>{text.runtimeProgressTitle}</span>
+                <strong>{runtimeInstallProgress.message || text.runtimeProgressIdle}</strong>
+              </div>
+              <div className={`runtime-progress__bar ${runtimeProgressPercent === null ? 'runtime-progress__bar--indeterminate' : ''}`}>
+                <div
+                  className="runtime-progress__fill"
+                  style={{ width: `${runtimeProgressPercent ?? 38}%` }}
+                />
+              </div>
+              <small>
+                {runtimeProgressPercent === null ? runtimeInstallProgress.stage : `${runtimeProgressPercent.toFixed(1)}%`}
+              </small>
+            </div>
+          ) : null}
           <div className="progress-meta progress-meta--wrap">
             <span>{language === 'zh' ? '工具来源' : 'Tool source'}: {toolsSource === 'bundled' ? (language === 'zh' ? '分享包内置' : 'Bundled') : (language === 'zh' ? '系统环境' : 'System')}</span>
-            <span>{updateSummary}</span>
-            {updateInfo?.assetName ? <span>{text.updateLatest}: {updateInfo.latestVersion ?? '--'}</span> : null}
+            {paths?.ytDlpVersion ? <span>{text.downloadCoreVersion}: {paths.ytDlpVersion}</span> : null}
+            {paths?.denoVersion ? <span>{text.denoVersion}: {paths.denoVersion}</span> : null}
+            <span>{runtimeToolSummary}</span>
           </div>
         </div>
       </section>
@@ -1738,60 +2125,194 @@ function App() {
       <main className="workspace">
         <section className="panel control-room">
           <div className="section-title"><span>{text.downloadPanel}</span><small>{text.downloadPanelHint}</small></div>
-          <div className="control-room__quickbar">
-            <div className="control-room__stats">
-              <div className="control-room__stat"><strong>{urls.length}</strong><span>{text.urls}</span></div>
-              <div className="control-room__stat"><strong>{mode === 'video' ? text.video : text.audio}</strong><span>{text.mode}</span></div>
-              <div className="control-room__stat"><strong>{queue.running > 0 || queue.pending > 0 ? statusLabel('running', text) : statusLabel(effectiveStatus, text)}</strong><span>{text.status}</span></div>
+          <div className="download-command-stack">
+            <div className="control-room__quickbar control-room__quickbar--top">
+              <div className="control-room__stats">
+                <div className="control-room__stat"><strong>{urls.length}</strong><span>{text.urls}</span></div>
+                <div className="control-room__stat"><strong>{mode === 'video' ? text.video : text.audio}</strong><span>{text.mode}</span></div>
+                <div className="control-room__stat"><strong>{queue.running > 0 || queue.pending > 0 ? statusLabel('running', text) : statusLabel(effectiveStatus, text)}</strong><span>{text.status}</span></div>
+              </div>
+              <div className="action-row action-row--top">
+                <button className="primary-button" type="button" disabled={!canStart} onClick={handleStartDownload}>{text.start}</button>
+                <button className="ghost-button" type="button" disabled={!canClearLinks || queue.running > 0 || queue.pending > 0} onClick={clearLinkInputs}>
+                  {text.clearLinks}
+                </button>
+                <button className="ghost-button" type="button" disabled={queue.running === 0 && queue.pending === 0} onClick={() => void appApi.cancelDownload()}>{text.cancel}</button>
+                <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir)}>{text.openFolder}</button>
+              </div>
             </div>
-            <div className="action-row action-row--top">
-              <button className="primary-button" type="button" disabled={!canStart} onClick={handleStartDownload}>{text.start}</button>
-              <button className="ghost-button" type="button" disabled={queue.running === 0 && queue.pending === 0} onClick={() => void appApi.cancelDownload()}>{text.cancel}</button>
-              <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir)}>{text.openFolder}</button>
+            <div className={[
+              'cookie-advisor',
+              'cookie-advisor--top',
+              recommendedCookieFile ? 'cookie-advisor--active' : '',
+              recommendedCookieHealth ? 'cookie-advisor--warning' : '',
+            ].filter(Boolean).join(' ')}>
+              <div>
+                <span>{text.cookieAdvisor}</span>
+                <p>{cookieAdvisorMessage}</p>
+                {recommendedCookieFile ? <small>{formatCookieMeta(recommendedCookieFile, language, text)}</small> : null}
+                {recommendedCookieHealth ? <small>{recommendedCookieHealth}</small> : null}
+              </div>
+              {recommendedCookieFile ? (
+                <button
+                  className="ghost-button ghost-button--small"
+                  type="button"
+                  disabled={cookieFile === recommendedCookieFile.path}
+                  onClick={() => setCookieFile(recommendedCookieFile.path)}
+                >
+                  {cookieFile === recommendedCookieFile.path ? text.cookieAdvisorCurrent : text.cookieAdvisorUse}
+                </button>
+              ) : null}
             </div>
           </div>
-          <div className="field">
-            <span>{text.urls}</span>
-            <div className="link-list">
-              {linkInputs.map((value, index) => (
-                <div className="link-row" key={`link-${index}`}>
-                  <input
-                    className="link-row__input"
-                    value={value}
-                    onChange={(event) => updateLinkInput(index, event.target.value)}
-                    placeholder={`${text.urlsPlaceholder} ${index + 1}`}
-                  />
-                  <button className="ghost-button ghost-button--icon" type="button" onClick={() => removeLinkInput(index)}>
-                    -
-                  </button>
-                </div>
-              ))}
+          <div className="download-source-panel">
+            <div className="download-flow-switch">
+              <div className="section-title section-title--tight">
+                <span>{text.downloadFlow}</span>
+                <small>{downloadFlow === 'links' ? text.linkDownloadHint : text.collectionDownloadHint}</small>
+              </div>
+              <div className="segmented segmented--flow">
+                <button
+                  className={downloadFlow === 'links' ? 'segmented__item active' : 'segmented__item'}
+                  type="button"
+                  onClick={() => setDownloadFlow('links')}
+                >
+                  {text.linkDownloadMode}
+                </button>
+                <button
+                  className={downloadFlow === 'collection' ? 'segmented__item active' : 'segmented__item'}
+                  type="button"
+                  onClick={() => setDownloadFlow('collection')}
+                >
+                  {text.collectionDownloadMode}
+                </button>
+              </div>
             </div>
-            <small className="field-help">{text.urlsHint}</small>
-            {linkInspections.length > 0 ? (
-              <div className="link-advisor">
-                <div className="link-advisor__title">
-                  <span>{text.linkCheck}</span>
-                  <small>{text.linkCheckHint}</small>
+            {downloadFlow === 'links' ? (
+              <div className="source-editor source-editor--links">
+                <div className="section-title section-title--tight">
+                  <span>{text.urls}</span>
+                  <small>{text.urlsHint}</small>
                 </div>
-                <div className="link-advisor__items">
-                  {linkInspections.map((item, index) => (
-                    <div className={`link-advisor__item link-advisor__item--${item.severity}`} key={`${item.url}-${index}`}>
-                      <strong>{index + 1}</strong>
-                      <p>{item.message}</p>
+                <div className="link-list">
+                  {linkInputs.map((value, index) => (
+                    <div className="link-row" key={`link-${index}`}>
+                      <input
+                        className="link-row__input"
+                        value={value}
+                        onChange={(event) => updateLinkInput(index, event.target.value)}
+                        placeholder={`${text.urlsPlaceholder} ${index + 1}`}
+                      />
+                      <button className="ghost-button ghost-button--icon" type="button" onClick={() => removeLinkInput(index)}>
+                        -
+                      </button>
                     </div>
                   ))}
                 </div>
+                {linkInspections.length > 0 ? (
+                  <div className="link-advisor">
+                    <div className="link-advisor__title">
+                      <span>{text.linkCheck}</span>
+                      <small>{text.linkCheckHint}</small>
+                    </div>
+                    <div className="link-advisor__items">
+                      {linkInspections.map((item, index) => (
+                        <div className={`link-advisor__item link-advisor__item--${item.severity}`} key={`${item.url}-${index}`}>
+                          <strong>{index + 1}</strong>
+                          <p>{item.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="section-actions source-editor__actions">
+                  <button className="ghost-button ghost-button--small" type="button" onClick={addLinkInput}>
+                    + {text.addLink}
+                  </button>
+                </div>
               </div>
-            ) : null}
-            <div className="section-actions">
-              <button className="ghost-button ghost-button--small" type="button" onClick={addLinkInput}>
-                + {text.addLink}
-              </button>
-              <button className="ghost-button ghost-button--small" type="button" disabled={!canClearLinks} onClick={clearLinkInputs}>
-                {text.clearLinks}
-              </button>
-            </div>
+            ) : (
+              <div className="bilibili-assistant">
+                <div className="section-title section-title--tight">
+                  <span>{text.bilibiliAssistant}</span>
+                  <small>{text.bilibiliAssistantHint}</small>
+                </div>
+                <div className="field-group bilibili-lookup-row">
+                  <label className="field field--grow">
+                    <span>{text.bilibiliLookupUrl}</span>
+                    <input
+                      value={bilibiliLookupUrl}
+                      onChange={(event) => setBilibiliLookupUrl(event.target.value)}
+                      placeholder={defaultBilibiliLookupUrl || text.bilibiliLookupPlaceholder}
+                    />
+                  </label>
+                  <div className="bilibili-lookup-actions">
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      disabled={bilibiliResolving || (!bilibiliLookupUrl.trim() && !defaultBilibiliLookupUrl)}
+                      onClick={() => void resolveBilibiliSeasonLinks()}
+                    >
+                      {bilibiliResolving ? text.bilibiliResolving : text.bilibiliResolve}
+                    </button>
+                    <button
+                      className="ghost-button ghost-button--small"
+                      type="button"
+                      disabled={bilibiliResolving || (!bilibiliLookupUrl.trim() && !bilibiliSeason)}
+                      onClick={clearBilibiliLookup}
+                    >
+                      {text.clearLookupUrl}
+                    </button>
+                  </div>
+                </div>
+                <small className="field-help">{text.bilibiliHelp}</small>
+                {bilibiliSeason ? (
+                  <div className="bilibili-season">
+                    <div className="bilibili-season__header">
+                      <div>
+                        <strong>{bilibiliSeason.title}</strong>
+                        <small>{bilibiliSeason.seasonId ? `season ${bilibiliSeason.seasonId}` : bilibiliSeason.sourceUrl}</small>
+                      </div>
+                      <span>{bilibiliSelectedLabel}</span>
+                    </div>
+                    <div className="section-actions bilibili-season__actions">
+                      <button className="ghost-button ghost-button--small" type="button" onClick={selectAllBilibiliEpisodes}>{text.bilibiliSelectAll}</button>
+                      <button className="ghost-button ghost-button--small" type="button" onClick={selectDefaultBilibiliEpisodes}>{text.bilibiliSelectMain}</button>
+                      <button className="ghost-button ghost-button--small" type="button" onClick={clearBilibiliSelection}>{text.bilibiliClearSelection}</button>
+                      <button className="primary-button primary-button--small" type="button" disabled={selectedBilibiliEpisodes.length === 0} onClick={addSelectedBilibiliEpisodes}>{text.bilibiliAddSelected}</button>
+                    </div>
+                    <div className="bilibili-group-list">
+                      {bilibiliSeason.groups.map((group) => (
+                        <div className="bilibili-group" key={group.id}>
+                          <div className="bilibili-group__title">
+                            <span>{group.id === 'main' ? text.bilibiliMainGroup : group.title}</span>
+                            <small>{group.episodes.length}</small>
+                          </div>
+                          <div className="bilibili-episode-grid">
+                            {group.episodes.map((episode) => {
+                              const selected = bilibiliSelectedIds.has(episode.id)
+                              return (
+                                <BilibiliEpisodeCard
+                                  key={`${group.id}-${episode.id}`}
+                                  episode={episode}
+                                  selected={selected}
+                                  onToggle={toggleBilibiliEpisode}
+                                />
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {urls.length > 0 ? (
+                  <div className="collection-queue-note">
+                    {text.collectionQueuedLinks.replace('{count}', String(urls.length))}
+                  </div>
+                ) : null}
+              </div>
+            )}
           </div>
           <div className="field-group path-picker-group">
             <label className="field field--grow path-picker-field">
@@ -1885,28 +2406,6 @@ function App() {
               </div>
             </label>
           </div>
-          <div className={[
-            'cookie-advisor',
-            recommendedCookieFile ? 'cookie-advisor--active' : '',
-            recommendedCookieHealth ? 'cookie-advisor--warning' : '',
-          ].filter(Boolean).join(' ')}>
-            <div>
-              <span>{text.cookieAdvisor}</span>
-              <p>{cookieAdvisorMessage}</p>
-              {recommendedCookieFile ? <small>{formatCookieMeta(recommendedCookieFile, language, text)}</small> : null}
-              {recommendedCookieHealth ? <small>{recommendedCookieHealth}</small> : null}
-            </div>
-            {recommendedCookieFile ? (
-              <button
-                className="ghost-button ghost-button--small"
-                type="button"
-                disabled={cookieFile === recommendedCookieFile.path}
-                onClick={() => setCookieFile(recommendedCookieFile.path)}
-              >
-                {cookieFile === recommendedCookieFile.path ? text.cookieAdvisorCurrent : text.cookieAdvisorUse}
-              </button>
-            ) : null}
-          </div>
           <div className="field">
             <span>{text.extraOptions}</span>
             <div className="preset-list">
@@ -1921,6 +2420,14 @@ function App() {
           <div className="command-box command-box--subtle"><span>{text.extraOptionsSummary}</span><code>{combinedExtraArgs || text.extraOptionsEmpty}</code></div>
         </section>
         <aside className="right-rail">
+          <section className="panel collection-logs">
+            <div className="section-title"><span>{text.collectionLog}</span><small>{text.collectionLogHint}</small></div>
+            <div className="log-viewer log-viewer--compact">
+              {collectionLogs.length === 0
+                ? <div className="log-placeholder">{text.collectionLogIdle}</div>
+                : collectionLogs.map((line, index) => <div className="log-line" key={`collection-${index}-${line}`}>{line}</div>)}
+            </div>
+          </section>
           <section className="panel telemetry">
             <div className="section-title"><span>{text.telemetry}</span><small>{text.telemetryHint}</small></div>
             <div className="telemetry-stack">
