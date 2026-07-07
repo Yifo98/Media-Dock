@@ -1,18 +1,41 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="72" y1="56" x2="432" y2="456" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#18273A"/>
-      <stop offset="1" stop-color="#0B1220"/>
+    <filter id="tileShadow" x="38" y="42" width="436" height="436" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#1f2b35" flood-opacity="0.18"/>
+    </filter>
+    <filter id="markShadow" x="104" y="112" width="304" height="304" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#1f2b35" flood-opacity="0.24"/>
+    </filter>
+    <linearGradient id="base" x1="92" y1="78" x2="420" y2="438" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FAF8F3"/>
+      <stop offset="1" stop-color="#ECE7DE"/>
     </linearGradient>
-    <linearGradient id="accent" x1="140" y1="120" x2="386" y2="362" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFB45A"/>
-      <stop offset="1" stop-color="#7DDCFF"/>
+    <linearGradient id="teal" x1="126" y1="118" x2="244" y2="372" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8BC4CA"/>
+      <stop offset="1" stop-color="#5FAFB9"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="292" y1="134" x2="390" y2="358" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B0A9D4"/>
+      <stop offset="1" stop-color="#8F88BE"/>
+    </linearGradient>
+    <linearGradient id="graphite" x1="128" y1="132" x2="326" y2="370" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#354554"/>
+      <stop offset="1" stop-color="#202C36"/>
     </linearGradient>
   </defs>
-  <rect x="28" y="28" width="456" height="456" rx="108" fill="url(#bg)"/>
-  <rect x="48" y="48" width="416" height="416" rx="88" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>
-  <path d="M158 164C158 151.85 171.094 144.183 181.76 150.092L325.895 229.877C337.072 236.067 337.072 251.933 325.895 258.123L181.76 337.908C171.094 343.817 158 336.15 158 324V164Z" fill="url(#accent)"/>
-  <path d="M256 348V406" stroke="url(#accent)" stroke-width="24" stroke-linecap="round"/>
-  <path d="M212 362H300" stroke="url(#accent)" stroke-width="24" stroke-linecap="round"/>
-  <circle cx="384" cy="132" r="22" fill="#FFB45A"/>
+  <g filter="url(#tileShadow)">
+    <rect x="76" y="70" width="360" height="360" rx="86" fill="url(#base)"/>
+    <rect x="85" y="79" width="342" height="342" rx="78" stroke="white" stroke-opacity="0.7" stroke-width="4"/>
+    <rect x="77.5" y="71.5" width="357" height="357" rx="84.5" stroke="#D8D2C8" stroke-opacity="0.8" stroke-width="3"/>
+  </g>
+  <g filter="url(#markShadow)">
+    <path d="M158 305a98 98 0 0 1 0-98" stroke="url(#teal)" stroke-width="36" stroke-linecap="round"/>
+    <path d="M176 322a118 118 0 0 1 0-132" stroke="#5FAFB9" stroke-opacity="0.9" stroke-width="4" stroke-linecap="round"/>
+    <path d="M184 170a122 122 0 0 1 95-28" stroke="url(#graphite)" stroke-width="36" stroke-linecap="round"/>
+    <path d="M154 326a122 122 0 0 0 92 47" stroke="url(#graphite)" stroke-width="36" stroke-linecap="round"/>
+    <path d="M346 188a104 104 0 0 1 0 136" stroke="url(#violet)" stroke-width="36" stroke-linecap="round"/>
+    <path d="M357 214a84 84 0 0 1 0 84" stroke="white" stroke-opacity="0.5" stroke-width="4" stroke-linecap="round"/>
+    <path d="M222 184c0-9 10-15 18-10l94 57c8 5 8 17 0 22l-94 57c-8 5-18-1-18-10V184Z" fill="url(#graphite)"/>
+    <path d="M233 202v96l78-48-78-48Z" fill="#435465" opacity="0.22"/>
+  </g>
 </svg>

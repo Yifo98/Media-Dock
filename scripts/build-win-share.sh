@@ -14,9 +14,17 @@ VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
 YTDLP_CHANNEL="${YTDLP_CHANNEL:-stable}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.9.1}"
-DENO_URL="https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip"
-FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip}"
+DENO_URL="${DENO_URL:-https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip}"
+FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip}"
 ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
+
+download_file() {
+  local url="$1"
+  local output="$2"
+  curl --fail --location --retry 4 --retry-delay 2 --retry-all-errors \
+    --connect-timeout 20 --speed-time 60 --speed-limit 1024 --max-time 900 \
+    "$url" -o "$output"
+}
 
 if [[ -z "${YTDLP_URL:-}" ]]; then
   if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
@@ -151,7 +159,7 @@ write_release_notes() {
 - 合并输出支持自定义文件名，批量任务会自动追加 01 02 序号避免覆盖
 - Cookie 选择会提示过期和临期状态，减少误选失效登录态
 - 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 \`Media Dock Data\` 目录
-- 刷新 3 号图标为新的桌面应用图标
+- 刷新桌面应用图标、favicon 和 GitHub README 顶部展示图，统一为新的媒体环形品牌标识
 - 压缩主界面实时信息区域，让日志和最近任务更靠上
 - 修复长路径在顶部卡片和启动自检区域溢出重叠的问题
 - 增加启动自动检查更新，发现旧版本时可直接下载最新 ZIP
@@ -234,7 +242,7 @@ This release refreshes the shared desktop package with local media merge support
 - Merge output supports a custom base name, with 01 02 suffixes added automatically for batch jobs
 - Cookie selection now warns about expired and soon-to-expire files to reduce bad login-state choices
 - Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling \`Media Dock Data\` folder
-- Refreshed the desktop app icon with option 3
+- Refreshed the desktop app icon, favicon, and GitHub README hero with the new media-loop brand mark
 - Tightened the main telemetry rail so logs and recent jobs stay higher on screen
 - Fixed long runtime paths overflowing the hero status cards and startup self-check area
 - Added startup update checks and direct latest zip download support
@@ -263,12 +271,12 @@ mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 
 cd "$PROJECT_ROOT"
 
-curl -L "$YTDLP_URL" -o "$TOOLS_BIN_DIR/yt-dlp.exe"
-curl -L "$DENO_URL" -o "$TMP_DIR/deno-win.zip"
+download_file "$YTDLP_URL" "$TOOLS_BIN_DIR/yt-dlp.exe"
+download_file "$DENO_URL" "$TMP_DIR/deno-win.zip"
 unzip -q "$TMP_DIR/deno-win.zip" -d "$TMP_DIR/deno"
 cp "$TMP_DIR/deno/deno.exe" "$TOOLS_BIN_DIR/deno.exe"
 
-curl -L "$FFMPEG_URL" -o "$TMP_DIR/ffmpeg-win.zip"
+download_file "$FFMPEG_URL" "$TMP_DIR/ffmpeg-win.zip"
 unzip -q "$TMP_DIR/ffmpeg-win.zip" -d "$TMP_DIR/ffmpeg"
 FFMPEG_EXE="$(find "$TMP_DIR/ffmpeg" -type f -name 'ffmpeg.exe' | head -n 1)"
 FFPROBE_EXE="$(find "$TMP_DIR/ffmpeg" -type f -name 'ffprobe.exe' | head -n 1)"
@@ -280,6 +288,7 @@ fi
 
 cp "$FFMPEG_EXE" "$TOOLS_BIN_DIR/ffmpeg.exe"
 cp "$FFPROBE_EXE" "$TOOLS_BIN_DIR/ffprobe.exe"
+find "$(dirname "$FFMPEG_EXE")" -maxdepth 1 -type f -name '*.dll' -exec cp {} "$TOOLS_BIN_DIR/" \;
 
 npm run build
 npx electron-builder --win zip --x64
