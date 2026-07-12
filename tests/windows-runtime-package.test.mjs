@@ -213,9 +213,14 @@ test('production PowerShell gate removes stale checksums before a failed verific
       '-ChecksumPath', checksumsPath,
       '-WriteChecksum',
     ], { encoding: 'utf8', timeout: 60000 })
+    const processOutput = [
+      result.error ? `${result.error.name}: ${result.error.message}` : '',
+      result.stdout,
+      result.stderr,
+    ].filter(Boolean).join('\n')
 
-    assert.notEqual(result.status, 0, 'broken package should fail Windows verification')
-    assert.equal(existsSync(checksumsPath), false)
+    assert.notEqual(result.status, 0, `broken package should fail Windows verification\n${processOutput}`)
+    assert.equal(existsSync(checksumsPath), false, `stale checksum survived failed verification\n${processOutput}`)
   } finally {
     sandbox.cleanup()
   }

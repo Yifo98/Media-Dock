@@ -21,15 +21,14 @@ if ($WriteChecksum) {
         throw "-WriteChecksum requires -ChecksumPath."
     }
     $checksumFileName = Split-Path -Leaf $ChecksumPath
-    $checksumParentPath = Split-Path -Parent ([System.IO.Path]::GetFullPath($ChecksumPath))
-    $checksumDirectory = (Resolve-Path -LiteralPath $checksumParentPath).Path
+    $checksumDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($ChecksumPath))
     $ChecksumPath = Join-Path $checksumDirectory $checksumFileName
-    $packageDirectory = Split-Path -Parent $resolvedPackagePath
-    $manifestDirectory = Split-Path -Parent $resolvedManifestPath
+    $packageDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($resolvedPackagePath))
+    $manifestDirectory = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($resolvedManifestPath))
     if (
         $checksumFileName -ne "SHA256SUMS.txt" -or
-        $checksumDirectory -ne $packageDirectory -or
-        $checksumDirectory -ne $manifestDirectory
+        -not [System.StringComparer]::OrdinalIgnoreCase.Equals($checksumDirectory, $packageDirectory) -or
+        -not [System.StringComparer]::OrdinalIgnoreCase.Equals($checksumDirectory, $manifestDirectory)
     ) {
         throw "Final checksums must be written as SHA256SUMS.txt next to the package and runtime manifest."
     }
