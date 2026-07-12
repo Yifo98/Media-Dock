@@ -245,6 +245,9 @@ function getText(language: Language) {
         clearLinks: '清空链接',
         outputFolder: '输出目录',
         browse: '选择目录',
+        pickFolderFailed: '无法选择目录。',
+        openPathFailed: '无法打开本地目录。',
+        showItemFailed: '无法在目录中显示文件。',
         openCookiesDir: '打开 cookies 目录',
         openCookieStore: 'Google 应用商店安装',
         openCookieGitHub: 'GitHub 下载插件包',
@@ -462,6 +465,9 @@ function getText(language: Language) {
         clearLinks: 'Clear links',
         outputFolder: 'Output folder',
         browse: 'Browse',
+        pickFolderFailed: 'Unable to choose a folder.',
+        openPathFailed: 'Unable to open the local folder.',
+        showItemFailed: 'Unable to show the file in its folder.',
         openCookiesDir: 'Open cookies folder',
         openCookieStore: 'Install from Chrome Web Store',
         openCookieGitHub: 'Download from GitHub',
@@ -1632,8 +1638,36 @@ function App() {
   }
 
   async function handlePickFolder() {
-    const folder = await appApi.pickDirectory(outputDir)
-    if (folder) setOutputDir(folder)
+    try {
+      const folder = await appApi.pickDirectory(outputDir)
+      if (folder) setOutputDir(folder)
+    } catch (error) {
+      reportLocalActionError(error, text.pickFolderFailed)
+    }
+  }
+
+  function reportLocalActionError(error: unknown, fallback: string) {
+    const detail = error instanceof Error ? error.message : String(error ?? '')
+    const message = detail ? `${fallback} ${detail}` : fallback
+    setStatus('error')
+    setStatusMessage(message)
+    setLogs((current) => [...current, `[ui] ${message}`].slice(-600))
+  }
+
+  async function handleOpenPath(targetPath: string) {
+    try {
+      await appApi.openPath(targetPath)
+    } catch (error) {
+      reportLocalActionError(error, text.openPathFailed)
+    }
+  }
+
+  async function handleShowItemInFolder(targetPath: string) {
+    try {
+      await appApi.showItemInFolder(targetPath)
+    } catch (error) {
+      reportLocalActionError(error, text.showItemFailed)
+    }
   }
 
   async function handleStartDownload() {
@@ -2138,7 +2172,7 @@ function App() {
                   {text.clearLinks}
                 </button>
                 <button className="ghost-button" type="button" disabled={queue.running === 0 && queue.pending === 0} onClick={() => void appApi.cancelDownload()}>{text.cancel}</button>
-                <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir)}>{text.openFolder}</button>
+                <button className="ghost-button" type="button" onClick={() => void handleOpenPath(outputDir)}>{text.openFolder}</button>
               </div>
             </div>
             <div className={[
@@ -2390,7 +2424,7 @@ function App() {
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(MEDIA_COOKIES_CHROME_STORE_URL)}>{text.openCookieStore}</button>
                 <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openExternal(MEDIA_COOKIES_GITHUB_URL)}>{text.openCookieGitHub}</button>
                 <button className="ghost-button ghost-button--full" type="button" disabled={cookieImporting} onClick={() => void handleImportCookieZip()}>{cookieImporting ? text.importingCookieZip : text.importCookieZip}</button>
-                <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.openPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
+                <button className="ghost-button ghost-button--full" type="button" onClick={() => void handleOpenPath(paths?.cookiesDir ?? '')}>{text.openCookiesDir}</button>
               </div>
               <small className="field-help">{cookiesPluginLabel}</small>
               <small className="field-help">{text.cookieFallback}</small>
@@ -2495,7 +2529,7 @@ function App() {
                     <div className="progress-bar progress-bar--small"><div className="progress-bar__fill" style={{ width: `${job.percent === null ? 0 : clampPercent(job.percent)}%` }} /></div>
                     <div className="progress-meta progress-meta--wrap"><span>{getJobProgressText(job, text)}</span><span>{text.downloaded}: {job.downloaded}</span><span>{text.total}: {job.total}</span><span>{text.eta}: {job.eta}</span><span>{job.speed}</span></div>
                     <button className="ghost-button ghost-button--full" type="button" onClick={() => setSelectedLogJobId(job.jobId)}>{text.viewJobLog}</button>
-                    {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void appApi.showItemInFolder(job.outputPath ?? '')}>{text.openFile}</button> : null}
+                    {job.outputPath ? <button className="ghost-button ghost-button--full" type="button" onClick={() => void handleShowItemInFolder(job.outputPath ?? '')}>{text.openFile}</button> : null}
                   </div>
                 ))
               ) : (

@@ -7,6 +7,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
+import { assertSafeLocalPath } from './core/localPath.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -2419,26 +2420,6 @@ function assertSafeExternalUrl(targetUrl: string) {
   return parsed.toString()
 }
 
-function assertSafeLocalPath(value: string) {
-  const targetPath = String(value ?? '').trim()
-  if (!targetPath) {
-    throw new Error('Path is required.')
-  }
-  if (targetPath.includes('\0')) {
-    throw new Error('Path contains an invalid character.')
-  }
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(targetPath)) {
-    throw new Error('Only local filesystem paths can be opened.')
-  }
-  if (!isAbsolute(targetPath)) {
-    throw new Error('Only absolute filesystem paths can be opened.')
-  }
-  if (!existsSync(targetPath)) {
-    throw new Error(`Path does not exist: ${targetPath}`)
-  }
-  return targetPath
-}
-
 function getHostWindow(webContentsId?: Electron.WebContents) {
   return (webContentsId ? BrowserWindow.fromWebContents(webContentsId) : null) ?? mediaToolsWindow ?? mainWindow!
 }
@@ -4234,16 +4215,13 @@ ipcMain.handle('dialog:pickSubtitleFile', async (event, currentPath?: string) =>
 })
 
 ipcMain.handle('shell:openPath', async (_event, targetPath: string) => {
-  if (!targetPath) {
-    return
+  const errorMessage = await shell.openPath(assertSafeLocalPath(targetPath))
+  if (errorMessage) {
+    throw new Error(errorMessage)
   }
-  await shell.openPath(assertSafeLocalPath(targetPath))
 })
 
 ipcMain.handle('shell:showItemInFolder', async (_event, targetPath: string) => {
-  if (!targetPath) {
-    return
-  }
   shell.showItemInFolder(assertSafeLocalPath(targetPath))
 })
 
