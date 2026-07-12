@@ -25,6 +25,8 @@ browser-extension
 Media Dock Data
 subtitle-cleanup-config.json
 .codex-tmp/
+.playwright-cli/
+output/playwright/
 Media Dock.lnk
 
 # Editor directories and files
