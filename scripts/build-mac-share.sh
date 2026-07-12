@@ -16,7 +16,7 @@ ENV_ROOT="${YTDLP_ENV_ROOT:-$DEFAULT_ENV_ROOT}"
 ARCH_NAME="$(uname -m)"
 YTDLP_CHANNEL="${YTDLP_CHANNEL:-stable}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
-DENO_VERSION="${DENO_VERSION:-2.9.1}"
+DENO_VERSION="${DENO_VERSION:-2.9.2}"
 case "$ARCH_NAME" in
   arm64)
     DENO_ARCHIVE_NAME="deno-aarch64-apple-darwin.zip"
@@ -59,16 +59,11 @@ cleanup_tools() {
 
 prepare_release_dir() {
   mkdir -p "$RELEASE_DIR" "$VERSION_DIR"
-  for release_version_dir in "$RELEASE_DIR"/*(/N); do
-    if [[ "$(basename "$release_version_dir")" != "$APP_VERSION" ]]; then
-      rm -rf "$release_version_dir"
-    fi
-  done
   rm -rf "$RELEASE_DIR"/win-unpacked "$RELEASE_DIR"/mac-unpacked "$RELEASE_DIR"/mac-arm64
   rm -rf "$RELEASE_DIR"/extensions
   rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
   rm -f "$RELEASE_DIR"/*mac*.zip(N) "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/*.txt(N) "$RELEASE_DIR"/latest-mac.yml(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
-  rm -f "$VERSION_DIR"/*mac*.zip(N) "$VERSION_DIR"/*.txt(N) "$VERSION_DIR"/latest-mac.yml(N)
+  rm -f "$VERSION_DIR"/*mac*.zip(N) "$README_PATH" "$VERSION_DIR"/latest-mac.yml(N)
 }
 
 repack_macos_launcher_zip() {
@@ -137,7 +132,7 @@ write_release_notes() {
 
 ## 主要更新
 
-- 分享包已内置最新稳定下载内核：\`yt-dlp 2026.07.04\`、\`Deno 2.9.1\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
+- 分享包已内置最新稳定下载内核：\`yt-dlp ${YTDLP_VERSION:-stable}\`、\`Deno $DENO_VERSION\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
 - 下载面板重新整理为“顶部开始/清空/停止/打开目录 + Cookie 推荐 + 来源输入区”，常用操作不再埋在下方。
 - 新增“链接下载 / 剧集批量解析”模式切换，两个模式只显示当前需要的输入区，避免重复链接列表。
 - 链接列表改为更轻的输入区样式，弱化突兀外框。
@@ -171,7 +166,7 @@ write_release_notes() {
 ## 打包与隐私
 
 - 分享包目标仍然是解压即用
-- 打包脚本会在构建前删除旧版本目录，只保留当前最新版本
+- 打包脚本只清理当前目标版本的旧产物，并保留已有历史版本目录
 - 打包脚本会校验压缩包中不包含 cookies 历史记录 本地会话 字幕清理配置 API Key 等隐私文件
 - 目前 macOS 与 Windows 版本都还是未签名状态，首次运行可能会看到系统安全提示
 
@@ -193,7 +188,7 @@ This release refreshes the shared desktop package with local media merge support
 
 ## Highlights
 
-- The shared packages now bundle the latest stable download core: \`yt-dlp 2026.07.04\`, \`Deno 2.9.1\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
+- The shared packages now bundle the latest stable download core: \`yt-dlp ${YTDLP_VERSION:-stable}\`, \`Deno $DENO_VERSION\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
 - Reworked the download panel into a top preparation area with Start / Clear / Stop / Open folder, Cookie suggestion, and then the source input area.
 - Added the Link download / Collection picker mode switch, with only the relevant input area visible in each mode.
 - Restyled the URL list as a lighter input area instead of a heavy framed block.
@@ -228,7 +223,7 @@ This release refreshes the shared desktop package with local media merge support
 ## Packaging and privacy
 
 - Shared builds are intended to be unpack-and-run
-- Packaging scripts now delete old version folders before building, leaving only the latest version
+- Packaging scripts clean only stale artifacts for the target version and preserve existing historical release folders
 - Packaging scripts verify that cookies, history, local session files, subtitle cleanup configs, API keys, and similar private files are not included in release archives
 - macOS and Windows builds are currently unsigned, so first-run security prompts are expected
 EOF
@@ -369,7 +364,9 @@ fi
 mv "$MAC_ZIP" "$VERSION_DIR/"
 rm -f "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/latest-mac.yml(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
 rm -rf "$RELEASE_DIR"/mac-arm64
-write_release_notes
+if [[ ! -f "$VERSION_DIR/RELEASE-NOTES.md" ]]; then
+  write_release_notes
+fi
 
 echo "macOS zip artifact:"
 echo "$VERSION_DIR/$(basename "$MAC_ZIP")"
