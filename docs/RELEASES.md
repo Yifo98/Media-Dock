@@ -43,6 +43,24 @@
 - `release/<version>/` 目录
 - 版本发布说明
 
+## Windows 包验证门禁
+
+`npm run dist:win` 会先把 yt-dlp 的具体官方版本、大小和 SHA-256 写入 `YT-DLP-WINDOWS.json`，并在最终 ZIP 解包后复验 yt-dlp、Deno、ffmpeg 和 ffprobe 的大小与哈希。macOS 交叉构建不会提前生成最终 `SHA256SUMS.txt`。
+
+把 ZIP 和 `YT-DLP-WINDOWS.json` 放到 Windows 后执行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/verify-windows-package.ps1 `
+  -PackagePath "release/<version>/Media Dock-<version>-win.zip" `
+  -YtDlpManifestPath "release/<version>/YT-DLP-WINDOWS.json" `
+  -ChecksumPath "release/<version>/SHA256SUMS.txt" `
+  -WriteChecksum
+```
+
+脚本会实际执行 `yt-dlp --version`、`deno --version`、`ffmpeg -version` 和 `ffprobe -version`。四项全部通过后才会原子生成 `SHA256SUMS.txt`。Windows 原生的 `npm run dist:share` 已内置同一门禁。
+
+也可以在 GitHub Actions 手动运行 `Windows package gate`，输入要固定的 yt-dlp release tag；workflow 会在 `windows-latest` 上完成原生构建、四工具冒烟和已验证产物上传，但不会自动发布 Release。
+
 ## 推荐发布文案
 
 ### 中文模板

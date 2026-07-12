@@ -11,8 +11,9 @@ TOOLS_LIB_DIR="$TOOLS_DIR/lib"
 TMP_DIR="$(mktemp -d)"
 APP_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version")"
 VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
-YTDLP_CHANNEL="${YTDLP_CHANNEL:-stable}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
+YTDLP_MANIFEST="$TMP_DIR/YT-DLP-WINDOWS.json"
+YTDLP_VERIFIER="$SCRIPT_DIR/windows-runtime-verifier.mjs"
 DENO_VERSION="${DENO_VERSION:-2.9.1}"
 DENO_URL="${DENO_URL:-https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip}"
 FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip}"
@@ -26,14 +27,9 @@ download_file() {
     "$url" -o "$output"
 }
 
-if [[ -z "${YTDLP_URL:-}" ]]; then
-  if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
-    YTDLP_URL="https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.exe"
-  elif [[ -n "$YTDLP_VERSION" ]]; then
-    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp.exe"
-  else
-    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-  fi
+if [[ -n "${YTDLP_URL:-}" || "${YTDLP_CHANNEL:-stable}" != "stable" ]]; then
+  echo "Windows release builds only accept a versioned official stable yt-dlp asset resolved from GitHub."
+  exit 1
 fi
 
 cleanup() {
@@ -51,7 +47,7 @@ prepare_release_dir() {
   rm -rf "$RELEASE_DIR"/extensions
   rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
   rm -f "$RELEASE_DIR"/*win*.zip(N) "$RELEASE_DIR"/*.exe(N) "$RELEASE_DIR"/*win*.zip.blockmap(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
-  rm -f "$VERSION_DIR"/*win*.zip(N) "$VERSION_DIR"/*.exe(N)
+  rm -f "$VERSION_DIR"/*win*.zip(N) "$VERSION_DIR"/*.exe(N) "$VERSION_DIR"/YT-DLP-WINDOWS.json(N) "$VERSION_DIR"/SHA256SUMS.txt(N)
 }
 
 repack_windows_launcher_zip() {
@@ -111,7 +107,7 @@ write_release_notes() {
 
 ## 主要更新
 
-- 分享包已内置最新稳定下载内核：\`yt-dlp 2026.07.04\`、\`Deno 2.9.1\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
+- 分享包已内置已验证下载内核：\`yt-dlp $RESOLVED_YTDLP_VERSION\`、\`Deno $DENO_VERSION\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
 - 下载面板重新整理为“顶部开始/清空/停止/打开目录 + Cookie 推荐 + 来源输入区”，常用操作不再埋在下方。
 - 新增“链接下载 / 剧集批量解析”模式切换，两个模式只显示当前需要的输入区，避免重复链接列表。
 - 链接列表改为更轻的输入区样式，弱化突兀外框。
@@ -194,7 +190,7 @@ This release refreshes the shared desktop package with local media merge support
 
 ## Highlights
 
-- The shared packages now bundle the latest stable download core: \`yt-dlp 2026.07.04\`, \`Deno 2.9.1\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
+- The shared packages now bundle a verified download core: \`yt-dlp $RESOLVED_YTDLP_VERSION\`, \`Deno $DENO_VERSION\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
 - Reworked the download panel into a top preparation area with Start / Clear / Stop / Open folder, Cookie suggestion, and then the source input area.
 - Added the Link download / Collection picker mode switch, with only the relevant input area visible in each mode.
 - Restyled the URL list as a lighter input area instead of a heavy framed block.
@@ -271,7 +267,16 @@ mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
 
 cd "$PROJECT_ROOT"
 
+resolve_args=(resolve --output "$YTDLP_MANIFEST")
+if [[ -n "$YTDLP_VERSION" ]]; then
+  resolve_args+=(--version "$YTDLP_VERSION")
+fi
+node "$YTDLP_VERIFIER" "${resolve_args[@]}"
+RESOLVED_YTDLP_VERSION="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$YTDLP_MANIFEST")"
+YTDLP_URL="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).assetUrl" "$YTDLP_MANIFEST")"
+
 download_file "$YTDLP_URL" "$TOOLS_BIN_DIR/yt-dlp.exe"
+node "$YTDLP_VERIFIER" verify-file --manifest "$YTDLP_MANIFEST" --file "$TOOLS_BIN_DIR/yt-dlp.exe"
 download_file "$DENO_URL" "$TMP_DIR/deno-win.zip"
 unzip -q "$TMP_DIR/deno-win.zip" -d "$TMP_DIR/deno"
 cp "$TMP_DIR/deno/deno.exe" "$TOOLS_BIN_DIR/deno.exe"
@@ -289,6 +294,7 @@ fi
 cp "$FFMPEG_EXE" "$TOOLS_BIN_DIR/ffmpeg.exe"
 cp "$FFPROBE_EXE" "$TOOLS_BIN_DIR/ffprobe.exe"
 find "$(dirname "$FFMPEG_EXE")" -maxdepth 1 -type f -name '*.dll' -exec cp {} "$TOOLS_BIN_DIR/" \;
+node "$YTDLP_VERIFIER" record-runtime --manifest "$YTDLP_MANIFEST" --runtime-dir "$TOOLS_BIN_DIR"
 
 npm run build
 npx electron-builder --win zip --x64
@@ -307,10 +313,26 @@ if unzip -l "$WIN_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
   exit 1
 fi
 
+FINAL_VERIFY_DIR="$TMP_DIR/final-windows-package"
+mkdir -p "$FINAL_VERIFY_DIR"
+unzip -q "$WIN_ZIP" -d "$FINAL_VERIFY_DIR"
+PACKAGED_YTDLP_COUNT="$(find "$FINAL_VERIFY_DIR" -type f -name 'yt-dlp.exe' | wc -l | tr -d '[:space:]')"
+PACKAGED_YTDLP="$(find "$FINAL_VERIFY_DIR" -type f -name 'yt-dlp.exe' | head -n 1)"
+if [[ "$PACKAGED_YTDLP_COUNT" != "1" || -z "$PACKAGED_YTDLP" ]]; then
+  echo "The final Windows zip must contain exactly one yt-dlp.exe; found $PACKAGED_YTDLP_COUNT."
+  exit 1
+fi
+PACKAGED_RUNTIME_DIR="$(dirname "$PACKAGED_YTDLP")"
+node "$YTDLP_VERIFIER" verify-runtime --manifest "$YTDLP_MANIFEST" --runtime-dir "$PACKAGED_RUNTIME_DIR"
+
 mv "$WIN_ZIP" "$VERSION_DIR/"
+mv "$YTDLP_MANIFEST" "$VERSION_DIR/YT-DLP-WINDOWS.json"
 rm -rf "$RELEASE_DIR"/win-unpacked
 rm -f "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
 write_release_notes
 
 echo "Windows zip artifact:"
 echo "$VERSION_DIR/$(basename "$WIN_ZIP")"
+echo "$VERSION_DIR/YT-DLP-WINDOWS.json"
+echo "Windows smoke verification is still required before SHA256SUMS.txt can be generated:"
+echo "powershell -ExecutionPolicy Bypass -File scripts/verify-windows-package.ps1 -PackagePath <zip> -YtDlpManifestPath <manifest> -ChecksumPath <SHA256SUMS.txt> -WriteChecksum"
