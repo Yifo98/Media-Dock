@@ -1,90 +1,4 @@
-#!/bin/zsh
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-RELEASE_DIR="$PROJECT_ROOT/release"
-TOOLS_DIR="$PROJECT_ROOT/tools"
-TOOLS_BIN_DIR="$TOOLS_DIR/bin"
-TOOLS_LIB_DIR="$TOOLS_DIR/lib"
-TMP_DIR="$(mktemp -d)"
-APP_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version")"
-VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
-YTDLP_VERSION="${YTDLP_VERSION:-}"
-YTDLP_MANIFEST="$TMP_DIR/YT-DLP-WINDOWS.json"
-YTDLP_VERIFIER="$SCRIPT_DIR/windows-runtime-verifier.mjs"
-DENO_VERSION="${DENO_VERSION:-2.9.1}"
-DENO_URL="${DENO_URL:-https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-x86_64-pc-windows-msvc.zip}"
-FFMPEG_URL="${FFMPEG_URL:-https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip}"
-ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
-
-download_file() {
-  local url="$1"
-  local output="$2"
-  curl --fail --location --retry 4 --retry-delay 2 --retry-all-errors \
-    --connect-timeout 20 --speed-time 60 --speed-limit 1024 --max-time 900 \
-    "$url" -o "$output"
-}
-
-if [[ -n "${YTDLP_URL:-}" || "${YTDLP_CHANNEL:-stable}" != "stable" ]]; then
-  echo "Windows release builds only accept a versioned official stable yt-dlp asset resolved from GitHub."
-  exit 1
-fi
-
-cleanup() {
-  rm -rf "$TMP_DIR" "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
-}
-
-prepare_release_dir() {
-  mkdir -p "$RELEASE_DIR" "$VERSION_DIR"
-  rm -rf "$RELEASE_DIR"/win-unpacked
-  rm -rf "$RELEASE_DIR"/extensions
-  rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
-  rm -f "$RELEASE_DIR"/*win*.zip(N) "$RELEASE_DIR"/*.exe(N) "$RELEASE_DIR"/*win*.zip.blockmap(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
-  rm -f "$VERSION_DIR"/*win*.zip(N) "$VERSION_DIR"/*.exe(N) "$VERSION_DIR"/YT-DLP-WINDOWS.json(N) "$VERSION_DIR"/SHA256SUMS.txt(N)
-}
-
-repack_windows_launcher_zip() {
-  local archive="$1"
-  local unpack_dir="$TMP_DIR/win-unpacked-zip"
-  local package_name="Media Dock-$APP_VERSION-win"
-  local package_dir="$TMP_DIR/$package_name"
-  rm -rf "$unpack_dir" "$package_dir"
-  mkdir -p "$unpack_dir" "$package_dir/core"
-  unzip -q "$archive" -d "$unpack_dir"
-  cp -R "$unpack_dir"/. "$package_dir/core/"
-  cat > "$package_dir/Launch Media Dock.bat" <<'EOF'
-@echo off
-setlocal
-cd /d "%~dp0"
-set "MEDIA_DOCK_PORTABLE_ROOT=%~dp0"
-start "" "%~dp0core\Media Dock.exe"
-EOF
-  cat > "$package_dir/README-windows.txt" <<'EOF'
-Media Dock for Windows
-
-Double-click "Launch Media Dock.bat" after unzipping this folder.
-The actual runtime files are kept inside the "core" folder.
-yt-dlp, ffmpeg, ffprobe, and deno are bundled with the program.
-Install MediaCookies from the Chrome Web Store or download it from GitHub
-when cookies are needed.
-
-Runtime data stays next to this launcher in "Media Dock Data".
-That folder contains downloads, cookies, cache, update zips, and any
-auto-installed Deno runtime files.
-
-If Bandizip is installed, Windows runtime zip extraction may use Bandizip's
-bz.exe automatically. If it is not installed, the app falls back to the
-built-in PowerShell extraction path.
-EOF
-  rm -f "$archive"
-  (cd "$TMP_DIR" && zip -qr "$archive" "$package_name")
-}
-
-write_release_notes() {
-  cat > "$VERSION_DIR/RELEASE-NOTES.md" <<EOF
-# Media Dock $APP_VERSION
+# Media Dock 2.1.2
 
 ## 中文说明
 
@@ -92,9 +6,9 @@ write_release_notes() {
 
 ## 包含内容
 
-- \`Media Dock-$APP_VERSION-win.zip\`
-- \`Launch Media Dock.bat\` Windows ZIP 根目录启动脚本
-- \`README-windows.txt\`
+- `Media Dock-2.1.2-win.zip`
+- `Launch Media Dock.bat` Windows ZIP 根目录启动脚本
+- `README-windows.txt`
 - MediaCookies 浏览器插件请从 Google 应用商店安装，或从 GitHub 下载
 
 ## 主要更新
@@ -103,12 +17,12 @@ write_release_notes() {
 - 启动自检会识别缺失、截断或无法运行的 yt-dlp，并提供下载、校验、替换一体的一键修复。
 - Windows 候选包固定到具体官方 yt-dlp 版本，校验官方大小与 SHA256，并在最终 ZIP 内复核四个工具；只有 Windows 原生版本冒烟通过后才生成 SHA256SUMS.txt。
 - 下载准备区按自身可用宽度重排：“开始”独占主操作行，清空、停止和打开目录位于第二行，窄列下控制区、Cookie 建议和下载方式会清晰堆叠。
-- 分享包已内置已验证下载内核：\`yt-dlp $RESOLVED_YTDLP_VERSION\`、\`Deno $DENO_VERSION\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
+- 分享包已内置已验证下载内核：`yt-dlp 2026.07.04`、`Deno 2.9.1`、`ffmpeg`、`ffprobe`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
 - 下载面板重新整理为“顶部开始/清空/停止/打开目录 + Cookie 推荐 + 来源输入区”，常用操作不再埋在下方。
 - 新增“链接下载 / 剧集批量解析”模式切换，两个模式只显示当前需要的输入区，避免重复链接列表。
 - 链接列表改为更轻的输入区样式，弱化突兀外框。
 - 剧集批量解析的主链接增加“清空”按钮，可快速清掉主链接、解析结果和选集状态。
-- 启动自检只保留一个“检查更新”，聚焦 \`yt-dlp\` 和 \`Deno\` 这类核心工具，并在安装/更新时显示阶段和进度。
+- 启动自检只保留一个“检查更新”，聚焦 `yt-dlp` 和 `Deno` 这类核心工具，并在安装/更新时显示阶段和进度。
 - 推荐安装 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
 - MediaCookies 预览逻辑改为先扫描浏览器 Cookie，再按 yt-dlp 官方 supported sites 自动生成可导出来源
 - MediaCookies 默认只导出匹配 yt-dlp 官方支持站点的 Cookie，同时提供“全部 Cookie”高级模式
@@ -120,8 +34,8 @@ write_release_notes() {
 - MediaCookies 新增“导出日志”，可生成不含 Cookie 值的预览诊断文本，方便跨 Windows / macOS 排查
 - 多来源批量下载会按每条链接自动匹配 Cookie；若手动 Cookie 与链接来源不匹配，会自动回退到按链接匹配，避免 YouTube 被套用 B 站 Cookie
 - 清空链接会同步清除手动 Cookie 选择，避免下一轮任务沿用旧来源 Cookie
-- 抖音 \`modal_id\` 弹窗入口会自动转换为 \`/video/{id}\` 单条视频链接后再交给 yt-dlp
-- TikTok \`/foryou\` 推荐流链接会提前提示复制具体视频页或分享短链，避免误判成 Cookie 问题
+- 抖音 `modal_id` 弹窗入口会自动转换为 `/video/{id}` 单条视频链接后再交给 yt-dlp
+- TikTok `/foryou` 推荐流链接会提前提示复制具体视频页或分享短链，避免误判成 Cookie 问题
 - 下载面板新增抖音/TikTok 链接检查，粘贴后会提前提示具体视频页、可转换入口或不适合下载的推荐流入口
 - 抖音返回 fresh cookies 时会提示先在同一浏览器打开目标视频并完成验证，再重新导出 Cookie
 - 修复多并发下载完成后不会自动补位启动后续任务的问题
@@ -139,26 +53,26 @@ write_release_notes() {
 - 本地音视频合并增加扫描 配对 开始合并 完成合并日志，MOV 转码进度也能更及时显示
 - 修复媒体工具嵌入主窗口后媒体处理事件仍发往旧独立窗口，导致 MOV 输出已完成但主界面无日志和进度的问题
 - 本地音视频合并进度条会按当前配对数显示进度，而不是只有空转动画
-- 默认对播放列表链接追加 \`--no-playlist\` 和 \`--playlist-items 1\`，避免 YouTube / B 站课程系列入口展开整个列表
+- 默认对播放列表链接追加 `--no-playlist` 和 `--playlist-items 1`，避免 YouTube / B 站课程系列入口展开整个列表
 - 修复停止全部和媒体工具停止不可靠的问题，Windows 端会连同子进程一起终止
 - 每个下载任务都可以单独打开日志窗口，错误任务更容易定位原因和退出码
 - 优化媒体工具右侧工具环境布局，刷新环境按钮和路径明细不再挤在一起
 - 媒体工具改为主窗口内部工作区，不再从主界面弹出额外窗口
 - 新增本地音视频单个配对合并和批量文件夹自动配对合并
 - 多文件合并优先按照媒体流类型和时长配对，不再依赖文件名相似度
-- 修复 B 站 / IDM 分离文件中 \`_2.m4s\` 这类尾号文件无法稳定识别配对的问题
+- 修复 B 站 / IDM 分离文件中 `_2.m4s` 这类尾号文件无法稳定识别配对的问题
 - 合并页选择待识别文件后会立即刷新流信息，直接显示音频流或视频流
 - 合并输出支持自定义文件名，批量任务会自动追加 01 02 序号避免覆盖
 - Cookie 选择会提示过期和临期状态，减少误选失效登录态
-- 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 \`Media Dock Data\` 目录
+- 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 `Media Dock Data` 目录
 - 刷新桌面应用图标、favicon 和 GitHub README 顶部展示图，统一为新的媒体环形品牌标识
 - 压缩主界面实时信息区域，让日志和最近任务更靠上
 - 修复长路径在顶部卡片和启动自检区域溢出重叠的问题
 - 增加启动自动检查更新，发现旧版本时可直接下载最新 ZIP
 - 增加 Deno 缺失时的一键自动下载和同级目录安装
-- Windows 端检测到 Bandizip 的 \`bz.exe\` 时，会优先用于 zip 解压；未安装时自动回退 PowerShell
-- Windows ZIP 根目录内置 \`Launch Media Dock.bat\`，核心运行文件放在 \`core\` 目录
-- 标准分享包继续内置 \`yt-dlp\` \`ffmpeg\` \`ffprobe\` 和 \`deno\`
+- Windows 端检测到 Bandizip 的 `bz.exe` 时，会优先用于 zip 解压；未安装时自动回退 PowerShell
+- Windows ZIP 根目录内置 `Launch Media Dock.bat`，核心运行文件放在 `core` 目录
+- 标准分享包继续内置 `yt-dlp` `ffmpeg` `ffprobe` 和 `deno`
 
 ## 打包与隐私
 
@@ -175,9 +89,9 @@ This candidate fixes Windows local-directory crashes and damaged download runtim
 
 ## Included artifacts
 
-- \`Media Dock-$APP_VERSION-win.zip\`
-- \`Launch Media Dock.bat\` at the Windows zip root
-- \`README-windows.txt\`
+- `Media Dock-2.1.2-win.zip`
+- `Launch Media Dock.bat` at the Windows zip root
+- `README-windows.txt`
 - Install MediaCookies from the Chrome Web Store or download it from GitHub
 
 ## Highlights
@@ -186,12 +100,12 @@ This candidate fixes Windows local-directory crashes and damaged download runtim
 - Startup checks identify a missing, truncated, or unrunnable yt-dlp and expose a one-click download, verification, and atomic replacement flow.
 - Windows candidates pin an exact official yt-dlp release, verify its official size and SHA-256, and recheck all four runtime tools inside the final ZIP. SHA256SUMS.txt is created only after native Windows version smoke tests pass.
 - The download preparation area responds to its own width: Start owns the primary row, Clear / Stop / Open folder stay on the secondary row, and the controls, cookie suggestion, and download-mode switch stack cleanly in narrow columns.
-- The shared packages now bundle a verified download core: \`yt-dlp $RESOLVED_YTDLP_VERSION\`, \`Deno $DENO_VERSION\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
+- The shared packages now bundle a verified download core: `yt-dlp 2026.07.04`, `Deno 2.9.1`, `ffmpeg`, and `ffprobe`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
 - Reworked the download panel into a top preparation area with Start / Clear / Stop / Open folder, Cookie suggestion, and then the source input area.
 - Added the Link download / Collection picker mode switch, with only the relevant input area visible in each mode.
 - Restyled the URL list as a lighter input area instead of a heavy framed block.
 - Added a Clear button for the collection source URL, clearing the source link, resolved collection, and current episode selection.
-- Kept a single Check updates button in startup checks, focused on \`yt-dlp\` and \`Deno\`, with visible install/update stages and progress.
+- Kept a single Check updates button in startup checks, focused on `yt-dlp` and `Deno`, with visible install/update stages and progress.
 - Recommended the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
 - MediaCookies now scans browser cookies first, then generates exportable sources from the official yt-dlp supported sites list
 - MediaCookies defaults to cookies matching yt-dlp supported sites, with an explicit advanced all-cookie mode
@@ -203,8 +117,8 @@ This candidate fixes Windows local-directory crashes and damaged download runtim
 - MediaCookies now exports a diagnostics log without cookie values for Windows / macOS troubleshooting
 - Mixed-source download batches now match cookies per URL; mismatched manual cookies fall back to per-URL auto matching so YouTube is not forced to use Bilibili cookies
 - Clearing links now also clears manual cookie selection so the next queue does not inherit a stale site cookie
-- Douyin \`modal_id\` modal links are converted to \`/video/{id}\` before being passed to yt-dlp
-- TikTok \`/foryou\` feed links now show an early hint to copy a concrete video URL or share shortlink instead of treating it as a cookie failure
+- Douyin `modal_id` modal links are converted to `/video/{id}` before being passed to yt-dlp
+- TikTok `/foryou` feed links now show an early hint to copy a concrete video URL or share shortlink instead of treating it as a cookie failure
 - The download panel now checks Douyin/TikTok URLs as soon as they are pasted, flagging direct video links, convertible entries, and unsupported feed pages early
 - Douyin fresh-cookie errors now explain that the target video should be opened and verified in the same browser before exporting cookies again
 - Fixed concurrent download queues so later jobs start automatically when one active slot finishes
@@ -222,26 +136,26 @@ This candidate fixes Windows local-directory crashes and damaged download runtim
 - Added scan, pairing, merge-start, and merge-finished logs for local media merge jobs, with better MOV transcode log refresh
 - Fixed Media Tools events still being sent only to the old separate media window, which could hide MOV progress/logs in the embedded workspace
 - Local media merge progress now reflects the current pair count instead of only showing an indeterminate animation
-- Added \`--no-playlist\` and \`--playlist-items 1\` by default so YouTube playlists and Bilibili course-series entries do not expand into full lists
+- Added `--no-playlist` and `--playlist-items 1` by default so YouTube playlists and Bilibili course-series entries do not expand into full lists
 - Made Stop All and Media Tool cancellation terminate child processes reliably, including process trees on Windows
 - Added per-download task log dialogs with error output and exit codes
 - Improved the Media Tools runtime layout so refresh controls and path details no longer crowd each other
 - Moved Media Tools into an in-window workspace instead of opening an extra window from the main UI
 - Added single-pair and batch-folder local audio/video merge workflows
 - Multi-file merge now pairs by stream type and duration instead of filename similarity
-- Fixed unstable pairing for Bilibili / IDM separated files such as \`_2.m4s\`
+- Fixed unstable pairing for Bilibili / IDM separated files such as `_2.m4s`
 - Refresh stream inspection immediately after choosing a merge input so audio/video detection is visible
 - Merge output supports a custom base name, with 01 02 suffixes added automatically for batch jobs
 - Cookie selection now warns about expired and soon-to-expire files to reduce bad login-state choices
-- Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling \`Media Dock Data\` folder
+- Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling `Media Dock Data` folder
 - Refreshed the desktop app icon, favicon, and GitHub README hero with the new media-loop brand mark
 - Tightened the main telemetry rail so logs and recent jobs stay higher on screen
 - Fixed long runtime paths overflowing the hero status cards and startup self-check area
 - Added startup update checks and direct latest zip download support
 - Added one-click local Deno download and sibling-folder install when Deno is missing
-- Windows uses Bandizip \`bz.exe\` for zip extraction when detected, falling back to PowerShell when it is not installed
-- Added \`Launch Media Dock.bat\` at the Windows zip root, with runtime files kept in \`core\`
-- Kept bundled \`yt-dlp\`, \`ffmpeg\`, \`ffprobe\`, and \`deno\` inside the standard shared builds
+- Windows uses Bandizip `bz.exe` for zip extraction when detected, falling back to PowerShell when it is not installed
+- Added `Launch Media Dock.bat` at the Windows zip root, with runtime files kept in `core`
+- Kept bundled `yt-dlp`, `ffmpeg`, `ffprobe`, and `deno` inside the standard shared builds
 
 ## Packaging and privacy
 
@@ -249,84 +163,3 @@ This candidate fixes Windows local-directory crashes and damaged download runtim
 - Packaging scripts clean only stale artifacts for the target version and preserve existing historical release folders
 - Packaging scripts verify that cookies, history, local session files, subtitle cleanup configs, API keys, and similar private files are not included in release archives
 - macOS and Windows builds are currently unsigned, so first-run security prompts are expected
-EOF
-}
-
-trap cleanup EXIT
-
-prepare_release_dir
-mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
-rm -rf "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
-mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
-
-cd "$PROJECT_ROOT"
-
-resolve_args=(resolve --output "$YTDLP_MANIFEST")
-if [[ -n "$YTDLP_VERSION" ]]; then
-  resolve_args+=(--version "$YTDLP_VERSION")
-fi
-node "$YTDLP_VERIFIER" "${resolve_args[@]}"
-RESOLVED_YTDLP_VERSION="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).version" "$YTDLP_MANIFEST")"
-YTDLP_URL="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')).assetUrl" "$YTDLP_MANIFEST")"
-
-download_file "$YTDLP_URL" "$TOOLS_BIN_DIR/yt-dlp.exe"
-node "$YTDLP_VERIFIER" verify-file --manifest "$YTDLP_MANIFEST" --file "$TOOLS_BIN_DIR/yt-dlp.exe"
-download_file "$DENO_URL" "$TMP_DIR/deno-win.zip"
-unzip -q "$TMP_DIR/deno-win.zip" -d "$TMP_DIR/deno"
-cp "$TMP_DIR/deno/deno.exe" "$TOOLS_BIN_DIR/deno.exe"
-
-download_file "$FFMPEG_URL" "$TMP_DIR/ffmpeg-win.zip"
-unzip -q "$TMP_DIR/ffmpeg-win.zip" -d "$TMP_DIR/ffmpeg"
-FFMPEG_EXE="$(find "$TMP_DIR/ffmpeg" -type f -name 'ffmpeg.exe' | head -n 1)"
-FFPROBE_EXE="$(find "$TMP_DIR/ffmpeg" -type f -name 'ffprobe.exe' | head -n 1)"
-
-if [[ -z "$FFMPEG_EXE" || -z "$FFPROBE_EXE" ]]; then
-  echo "Failed to locate ffmpeg.exe or ffprobe.exe inside Windows FFmpeg archive."
-  exit 1
-fi
-
-cp "$FFMPEG_EXE" "$TOOLS_BIN_DIR/ffmpeg.exe"
-cp "$FFPROBE_EXE" "$TOOLS_BIN_DIR/ffprobe.exe"
-find "$(dirname "$FFMPEG_EXE")" -maxdepth 1 -type f -name '*.dll' -exec cp {} "$TOOLS_BIN_DIR/" \;
-node "$YTDLP_VERIFIER" record-runtime --manifest "$YTDLP_MANIFEST" --runtime-dir "$TOOLS_BIN_DIR"
-
-npm run build
-npx electron-builder --win zip --x64
-
-WIN_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*win*.zip' | head -n 1)"
-
-if [[ -z "$WIN_ZIP" ]]; then
-  echo "Windows build artifacts were not created as expected."
-  exit 1
-fi
-
-repack_windows_launcher_zip "$WIN_ZIP"
-
-if unzip -l "$WIN_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
-  echo "Sensitive files were detected inside the Windows zip artifact."
-  exit 1
-fi
-
-FINAL_VERIFY_DIR="$TMP_DIR/final-windows-package"
-mkdir -p "$FINAL_VERIFY_DIR"
-unzip -q "$WIN_ZIP" -d "$FINAL_VERIFY_DIR"
-PACKAGED_YTDLP_COUNT="$(find "$FINAL_VERIFY_DIR" -type f -name 'yt-dlp.exe' | wc -l | tr -d '[:space:]')"
-PACKAGED_YTDLP="$(find "$FINAL_VERIFY_DIR" -type f -name 'yt-dlp.exe' | head -n 1)"
-if [[ "$PACKAGED_YTDLP_COUNT" != "1" || -z "$PACKAGED_YTDLP" ]]; then
-  echo "The final Windows zip must contain exactly one yt-dlp.exe; found $PACKAGED_YTDLP_COUNT."
-  exit 1
-fi
-PACKAGED_RUNTIME_DIR="$(dirname "$PACKAGED_YTDLP")"
-node "$YTDLP_VERIFIER" verify-runtime --manifest "$YTDLP_MANIFEST" --runtime-dir "$PACKAGED_RUNTIME_DIR"
-
-mv "$WIN_ZIP" "$VERSION_DIR/"
-mv "$YTDLP_MANIFEST" "$VERSION_DIR/YT-DLP-WINDOWS.json"
-rm -rf "$RELEASE_DIR"/win-unpacked
-rm -f "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
-write_release_notes
-
-echo "Windows zip artifact:"
-echo "$VERSION_DIR/$(basename "$WIN_ZIP")"
-echo "$VERSION_DIR/YT-DLP-WINDOWS.json"
-echo "Windows smoke verification is still required before SHA256SUMS.txt can be generated:"
-echo "powershell -ExecutionPolicy Bypass -File scripts/verify-windows-package.ps1 -PackagePath <zip> -YtDlpManifestPath <manifest> -ChecksumPath <SHA256SUMS.txt> -WriteChecksum"

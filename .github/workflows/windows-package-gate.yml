@@ -9,9 +9,11 @@ on:
         default: "2026.07.04"
 
 jobs:
-  verify-windows-package:
-    runs-on: windows-latest
-    timeout-minutes: 45
+  build_candidate:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    outputs:
+      app_version: ${{ steps.app_version.outputs.value }}
 
     steps:
       - name: Check out repository
@@ -23,51 +25,90 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Set up Deno
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.9.1
-
       - name: Install dependencies
         run: npm ci
 
-      - name: Prepare Windows FFmpeg runtime
-        shell: pwsh
+      - name: Read candidate version
+        id: app_version
+        shell: bash
         run: |
-          $archive = Join-Path $env:RUNNER_TEMP "ffmpeg-win.zip"
-          $extract = Join-Path $env:RUNNER_TEMP "ffmpeg-win"
-          $runtime = Join-Path $env:RUNNER_TEMP "media-dock-runtime"
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile $archive
-          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
-          $ffmpeg = Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "ffmpeg.exe" | Select-Object -First 1
-          $ffprobe = Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "ffprobe.exe" | Select-Object -First 1
-          if (-not $ffmpeg -or -not $ffprobe) { throw "FFmpeg runtime files were not found." }
-          New-Item -ItemType Directory -Force -Path $runtime | Out-Null
-          Copy-Item -LiteralPath $ffmpeg.FullName -Destination (Join-Path $runtime "ffmpeg.exe")
-          Copy-Item -LiteralPath $ffprobe.FullName -Destination (Join-Path $runtime "ffprobe.exe")
-          Get-ChildItem -LiteralPath $ffmpeg.DirectoryName -File -Filter "*.dll" | Copy-Item -Destination $runtime
-          "MEDIA_DOCK_RUNTIME=$runtime" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "value=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
 
-      - name: Run packaging tests
-        run: npm run test:windows-package
+      - name: Run automated checks
+        run: npm test
 
-      - name: Build and smoke-test Windows share package
-        shell: pwsh
-        run: |
-          $deno = (Get-Command "deno.exe").Source
-          & ./scripts/build-shareable-package.ps1 `
-            -EnvScriptsDir $env:MEDIA_DOCK_RUNTIME `
-            -DenoPath $deno `
-            -YtDlpVersion "${{ inputs.yt_dlp_version }}"
-          if (-not (Test-Path -LiteralPath "release/SHA256SUMS.txt")) {
-            throw "Windows smoke tests did not produce SHA256SUMS.txt."
-          }
+      - name: Build the versioned Windows candidate
+        shell: bash
+        env:
+          YTDLP_VERSION: ${{ inputs.yt_dlp_version }}
+        run: npm run dist:win
 
-      - name: Upload verified Windows artifacts
+      - name: Confirm checksum is still gated
+        shell: bash
+        run: test ! -e "release/${{ steps.app_version.outputs.value }}/SHA256SUMS.txt"
+
+      - name: Upload unverified candidate
         uses: actions/upload-artifact@v4
         with:
-          name: media-dock-windows-verified
+          name: media-dock-${{ steps.app_version.outputs.value }}-windows-candidate
           path: |
-            release/Media-Dock-share.zip
-            release/YT-DLP-WINDOWS.json
-            release/SHA256SUMS.txt
+            release/${{ steps.app_version.outputs.value }}/Media Dock-${{ steps.app_version.outputs.value }}-win.zip
+            release/${{ steps.app_version.outputs.value }}/YT-DLP-WINDOWS.json
+            release/${{ steps.app_version.outputs.value }}/RELEASE-NOTES.md
+          if-no-files-found: error
+          retention-days: 14
+
+  verify_candidate:
+    needs: build_candidate
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download the exact candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: media-dock-${{ needs.build_candidate.outputs.app_version }}-windows-candidate
+          path: release/${{ needs.build_candidate.outputs.app_version }}
+
+      - name: Run Windows packaging regression tests
+        run: npm run test:windows-package
+
+      - name: Smoke-test the packaged runtime and write checksums
+        shell: pwsh
+        run: |
+          $version = "${{ needs.build_candidate.outputs.app_version }}"
+          $releaseDir = Join-Path (Resolve-Path "release").Path $version
+          $packages = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter "Media Dock-$version-win.zip")
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one versioned Windows candidate, found $($packages.Count)."
+          }
+          $manifest = Join-Path $releaseDir "YT-DLP-WINDOWS.json"
+          $checksum = Join-Path $releaseDir "SHA256SUMS.txt"
+          & ./scripts/verify-windows-package.ps1 `
+            -PackagePath $packages[0].FullName `
+            -YtDlpManifestPath $manifest `
+            -ChecksumPath $checksum `
+            -WriteChecksum
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $checksum)) {
+            throw "Native Windows runtime verification did not produce SHA256SUMS.txt."
+          }
+
+      - name: Upload verified Windows candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-dock-${{ needs.build_candidate.outputs.app_version }}-windows-verified
+          path: |
+            release/${{ needs.build_candidate.outputs.app_version }}/Media Dock-${{ needs.build_candidate.outputs.app_version }}-win.zip
+            release/${{ needs.build_candidate.outputs.app_version }}/YT-DLP-WINDOWS.json
+            release/${{ needs.build_candidate.outputs.app_version }}/RELEASE-NOTES.md
+            release/${{ needs.build_candidate.outputs.app_version }}/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14

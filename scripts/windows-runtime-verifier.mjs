@@ -188,14 +188,16 @@ async function runCli() {
     return
   }
   if (command === 'verify-runtime') {
-    if (!options.manifest || !options.runtime-dir) throw new Error('verify-runtime requires --manifest and --runtime-dir.')
-    verifyWindowsRuntimeDirectory(options.runtime-dir, readManifest(options.manifest))
-    process.stdout.write(`Verified Windows runtime directory: ${options.runtime-dir}\n`)
+    const runtimeDir = options['runtime-dir']
+    if (!options.manifest || !runtimeDir) throw new Error('verify-runtime requires --manifest and --runtime-dir.')
+    verifyWindowsRuntimeDirectory(runtimeDir, readManifest(options.manifest))
+    process.stdout.write(`Verified Windows runtime directory: ${runtimeDir}\n`)
     return
   }
   if (command === 'record-runtime') {
-    if (!options.manifest || !options.runtime-dir) throw new Error('record-runtime requires --manifest and --runtime-dir.')
-    const manifest = recordWindowsRuntimeManifest(options.runtime-dir, readManifest(options.manifest))
+    const runtimeDir = options['runtime-dir']
+    if (!options.manifest || !runtimeDir) throw new Error('record-runtime requires --manifest and --runtime-dir.')
+    const manifest = recordWindowsRuntimeManifest(runtimeDir, readManifest(options.manifest))
     const temporaryPath = `${options.manifest}.tmp-${process.pid}`
     try {
       writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')

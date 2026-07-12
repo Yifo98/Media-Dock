@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +15,7 @@ import {
 } from '../scripts/windows-runtime-verifier.mjs'
 
 const ytDlpPayload = Buffer.from('complete yt-dlp fixture\n')
+const runtimeVerifierPath = fileURLToPath(new URL('../scripts/windows-runtime-verifier.mjs', import.meta.url))
 const powershellVerifierPath = fileURLToPath(new URL('../scripts/verify-windows-package.ps1', import.meta.url))
 
 function sha256(payload) {
@@ -118,6 +119,34 @@ test('verifies all packaged runtime files and the embedded yt-dlp hash', () => {
       () => verifyWindowsRuntimeDirectory(sandbox.runtimeDir, recordedManifest),
       /deno\.exe is missing/i,
     )
+  } finally {
+    sandbox.cleanup()
+  }
+})
+
+test('records and verifies runtime directories through the production CLI', () => {
+  const sandbox = createSandbox()
+  const manifestPath = join(sandbox.rootDir, 'YT-DLP-WINDOWS.json')
+  try {
+    writeRuntimeFixtures(sandbox.runtimeDir)
+    writeFileSync(manifestPath, `${JSON.stringify(sandbox.manifest, null, 2)}\n`)
+
+    const recordResult = spawnSync(process.execPath, [
+      runtimeVerifierPath,
+      'record-runtime',
+      '--manifest', manifestPath,
+      '--runtime-dir', sandbox.runtimeDir,
+    ], { encoding: 'utf8' })
+    assert.equal(recordResult.status, 0, `${recordResult.stdout}${recordResult.stderr}`)
+    assert.equal(Object.keys(JSON.parse(readFileSync(manifestPath, 'utf8')).tools).length, 4)
+
+    const verifyResult = spawnSync(process.execPath, [
+      runtimeVerifierPath,
+      'verify-runtime',
+      '--manifest', manifestPath,
+      '--runtime-dir', sandbox.runtimeDir,
+    ], { encoding: 'utf8' })
+    assert.equal(verifyResult.status, 0, `${verifyResult.stdout}${verifyResult.stderr}`)
   } finally {
     sandbox.cleanup()
   }

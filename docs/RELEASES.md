@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-windows-package.ps1 `
 
 脚本会实际执行 `yt-dlp --version`、`deno --version`、`ffmpeg -version` 和 `ffprobe -version`。四项全部通过后才会原子生成 `SHA256SUMS.txt`。Windows 原生的 `npm run dist:share` 已内置同一门禁。
 
-也可以在 GitHub Actions 手动运行 `Windows package gate`，输入要固定的 yt-dlp release tag；workflow 会在 `windows-latest` 上完成原生构建、四工具冒烟和已验证产物上传，但不会自动发布 Release。
+也可以在 GitHub Actions 手动运行 `Windows package gate`，输入要固定的 yt-dlp release tag。workflow 会先在 macOS runner 生成正式的版本化候选 ZIP，再让 `windows-latest` 下载并验证完全相同的 ZIP；Windows 原生四工具冒烟全部通过后才写入校验文件并上传已验证候选，不会自动发布 Release。
 
 ## 推荐发布文案
 
