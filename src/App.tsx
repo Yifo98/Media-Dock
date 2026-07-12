@@ -180,10 +180,12 @@ function getText(language: Language) {
         checkToolUpdates: '检查更新',
         checkingToolUpdates: '检查中...',
         toolUpdateReady: '下载内核有新版本',
+        toolRepairReady: '下载内核损坏或无法读取版本',
         toolUpdateNone: '核心工具已是最新版本。',
         toolUpdateUnknown: '还没有检查核心工具更新。',
         toolUpdateAllReady: '核心工具有新版本',
         updateYtDlp: '更新 yt-dlp',
+        repairYtDlp: '修复 yt-dlp',
         updateDeno: '更新 Deno',
         updatingYtDlp: '更新中...',
         ytDlpUpdated: 'yt-dlp 已更新完成。',
@@ -400,10 +402,12 @@ function getText(language: Language) {
         checkToolUpdates: 'Check updates',
         checkingToolUpdates: 'Checking...',
         toolUpdateReady: 'Download core update available',
+        toolRepairReady: 'Download core is damaged or unreadable',
         toolUpdateNone: 'Core tools are up to date.',
         toolUpdateUnknown: 'Core tool updates have not been checked yet.',
         toolUpdateAllReady: 'Core tool updates available',
         updateYtDlp: 'Update yt-dlp',
+        repairYtDlp: 'Repair yt-dlp',
         updateDeno: 'Update Deno',
         updatingYtDlp: 'Updating...',
         ytDlpUpdated: 'yt-dlp has been updated.',
@@ -1114,6 +1118,12 @@ function selfCheckDisplayLabel(item: SelfCheckItem, text: ReturnType<typeof getT
   return item.label
 }
 
+function selfCheckStatusLabel(item: SelfCheckItem) {
+  if (item.health === 'invalid') return 'BROKEN'
+  if (item.health === 'missing') return 'MISS'
+  return item.ok ? 'OK' : 'MISS'
+}
+
 function upsertHistoryItem(currentHistory: HistoryItem[], nextItem: HistoryItem) {
   const nextUrlsKey = nextItem.urls.join('\n')
   const filtered = currentHistory.filter((item) => {
@@ -1561,14 +1571,18 @@ function App() {
       const result = await appApi.checkRuntimeToolUpdates()
       setRuntimeToolUpdateInfo(result)
       const updates = [
-        result.ytDlp.updateAvailable ? `${text.toolUpdateReady}: ${result.ytDlp.currentVersion ?? '--'} -> ${result.ytDlp.latestVersion ?? '--'}` : '',
+        result.ytDlp.updateAvailable
+          ? `${result.ytDlp.repairRequired ? text.toolRepairReady : text.toolUpdateReady}: ${result.ytDlp.currentVersion ?? '--'} -> ${result.ytDlp.latestVersion ?? '--'}`
+          : '',
         result.deno.updateAvailable ? `${text.denoUpdateReady}: ${result.deno.currentVersion ?? '--'} -> ${result.deno.latestVersion ?? '--'}` : '',
       ].filter(Boolean)
       if (!silent || updates.length > 0) {
         setStatus(updates.length > 0 ? 'success' : 'idle')
         setStatusMessage(
           updates.length > 0
-            ? `${text.toolUpdateAllReady}: ${updates.join('；')}`
+            ? result.ytDlp.repairRequired
+              ? updates.join('；')
+              : `${text.toolUpdateAllReady}: ${updates.join('；')}`
             : text.toolUpdateNone,
         )
       }
@@ -2097,7 +2111,7 @@ function App() {
             {(selfCheckItems.length > 0 ? selfCheckItems : [
               { key: 'loading', label: language === 'zh' ? '检查中' : 'Checking', ok: true, detail: text.loading },
             ])
-              .map((item) => `${item.ok ? 'OK' : 'MISS'} ${selfCheckDisplayLabel(item, text)}: ${compactPath(item.detail, 124)}`)
+              .map((item) => `${selfCheckStatusLabel(item)} ${selfCheckDisplayLabel(item, text)}: ${compactPath(item.detail, 124)}`)
               .join('\n')}
           </code>
           <div className="section-actions">
@@ -2114,7 +2128,11 @@ function App() {
                 disabled={ytDlpUpdating || queue.running > 0 || queue.pending > 0}
                 onClick={() => void updateYtDlpRuntime()}
               >
-                {ytDlpUpdating ? text.updatingYtDlp : text.updateYtDlp}
+                {ytDlpUpdating
+                  ? text.updatingYtDlp
+                  : runtimeToolUpdateInfo.ytDlp.repairRequired
+                    ? text.repairYtDlp
+                    : text.updateYtDlp}
               </button>
             ) : null}
             {runtimeToolUpdateInfo?.deno.updateAvailable ? (

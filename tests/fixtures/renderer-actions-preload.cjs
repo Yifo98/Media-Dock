@@ -5,6 +5,7 @@ const noopSubscription = () => () => {}
 const reject = (message) => async () => {
   throw new Error(message)
 }
+let runtimeToolListener = null
 
 const appApi = {
   getPaths: async () => ({
@@ -20,14 +21,30 @@ const appApi = {
   }),
   listCookieFiles: async () => [],
   importCookieZip: async () => null,
-  getSelfCheck: async () => ({ items: [], toolsSource: 'bundled' }),
+  getSelfCheck: async () => ({
+    items: action === 'ytDlpRepair'
+      ? [{ key: 'yt-dlp', label: 'download-core', ok: false, health: 'invalid', detail: 'I:\\tools\\yt-dlp.exe (version probe failed)' }]
+      : [],
+    toolsSource: 'bundled',
+  }),
   checkForUpdates: async () => null,
   downloadLatestUpdate: async () => null,
   resolveBilibiliSeason: async () => null,
   resolveMediaCollection: async () => null,
   installDenoRuntime: async () => null,
-  checkRuntimeToolUpdates: async () => null,
-  updateYtDlpRuntime: async () => null,
+  checkRuntimeToolUpdates: async () => action === 'ytDlpRepair'
+    ? {
+        ytDlp: { tool: 'yt-dlp', currentVersion: null, latestVersion: '2026.07.04', updateAvailable: true, repairRequired: true, releaseUrl: null, detail: 'I:\\tools\\yt-dlp.exe' },
+        deno: { tool: 'deno', currentVersion: '2.9.1', latestVersion: '2.9.1', updateAvailable: false, repairRequired: false, releaseUrl: null, detail: 'deno.exe' },
+      }
+    : null,
+  updateYtDlpRuntime: async () => {
+    if (action !== 'ytDlpRepair') return null
+    runtimeToolListener?.({ tool: 'yt-dlp', stage: 'verifying', message: '正在验证下载内核...', percent: null })
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    runtimeToolListener?.({ tool: 'yt-dlp', stage: 'installing', message: '正在安装下载内核...', percent: null })
+    return { tool: 'yt-dlp', path: 'I:\\tools\\yt-dlp.exe', version: '2026.07.04' }
+  },
   openMediaTools: async () => null,
   pickDirectory: action === 'pickDirectory' || action === 'mediaPickDirectory'
     ? reject('simulated Windows directory dialog failure')
@@ -91,7 +108,12 @@ const appApi = {
   },
   onMediaToolsUpdate: noopSubscription,
   onCollectionLog: noopSubscription,
-  onRuntimeToolUpdate: noopSubscription,
+  onRuntimeToolUpdate: (listener) => {
+    runtimeToolListener = listener
+    return () => {
+      if (runtimeToolListener === listener) runtimeToolListener = null
+    }
+  },
 }
 
 contextBridge.exposeInMainWorld('appApi', appApi)

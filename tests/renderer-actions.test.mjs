@@ -19,12 +19,20 @@ function runRendererAction(action) {
   })
 }
 
+function assertRendererAction(action) {
+  const result = runRendererAction(action)
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
+
+  assert.equal(result.status, 0, output)
+  assert.match(output, /\[GREEN\]/)
+}
+
 for (const action of ['openPath', 'pickDirectory', 'pickDirectoryCancel', 'showItemInFolder', 'mediaPickDirectory', 'mediaOpenPath']) {
   test(`${action} failure remains recoverable in the rendered app`, () => {
-    const result = runRendererAction(action)
-    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
-
-    assert.equal(result.status, 0, output)
-    assert.match(output, /\[GREEN\]/)
+    assertRendererAction(action)
   })
 }
+
+test('damaged yt-dlp exposes a repair action and verification stage', () => {
+  assertRendererAction('ytDlpRepair')
+})

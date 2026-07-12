@@ -8,6 +8,13 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 import { assertSafeLocalPath } from './core/localPath.js'
+import {
+  getRuntimeUpdateAvailability,
+  inspectRuntimeExecutable,
+  installValidatedRuntimeExecutable,
+  type RuntimeExecutableInspection,
+} from './core/runtimeExecutable.js'
+import { compareVersions, normalizeVersion } from './core/version.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -57,6 +64,7 @@ type SelfCheckItem = {
   label: string
   ok: boolean
   detail: string
+  health?: 'ready' | 'missing' | 'invalid'
 }
 
 type MediaStreamInfo = {
@@ -151,6 +159,7 @@ type RuntimeToolUpdateInfo = {
   currentVersion: string | null
   latestVersion: string | null
   updateAvailable: boolean
+  repairRequired: boolean
   releaseUrl: string | null
   detail: string | null
 }
@@ -162,7 +171,7 @@ type RuntimeToolUpdateCheckResult = {
 
 type RuntimeToolProgressUpdate = {
   tool: RuntimeToolInstallTarget
-  stage: 'checking' | 'downloading' | 'extracting' | 'installing' | 'complete' | 'error'
+  stage: 'checking' | 'downloading' | 'extracting' | 'verifying' | 'installing' | 'complete' | 'error'
   message: string
   percent: number | null
 }
@@ -374,6 +383,8 @@ let activeMediaProcess: ChildProcessWithoutNullStreams | null = null
 let mediaCancelled = false
 let activeSubtitleCleanupAbort: AbortController | null = null
 let subtitleCleanupCancelled = false
+let ytDlpInspectionCache: { key: string; promise: Promise<RuntimeExecutableInspection> } | null = null
+let ytDlpInstallPromise: Promise<RuntimeToolInstallResult> | null = null
 
 const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
   '请帮我优化以下这份视频字幕文档。这份文档是通过 OCR 自动生成的，包含大量冗余和识别错误，同时含有时间戳和序号，需要请按以下规则进行清理和修复文字，最终形成一整份纯文本。',
@@ -817,32 +828,6 @@ function applyDockIcon() {
 
 function shouldOpenDevTools() {
   return process.env.MEDIA_DOCK_OPEN_DEVTOOLS === '1'
-}
-
-function normalizeVersion(value: string) {
-  return value.trim().replace(/^[^\d]*/, '').split(/[+-]/, 1)[0]
-}
-
-function compareVersions(left: string, right: string) {
-  const leftParts = normalizeVersion(left).split('.').map((part) => Number.parseInt(part, 10) || 0)
-  const rightParts = normalizeVersion(right).split('.').map((part) => Number.parseInt(part, 10) || 0)
-  const length = Math.max(leftParts.length, rightParts.length)
-
-  for (let index = 0; index < length; index += 1) {
-    const leftValue = leftParts[index] ?? 0
-    const rightValue = rightParts[index] ?? 0
-    if (leftValue > rightValue) return 1
-    if (leftValue < rightValue) return -1
-  }
-
-  return 0
-}
-
-function normalizePipVersion(value: string) {
-  return normalizeVersion(value)
-    .split('.')
-    .map((part) => String(Number.parseInt(part, 10) || 0))
-    .join('.')
 }
 
 function scalarToString(value: unknown) {
@@ -1339,6 +1324,8 @@ type GitHubReleasePayload = {
   assets?: Array<{
     name?: string
     browser_download_url?: string
+    size?: number
+    digest?: string | null
   }>
 }
 
@@ -1419,7 +1406,11 @@ async function downloadUrlToFile(
   })
 
   await pipeline(source, createWriteStream(targetPath))
+  if (totalBytes !== null && receivedBytes !== totalBytes) {
+    throw new Error(`Incomplete download: received ${receivedBytes} of ${totalBytes} bytes.`)
+  }
   onProgress?.({ receivedBytes, totalBytes, percent: 100 })
+  return { receivedBytes, totalBytes }
 }
 
 async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
@@ -1446,6 +1437,8 @@ function selectYtDlpDownloadAsset(assets: NonNullable<GitHubReleasePayload['asse
     .map((asset) => ({
       name: asset.name ?? '',
       url: asset.browser_download_url ?? '',
+      size: typeof asset.size === 'number' ? asset.size : null,
+      digest: asset.digest ?? null,
     }))
     .filter((asset) => asset.name && asset.url)
 
@@ -1472,9 +1465,9 @@ async function fetchLatestDenoRelease() {
   return await response.json() as GitHubReleasePayload
 }
 
-async function getCurrentYtDlpVersion() {
+async function probeYtDlpVersion(executablePath: string) {
   try {
-    const result = await runProcessCollectOutput(getYtDlpPath(), ['--version'], 15000)
+    const result = await runProcessCollectOutput(executablePath, ['--version'], 15000)
     const versionLine = `${result.stdout}\n${result.stderr}`
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -1483,6 +1476,32 @@ async function getCurrentYtDlpVersion() {
   } catch {
     return null
   }
+}
+
+function getYtDlpInspectionKey(executablePath: string | null) {
+  if (!executablePath) return 'missing'
+  try {
+    const stats = statSync(executablePath)
+    return `${executablePath}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`
+  } catch {
+    return `${executablePath}:missing`
+  }
+}
+
+async function inspectCurrentYtDlp() {
+  const executablePath = resolveExecutablePath('yt-dlp')
+  const key = getYtDlpInspectionKey(executablePath)
+  if (ytDlpInspectionCache?.key === key) {
+    return await ytDlpInspectionCache.promise
+  }
+
+  const promise = inspectRuntimeExecutable(executablePath, probeYtDlpVersion)
+  ytDlpInspectionCache = { key, promise }
+  return await promise
+}
+
+async function getCurrentYtDlpVersion() {
+  return (await inspectCurrentYtDlp()).version
 }
 
 async function getCurrentDenoVersion() {
@@ -1513,13 +1532,14 @@ async function checkRuntimeToolUpdates(): Promise<RuntimeToolUpdateCheckResult> 
   ])
   const latestYtDlpVersion = ytDlpRelease.tag_name ? normalizeVersion(ytDlpRelease.tag_name) : null
   const latestDenoVersion = denoRelease.tag_name ? normalizeVersion(denoRelease.tag_name) : null
+  const ytDlpAvailability = getRuntimeUpdateAvailability(currentYtDlpVersion, latestYtDlpVersion)
 
   return {
     ytDlp: {
       tool: 'yt-dlp',
       currentVersion: currentYtDlpVersion,
       latestVersion: latestYtDlpVersion,
-      updateAvailable: Boolean(currentYtDlpVersion && latestYtDlpVersion && compareVersions(currentYtDlpVersion, latestYtDlpVersion) < 0),
+      ...ytDlpAvailability,
       releaseUrl: ytDlpRelease.html_url ?? null,
       detail: getYtDlpPath(),
     },
@@ -1528,18 +1548,11 @@ async function checkRuntimeToolUpdates(): Promise<RuntimeToolUpdateCheckResult> 
       currentVersion: currentDenoVersion,
       latestVersion: latestDenoVersion,
       updateAvailable: Boolean(latestDenoVersion && (!currentDenoVersion || compareVersions(currentDenoVersion, latestDenoVersion) < 0)),
+      repairRequired: false,
       releaseUrl: denoRelease.html_url ?? null,
       detail: getDenoPath(),
     },
   }
-}
-
-function getCondaPythonPath() {
-  const candidate = isWindows
-    ? join(envRoot, 'python.exe')
-    : join(envRoot, 'bin', 'python')
-
-  return existsSync(candidate) ? candidate : null
 }
 
 async function installYtDlpRuntime(): Promise<RuntimeToolInstallResult> {
@@ -1550,47 +1563,43 @@ async function installYtDlpRuntime(): Promise<RuntimeToolInstallResult> {
     throw new Error('Could not determine the latest yt-dlp version.')
   }
 
-  const currentPath = getYtDlpPath()
-  const condaPythonPath = getCondaPythonPath()
-  if (condaPythonPath && isPathInside(envRoot, currentPath)) {
-    emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'installing', message: `正在更新 Conda 环境中的 yt-dlp 到 ${latestVersion}...`, percent: null })
-    await runSimpleProcess(
-      condaPythonPath,
-      ['-m', 'pip', 'install', '--upgrade', '--force-reinstall', `yt-dlp==${normalizePipVersion(latestVersion)}`],
-      getDevRootDir(),
-    )
-    const result: RuntimeToolInstallResult = {
-      tool: 'yt-dlp',
-      path: currentPath,
-      version: await getCurrentYtDlpVersion() ?? latestVersion,
-    }
-    emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'complete', message: `yt-dlp 已更新到 ${result.version}。`, percent: 100 })
-    return result
-  }
-
   const asset = selectYtDlpDownloadAsset(release.assets ?? [])
   if (!asset) {
     throw new Error('No matching yt-dlp release asset was found for this platform.')
   }
 
   const targetPath = join(ensureDirectory(getRuntimeToolsInstallBinDir()), getExecutableName('yt-dlp'))
-  await downloadUrlToFile(asset.url, targetPath, ({ percent }) => {
-    emitRuntimeToolProgress({
-      tool: 'yt-dlp',
-      stage: 'downloading',
-      message: `正在下载 yt-dlp ${latestVersion}...`,
-      percent,
-    })
+  const installed = await installValidatedRuntimeExecutable({
+    targetPath,
+    expectedVersion: latestVersion,
+    expectedSha256: asset.digest,
+    expectedSize: asset.size,
+    platform: process.platform,
+    download: async (temporaryPath) => await downloadUrlToFile(asset.url, temporaryPath, ({ percent }) => {
+      emitRuntimeToolProgress({
+        tool: 'yt-dlp',
+        stage: 'downloading',
+        message: `正在下载 yt-dlp ${latestVersion}...`,
+        percent,
+      })
+    }),
+    probeVersion: probeYtDlpVersion,
+    onStage: (stage) => {
+      if (stage === 'downloading') {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: `正在下载 yt-dlp ${latestVersion}...`, percent: 0 })
+      } else if (stage === 'verifying') {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: '正在验证 yt-dlp 完整性和版本...', percent: null })
+      } else {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: '正在原子替换 yt-dlp 可执行文件...', percent: null })
+      }
+    },
   })
-  emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'installing', message: '正在写入 yt-dlp 可执行文件...', percent: null })
-  if (!isWindows) {
-    chmodSync(targetPath, 0o755)
-  }
+  ytDlpInspectionCache = null
 
   const result: RuntimeToolInstallResult = {
     tool: 'yt-dlp',
-    path: targetPath,
-    version: await getCurrentYtDlpVersion() ?? latestVersion,
+    path: installed.path,
+    version: installed.version,
   }
   emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'complete', message: `yt-dlp 已更新到 ${result.version}。`, percent: 100 })
   return result
@@ -2305,8 +2314,9 @@ function getFfprobePath() {
   return resolveExecutablePath('ffprobe') ?? getExecutableName('ffprobe')
 }
 
-function getSelfCheckItems(): SelfCheckItem[] {
-  const ytDlpPath = getYtDlpPath()
+async function getSelfCheckItems(): Promise<SelfCheckItem[]> {
+  const ytDlpPath = resolveExecutablePath('yt-dlp')
+  const ytDlpInspection = await inspectCurrentYtDlp()
   const ffmpegPath = getFfmpegPath()
   const ffprobePath = getFfprobePath()
   const denoPath = getDenoPath()
@@ -2315,8 +2325,11 @@ function getSelfCheckItems(): SelfCheckItem[] {
     {
       key: 'yt-dlp',
       label: 'download-core',
-      ok: ytDlpPath !== getExecutableName('yt-dlp') || Boolean(findExecutableInPath('yt-dlp')),
-      detail: ytDlpPath,
+      ok: ytDlpInspection.status === 'ready',
+      health: ytDlpInspection.status,
+      detail: ytDlpInspection.status === 'missing'
+        ? 'Not found'
+        : `${ytDlpPath} (${ytDlpInspection.version ?? 'version probe failed'})`,
     },
     {
       key: 'ffmpeg',
@@ -4075,8 +4088,8 @@ ipcMain.handle('cookies:importZip', async (event) => {
   return await importCookieZip(result.filePaths[0])
 })
 
-ipcMain.handle('self-check:get', () => ({
-  items: getSelfCheckItems(),
+ipcMain.handle('self-check:get', async () => ({
+  items: await getSelfCheckItems(),
   toolsSource: getToolsSource(),
 }))
 
@@ -4120,8 +4133,14 @@ ipcMain.handle('runtime:checkToolUpdates', async () => {
 })
 
 ipcMain.handle('runtime:updateYtDlp', async () => {
+  let installPromise: Promise<RuntimeToolInstallResult> | null = null
   try {
-    return await installYtDlpRuntime()
+    if (queueSnapshot.running > 0 || queueSnapshot.pending > 0) {
+      throw new Error('Stop active downloads before repairing yt-dlp.')
+    }
+    installPromise = ytDlpInstallPromise ?? installYtDlpRuntime()
+    ytDlpInstallPromise = installPromise
+    return await installPromise
   } catch (error) {
     emitRuntimeToolProgress({
       tool: 'yt-dlp',
@@ -4130,6 +4149,10 @@ ipcMain.handle('runtime:updateYtDlp', async () => {
       percent: null,
     })
     throw error
+  } finally {
+    if (installPromise && ytDlpInstallPromise === installPromise) {
+      ytDlpInstallPromise = null
+    }
   }
 })
 
@@ -4421,12 +4444,15 @@ ipcMain.handle('download:cancel', () => {
 
 ipcMain.handle('download:start', async (_event, request: DownloadRequest) => {
   const urls = request.urls.map((item) => item.trim()).filter(Boolean)
-  const ytDlpPath = getYtDlpPath()
   if (activeJobs.size > 0 || pendingJobs.length > 0) {
     throw new Error('A download queue is already running.')
   }
-  if (!existsSync(ytDlpPath)) {
-    throw new Error(`yt-dlp was not found at ${ytDlpPath}`)
+  const ytDlpInspection = await inspectCurrentYtDlp()
+  if (ytDlpInspection.status === 'missing') {
+    throw new Error('yt-dlp was not found. Check for core tool updates to install it.')
+  }
+  if (ytDlpInspection.status === 'invalid') {
+    throw new Error('yt-dlp is damaged or cannot report its version. Use Repair yt-dlp before downloading.')
   }
   if (!statSync(request.outputDir).isDirectory()) {
     throw new Error(`Output directory does not exist: ${request.outputDir}`)

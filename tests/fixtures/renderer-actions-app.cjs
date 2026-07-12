@@ -37,6 +37,49 @@ app.whenReady().then(async () => {
 
   try {
     await win.loadFile(path.resolve(__dirname, '../../dist/index.html'))
+    if (action === 'ytDlpRepair') {
+      const checkLabels = ['检查更新', 'Check updates']
+      const repairLabels = ['修复 yt-dlp', 'Repair yt-dlp']
+      const checkReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(checkLabels)}.includes(button.textContent.trim()))`,
+      )
+      if (!checkReady) throw new Error('Runtime update check button did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(checkLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+
+      const repairReady = await waitFor(
+        win,
+        `document.body.innerText.includes('BROKEN') && Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(repairLabels)}.includes(button.textContent.trim()))`,
+      )
+      if (!repairReady) {
+        console.error('[RED] damaged yt-dlp did not expose a repair action.')
+        app.exit(1)
+        return
+      }
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(repairLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      const verifyingVisible = await waitFor(
+        win,
+        `document.body.innerText.includes('正在验证下载内核') || document.body.innerText.includes('Verifying download core')`,
+        1000,
+      )
+      if (!verifyingVisible) {
+        console.error('[RED] repair verification stage was not visible.')
+        app.exit(2)
+        return
+      }
+      console.log('[GREEN] damaged yt-dlp exposed repair and verification UI.')
+      app.exit(0)
+      return
+    }
+
     const targetLabels = labels[action]
     if (!targetLabels) throw new Error(`Unknown renderer action: ${action}`)
     if (action === 'mediaPickDirectory' || action === 'mediaOpenPath') {

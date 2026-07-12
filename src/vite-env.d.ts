@@ -40,6 +40,7 @@ type SelfCheckItem = {
   label: string
   ok: boolean
   detail: string
+  health?: 'ready' | 'missing' | 'invalid'
 }
 
 type UpdateCheckResult = {
@@ -69,6 +70,7 @@ type RuntimeToolUpdateInfo = {
   currentVersion: string | null
   latestVersion: string | null
   updateAvailable: boolean
+  repairRequired: boolean
   releaseUrl: string | null
   detail: string | null
 }
@@ -263,7 +265,7 @@ type CollectionResolveUpdate = {
 
 type RuntimeToolProgressUpdate = {
   tool: 'deno' | 'yt-dlp'
-  stage: 'checking' | 'downloading' | 'extracting' | 'installing' | 'complete' | 'error'
+  stage: 'checking' | 'downloading' | 'extracting' | 'verifying' | 'installing' | 'complete' | 'error'
   message: string
   percent: number | null
 }
