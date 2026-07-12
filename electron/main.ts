@@ -23,6 +23,7 @@ import {
   RuntimeOperationCoordinator,
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
+import { runRuntimeProcessCollectOutput } from './core/runtimeProcess.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -1207,43 +1208,18 @@ async function resolveBilibiliSeason(sourceUrl: string, log?: CollectionLogger):
 }
 
 async function runProcessCollectOutput(command: string, args: string[], timeoutMs: number) {
-  return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd: getDevRootDir(),
-      env: {
-        ...process.env,
-        PATH: buildToolPathEnv(),
-        DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
-        PYTHONIOENCODING: 'utf-8',
-        PYTHONUTF8: '1',
-      },
-    })
-
-    let stdout = ''
-    let stderr = ''
-    const timeout = setTimeout(() => {
-      child.kill('SIGTERM')
-      reject(new Error(`${command} timed out after ${Math.round(timeoutMs / 1000)} seconds.`))
-    }, timeoutMs)
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf8')
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8')
-    })
-    child.on('error', (error) => {
-      clearTimeout(timeout)
-      reject(error)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timeout)
-      if (code === 0) {
-        resolve({ stdout, stderr })
-        return
-      }
-      reject(new Error(stderr.trim() || `${command} exited with code ${code}`))
-    })
+  return await runRuntimeProcessCollectOutput({
+    command,
+    args,
+    timeoutMs,
+    workingDirectory: app.isPackaged ? getPortableRootDir() : getDevRootDir(),
+    env: {
+      ...process.env,
+      PATH: buildToolPathEnv(),
+      DYLD_LIBRARY_PATH: buildDyldLibraryPathEnv(),
+      PYTHONIOENCODING: 'utf-8',
+      PYTHONUTF8: '1',
+    },
   })
 }
 
@@ -1448,16 +1424,12 @@ async function fetchLatestDenoRelease() {
 }
 
 async function probeYtDlpVersion(executablePath: string) {
-  try {
-    const result = await runProcessCollectOutput(executablePath, ['--version'], 15000)
-    const versionLine = `${result.stdout}\n${result.stderr}`
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean)
-    return versionLine ? normalizeVersion(versionLine) : null
-  } catch {
-    return null
-  }
+  const result = await runProcessCollectOutput(executablePath, ['--version'], 15000)
+  const versionLine = `${result.stdout}\n${result.stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+  return versionLine ? normalizeVersion(versionLine) : null
 }
 
 function getYtDlpInspectionKey(executablePath: string | null) {
@@ -1492,21 +1464,21 @@ async function getCurrentDenoVersion() {
     return null
   }
 
-  return await probeDenoVersion(denoPath)
-}
-
-async function probeDenoVersion(executablePath: string) {
   try {
-    const result = await runProcessCollectOutput(executablePath, ['--version'], 15000)
-    const versionLine = `${result.stdout}\n${result.stderr}`
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .find((line) => /^deno\s+\d/i.test(line))
-    const version = versionLine?.match(/^deno\s+([^\s]+)/i)?.[1]
-    return version ? normalizeVersion(version) : null
+    return await probeDenoVersion(denoPath)
   } catch {
     return null
   }
+}
+
+async function probeDenoVersion(executablePath: string) {
+  const result = await runProcessCollectOutput(executablePath, ['--version'], 15000)
+  const versionLine = `${result.stdout}\n${result.stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^deno\s+\d/i.test(line))
+  const version = versionLine?.match(/^deno\s+([^\s]+)/i)?.[1]
+  return version ? normalizeVersion(version) : null
 }
 
 async function checkRuntimeToolUpdates(): Promise<RuntimeToolUpdateCheckResult> {

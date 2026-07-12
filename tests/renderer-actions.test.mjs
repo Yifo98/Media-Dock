@@ -41,8 +41,12 @@ test('runtime install actions stay mutually exclusive', () => {
   assertRendererAction('runtimeInstallMutex')
 })
 
-test('runtime progress logs emit only once per 10% bucket', () => {
+test('runtime progress bursts update one exact log line in place', () => {
   assertRendererAction('runtimeProgressDedup')
+})
+
+test('runtime progress log stays exact and updates in place with the install bar', () => {
+  assertRendererAction('runtimeProgressSync')
 })
 
 test('download preflight failure leaves the queue empty', () => {

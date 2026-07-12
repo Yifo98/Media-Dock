@@ -103,8 +103,9 @@ write_release_notes() {
 - 启动自检会识别缺失、截断或无法运行的 yt-dlp，并提供下载、校验、替换一体的一键修复。
 - Windows 候选包固定到具体官方 yt-dlp 版本，校验官方大小与 SHA256，并在最终 ZIP 内复核四个工具；只有 Windows 原生版本冒烟通过后才生成 SHA256SUMS.txt。
 - 下载准备区按自身可用宽度重排：“开始”独占主操作行，清空、停止和打开目录位于第二行，窄列下控制区、Cookie 建议和下载方式会清晰堆叠。
-- yt-dlp 与 Deno 更新改为互斥任务，不再争抢同一进度卡；进度日志按阶段和 10% 区间节流，避免重复刷屏。
+- yt-dlp 与 Deno 更新改为互斥任务，不再争抢同一进度卡；下载进度在日志中以单行实时更新，既与安装进度一致也不会重复刷屏。
 - Windows 内核运行时下载改走 Electron/Chromium 网络栈，自动复用系统代理；失败日志会保留阶段、目标主机和底层错误，半下载文件会清理，旧工具不会被覆盖。
+- 修复 Windows 分享包把 \`resources/app.asar\` 文件误当成子进程工作目录，导致包内及新下载的 yt-dlp、Deno 都无法执行版本探测的问题。
 - 下载启动预检失败会清空尚未建立的队列；Deno 文件存在但版本探测失败时保持“基础模式”，不再误报 YouTube 已优化。
 - 分享包已内置已验证下载内核：\`yt-dlp $RESOLVED_YTDLP_VERSION\`、\`Deno $DENO_VERSION\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
 - 下载面板重新整理为“顶部开始/清空/停止/打开目录 + Cookie 推荐 + 来源输入区”，常用操作不再埋在下方。
@@ -189,8 +190,9 @@ This candidate fixes Windows local-directory crashes and damaged download runtim
 - Startup checks identify a missing, truncated, or unrunnable yt-dlp and expose a one-click download, verification, and validated replacement flow.
 - Windows candidates pin an exact official yt-dlp release, verify its official size and SHA-256, and recheck all four runtime tools inside the final ZIP. SHA256SUMS.txt is created only after native Windows version smoke tests pass.
 - The download preparation area responds to its own width: Start owns the primary row, Clear / Stop / Open folder stay on the secondary row, and the controls, cookie suggestion, and download-mode switch stack cleanly in narrow columns.
-- yt-dlp and Deno updates are mutually exclusive, so they no longer fight over one progress card. Progress logs are throttled by stage and 10% buckets to avoid repeated lines.
+- yt-dlp and Deno updates are mutually exclusive, so they no longer fight over one progress card. Download progress updates one exact log line in place, matching the install bar without flooding the log.
 - Windows runtime downloads now use Electron's Chromium network stack and system proxy support. Failures retain the stage, destination host, and underlying cause, remove partial files, and never overwrite the existing tool.
+- Fixed packaged Windows process probes using the \`resources/app.asar\` file as their working directory, which prevented both bundled and newly downloaded yt-dlp / Deno executables from reporting a version.
 - Rejected download preflight resets the unstarted queue. A present but unrunnable Deno binary stays in Basic mode instead of claiming YouTube optimization.
 - The shared packages now bundle a verified download core: \`yt-dlp $RESOLVED_YTDLP_VERSION\`, \`Deno $DENO_VERSION\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
 - Reworked the download panel into a top preparation area with Start / Clear / Stop / Open folder, Cookie suggestion, and then the source input area.

@@ -37,10 +37,45 @@ app.whenReady().then(async () => {
 
   try {
     await win.loadFile(path.resolve(__dirname, '../../dist/index.html'))
+    if (action === 'runtimeProgressSync') {
+      const midpointVisible = await waitFor(
+        win,
+        `document.querySelector('.runtime-progress small')?.textContent.trim() === '5.5%'`,
+      )
+      if (!midpointVisible) throw new Error('Install progress did not reach the 5.5% fixture midpoint')
+      const midpointLog = await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('.log-line'))
+          .map((line) => line.textContent)
+          .find((line) => line.includes('SYNC_PROGRESS')) ?? ''
+      `, true)
+      if (!midpointLog.includes('(5.5%)')) {
+        console.error(`[RED] install bar showed 5.5% while the runtime log showed: ${midpointLog}`)
+        app.exit(1)
+        return
+      }
+      const completed = await waitFor(
+        win,
+        `document.querySelector('.runtime-progress small')?.textContent.trim() === '100.0%'`,
+      )
+      if (!completed) throw new Error('Install progress did not reach 100%')
+      const finalLines = await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('.log-line'))
+          .map((line) => line.textContent)
+          .filter((line) => line.includes('SYNC_PROGRESS'))
+      `, true)
+      if (finalLines.length !== 1 || !finalLines[0].includes('(100.0%)')) {
+        console.error(`[RED] live runtime progress was not updated in place: ${finalLines.join(' | ')}`)
+        app.exit(2)
+        return
+      }
+      console.log('[GREEN] runtime log progress stays exact and updates in place with the install bar.')
+      app.exit(0)
+      return
+    }
     if (action === 'runtimeProgressDedup') {
       const completed = await waitFor(
         win,
-        `Array.from(document.querySelectorAll('.log-line')).some((line) => line.textContent.includes('DEDUP_PROGRESS (100%)'))`,
+        `Array.from(document.querySelectorAll('.log-line')).some((line) => line.textContent.includes('DEDUP_PROGRESS (100.0%)'))`,
       )
       if (!completed) throw new Error('Runtime progress burst did not reach the renderer')
       const lines = await win.webContents.executeJavaScript(`
@@ -48,12 +83,12 @@ app.whenReady().then(async () => {
           .map((line) => line.textContent)
           .filter((line) => line.includes('DEDUP_PROGRESS'))
       `, true)
-      if (lines.length !== 4 || !['(0%)', '(10%)', '(20%)', '(100%)'].every((bucket) => lines.some((line) => line.includes(bucket)))) {
+      if (lines.length !== 1 || !lines[0].includes('(100.0%)')) {
         console.error(`[RED] progress burst produced ${lines.length} log lines: ${lines.join(' | ')}`)
         app.exit(1)
         return
       }
-      console.log('[GREEN] runtime progress logs are limited to one line per 10% bucket.')
+      console.log('[GREEN] runtime progress bursts update one exact log line in place.')
       app.exit(0)
       return
     }

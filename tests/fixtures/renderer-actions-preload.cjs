@@ -129,15 +129,23 @@ const appApi = {
   onCollectionLog: noopSubscription,
   onRuntimeToolUpdate: (listener) => {
     runtimeToolListener = listener
-    const timer = action === 'runtimeProgressDedup'
-      ? setTimeout(() => {
+    const timers = []
+    if (action === 'runtimeProgressDedup') {
+      timers.push(setTimeout(() => {
           for (const percent of [0, 1, 2, 9, 10, 11, 19, 20, 20, 100]) {
             listener({ tool: 'deno', stage: 'downloading', message: 'DEDUP_PROGRESS', percent })
           }
-        }, 50)
-      : null
+        }, 50))
+    }
+    if (action === 'runtimeProgressSync') {
+      for (const [delay, percent] of [[50, 0], [150, 5.5], [600, 12.3], [900, 100]]) {
+        timers.push(setTimeout(() => {
+          listener({ tool: 'yt-dlp', stage: 'downloading', message: 'SYNC_PROGRESS', percent })
+        }, delay))
+      }
+    }
     return () => {
-      if (timer) clearTimeout(timer)
+      for (const timer of timers) clearTimeout(timer)
       if (runtimeToolListener === listener) runtimeToolListener = null
     }
   },

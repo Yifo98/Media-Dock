@@ -1197,7 +1197,7 @@ function App() {
   const lastBilibiliSelectionActionRef = useRef<'select' | 'deselect' | null>(null)
   const logViewerRef = useRef<HTMLDivElement | null>(null)
   const runtimeInstallLockRef = useRef(false)
-  const runtimeProgressLogRef = useRef<Record<RuntimeToolProgressUpdate['tool'], string | null>>({
+  const runtimeProgressLogRef = useRef<Record<RuntimeToolProgressUpdate['tool'], { stage: RuntimeToolProgressUpdate['stage']; line: string } | null>>({
     deno: null,
     'yt-dlp': null,
   })
@@ -1343,15 +1343,26 @@ function App() {
         setStatusMessage(event.message)
       }
 
-      const percentBucket = typeof event.percent === 'number'
-        ? Math.min(100, Math.floor(event.percent / 10) * 10)
+      const exactPercent = typeof event.percent === 'number'
+        ? Math.min(100, Math.max(0, event.percent))
         : null
-      const logKey = `${event.stage}|${event.message}|${percentBucket ?? 'none'}`
-      if (runtimeProgressLogRef.current[event.tool] !== logKey) {
-        runtimeProgressLogRef.current[event.tool] = logKey
-        const progressSuffix = percentBucket === null ? '' : ` (${percentBucket}%)`
-        setLogs((current) => [...current, `[runtime] ${event.tool}: ${event.message}${progressSuffix}`].slice(-600))
-      }
+      const progressSuffix = exactPercent === null ? '' : ` (${exactPercent.toFixed(1)}%)`
+      const nextLine = `[runtime] ${event.tool}: ${event.message}${progressSuffix}`
+      const previousEntry = runtimeProgressLogRef.current[event.tool]
+      if (previousEntry?.line === nextLine) return
+
+      runtimeProgressLogRef.current[event.tool] = { stage: event.stage, line: nextLine }
+      setLogs((current) => {
+        if (event.stage === 'downloading' && previousEntry?.stage === 'downloading') {
+          const previousIndex = current.lastIndexOf(previousEntry.line)
+          if (previousIndex >= 0) {
+            const updated = [...current]
+            updated[previousIndex] = nextLine
+            return updated
+          }
+        }
+        return [...current, nextLine].slice(-600)
+      })
     })
     return unsubscribe
   }, [])
