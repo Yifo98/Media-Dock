@@ -135,7 +135,8 @@ function Write-ChecksumManifest {
     $temporaryPath = "$OutputPath.tmp"
     $utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
     try {
-        [System.IO.File]::WriteAllLines($temporaryPath, $lines, $utf8NoBom)
+        $content = ($lines -join "`n") + "`n"
+        [System.IO.File]::WriteAllText($temporaryPath, $content, $utf8NoBom)
         Move-Item -LiteralPath $temporaryPath -Destination $OutputPath -Force
     }
     finally {
