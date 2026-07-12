@@ -9,27 +9,21 @@
 
 ## 当前推荐资产
 
-- `Media Dock-2.0.4-win.zip`
+- `Media Dock-2.1.2-win.zip`
   说明：Windows 推荐下载，解压后双击 `Launch Media Dock.bat`
-- macOS 资产
-  说明：推荐发布 `Media Dock-2.0.4-arm64-mac.zip`，解压后双击 `Launch Media Dock.command`
+- `Media Dock-2.1.2-arm64-mac.zip`
+  说明：Apple Silicon Mac 推荐下载，解压后双击 `Launch Media Dock.command`
 
-## 2.0.4 更新摘要
+## 2.1.2 更新摘要
 
-- 公开应用名改为 `Media Dock`，界面和包名更简短
-- 3 号图标已接入 Windows `.ico` 和 macOS `.icns`
-- 标准 ZIP 改为脚本启动结构，根目录放 `.bat` / `.command`，核心运行组件放在 `core/`
-- 标准包继续内置 `yt-dlp`、`ffmpeg`、`ffprobe`、`deno`
-- 默认下载、cookies、缓存、更新包和自动安装的 Deno 都保存在同级 `Media Dock Data/`
-- Windows 端可自动调用 Bandizip `bz.exe` 做运行时 zip 解压，未安装时回退 PowerShell
-- 打包流程会剔除 cookies、用户配置、缓存和字幕整理 API 配置，避免把本机敏感信息带进分享包
-- 新增本地音视频单个配对合并和批量文件夹自动配对合并
-- 多文件合并优先按照媒体流类型和时长配对，不再依赖文件名相似度
-- 合并输出支持自定义文件名，批量任务会自动追加 `01`、`02` 序号避免覆盖
-- Cookie 选择会提示过期和临期状态，减少误选失效登录态
-- 本地媒体工具台新增字幕整理能力，支持 OpenAI-compatible 接口、模型拉取、连接测试、批量清洗和停止任务
-- 桌面控制台压缩实时信息区域，日志和最近任务不再被挤到最底部
-- 修复 Windows 下载标题乱码，下载任务与实时信息会按本地编码正常显示
+- 修复 Windows 盘符、UNC、中文目录选择与 Explorer 打开操作导致的渲染崩溃。
+- 损坏或无法运行的 yt-dlp / Deno 会被识别，并通过下载、验证、替换一体的流程安全修复。
+- 修复打包应用把 `resources/app.asar` 当作子进程工作目录，导致包内工具统一版本探测失败的问题。
+- yt-dlp 与 Deno 更新互斥；下载日志以单行精确进度实时更新，不再切换刷屏。
+- Windows 运行时下载复用 Electron/Chromium 网络栈和系统代理，失败不会覆盖旧工具。
+- 下载准备区针对窄列和 Windows 100%–150% 缩放重新排版。
+- 双平台包内置 yt-dlp `2026.07.04`、Deno `2.9.2`、ffmpeg 和 ffprobe。
+- Windows 包经 GitHub Actions 原生四工具冒烟与 SHA-256 门禁验证；Mac 包完成四工具实跑、签名与隐私检查。
 
 ## 版本规则
 
@@ -105,8 +99,8 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## 资产命名建议
 
-- `Media Dock-2.0.4-win.zip`
-- `Media Dock-2.0.4-arm64-mac.zip`
+- `Media Dock-2.1.2-win.zip`
+- `Media Dock-2.1.2-arm64-mac.zip`
 
 ## English
 
@@ -117,10 +111,10 @@ Windows 首次运行时，可能会看到系统安全提示。
 
 ## Recommended Asset
 
-- `Media Dock-2.0.4-win.zip`
+- `Media Dock-2.1.2-win.zip`
   Notes: recommended Windows build, unzip and run `Launch Media Dock.bat`
-- macOS assets
-  Notes: prefer `Media Dock-2.0.4-arm64-mac.zip`, unzip and run `Launch Media Dock.command`
+- `Media Dock-2.1.2-arm64-mac.zip`
+  Notes: recommended Apple Silicon Mac build, unzip and run `Launch Media Dock.command`
 
 ## Recommended Release Copy
 

@@ -2,12 +2,16 @@
 
 ## 中文说明
 
-本次候选版本集中修复 Windows 目录操作崩溃与损坏下载内核问题，并补强 Windows 分享包完整性门禁和下载准备区的响应式布局。
+本次版本集中修复 Windows 目录操作崩溃与损坏下载内核问题，并补强双平台分享包完整性门禁和下载准备区的响应式布局。
 
 ## 包含内容
 
 - `Media Dock-2.1.2-win.zip`
+- `Media Dock-2.1.2-arm64-mac.zip`
+- `YT-DLP-WINDOWS.json` Windows 运行时验证清单
+- `SHA256SUMS.txt` 发布资产 SHA-256 校验值
 - `Launch Media Dock.bat` Windows ZIP 根目录启动脚本
+- `Launch Media Dock.command` macOS ZIP 根目录启动脚本
 - `README-windows.txt`
 - MediaCookies 浏览器插件请从 Google 应用商店安装，或从 GitHub 下载
 
@@ -89,12 +93,16 @@
 
 ## Summary
 
-This candidate fixes Windows local-directory crashes and damaged download runtimes, strengthens Windows package integrity gates, and reflows the download preparation area responsively.
+This release fixes Windows local-directory crashes and damaged download runtimes, strengthens cross-platform package integrity gates, and reflows the download preparation area responsively.
 
 ## Included artifacts
 
 - `Media Dock-2.1.2-win.zip`
+- `Media Dock-2.1.2-arm64-mac.zip`
+- `YT-DLP-WINDOWS.json`, the Windows runtime verification manifest
+- `SHA256SUMS.txt`, SHA-256 checksums for the release assets
 - `Launch Media Dock.bat` at the Windows zip root
+- `Launch Media Dock.command` at the macOS zip root
 - `README-windows.txt`
 - Install MediaCookies from the Chrome Web Store or download it from GitHub
 
