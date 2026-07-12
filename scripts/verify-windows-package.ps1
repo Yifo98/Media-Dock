@@ -20,12 +20,14 @@ if ($WriteChecksum) {
     if (-not $ChecksumPath) {
         throw "-WriteChecksum requires -ChecksumPath."
     }
-    $ChecksumPath = [System.IO.Path]::GetFullPath($ChecksumPath)
+    $checksumFileName = Split-Path -Leaf $ChecksumPath
+    $checksumParentPath = Split-Path -Parent ([System.IO.Path]::GetFullPath($ChecksumPath))
+    $checksumDirectory = (Resolve-Path -LiteralPath $checksumParentPath).Path
+    $ChecksumPath = Join-Path $checksumDirectory $checksumFileName
     $packageDirectory = Split-Path -Parent $resolvedPackagePath
     $manifestDirectory = Split-Path -Parent $resolvedManifestPath
-    $checksumDirectory = Split-Path -Parent $ChecksumPath
     if (
-        (Split-Path -Leaf $ChecksumPath) -ne "SHA256SUMS.txt" -or
+        $checksumFileName -ne "SHA256SUMS.txt" -or
         $checksumDirectory -ne $packageDirectory -or
         $checksumDirectory -ne $manifestDirectory
     ) {
