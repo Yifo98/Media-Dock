@@ -218,6 +218,8 @@ function getCopy(language: Language) {
         inspect: '读取媒体信息',
         refresh: '重新识别',
         openFolder: '打开输出目录',
+        pickFolderFailed: '无法选择目录。',
+        openFolderFailed: '无法打开本地目录。',
         closeWindow: '关闭窗口',
         backToDownload: '返回下载面板',
         tools: '处理动作',
@@ -421,6 +423,8 @@ function getCopy(language: Language) {
         inspect: 'Inspect media',
         refresh: 'Refresh',
         openFolder: 'Open output folder',
+        pickFolderFailed: 'Unable to choose a folder.',
+        openFolderFailed: 'Unable to open the local folder.',
         closeWindow: 'Close window',
         backToDownload: 'Back to downloads',
         tools: 'Actions',
@@ -1002,9 +1006,21 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
     await inspect(selected)
   }
 
+  function reportLocalActionError(error: unknown, fallback: string) {
+    const detail = error instanceof Error ? error.message : String(error ?? '')
+    const message = detail ? `${fallback} ${detail}` : fallback
+    setStatus('error')
+    setStatusMessage(message)
+    setLogs((current) => [...current, `[ui] ${message}`].slice(-500))
+  }
+
   async function pickOutputDir() {
-    const selected = await appApi.pickDirectory(outputDir || undefined)
-    if (selected) setOutputDir(selected)
+    try {
+      const selected = await appApi.pickDirectory(outputDir || undefined)
+      if (selected) setOutputDir(selected)
+    } catch (error) {
+      reportLocalActionError(error, copy.pickFolderFailed)
+    }
   }
 
   async function pickMergeFiles() {
@@ -1025,19 +1041,23 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   }
 
   async function pickMergeFolder() {
-    const selected = await appApi.pickDirectory(mergeInputDir || outputDir || undefined)
-    if (!selected) return
-    setMergePreview(null)
-    setMergePreviewKey('')
-    setMergePreviewError('')
-    setMergePreviewLoading(true)
-    setMergeMode('folder')
-    setMergeInputDir(selected)
-    setInspection(null)
-    setStatus('idle')
-    setStatusMessage(copy.mergePreviewLoading)
-    if (!outputDir) {
-      setOutputDir(selected)
+    try {
+      const selected = await appApi.pickDirectory(mergeInputDir || outputDir || undefined)
+      if (!selected) return
+      setMergePreview(null)
+      setMergePreviewKey('')
+      setMergePreviewError('')
+      setMergePreviewLoading(true)
+      setMergeMode('folder')
+      setMergeInputDir(selected)
+      setInspection(null)
+      setStatus('idle')
+      setStatusMessage(copy.mergePreviewLoading)
+      if (!outputDir) {
+        setOutputDir(selected)
+      }
+    } catch (error) {
+      reportLocalActionError(error, copy.pickFolderFailed)
     }
   }
 
@@ -1054,21 +1074,38 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
   }
 
   async function pickCleanupFolder() {
-    const selected = await appApi.pickDirectory(cleanupInputDir || cleanupOutputDir || outputDir || undefined)
-    if (!selected) return
-    setCleanupInputDir(selected)
-    if (!cleanupOutputDir) {
-      setCleanupOutputDir(selected)
-    }
-    if (!outputDir) {
-      setOutputDir(selected)
+    try {
+      const selected = await appApi.pickDirectory(cleanupInputDir || cleanupOutputDir || outputDir || undefined)
+      if (!selected) return
+      setCleanupInputDir(selected)
+      if (!cleanupOutputDir) {
+        setCleanupOutputDir(selected)
+      }
+      if (!outputDir) {
+        setOutputDir(selected)
+      }
+    } catch (error) {
+      reportLocalActionError(error, copy.pickFolderFailed)
     }
   }
 
   async function pickCleanupOutputDir() {
-    const selected = await appApi.pickDirectory(cleanupOutputDir || cleanupInputDir || outputDir || undefined)
-    if (selected) {
-      setCleanupOutputDir(selected)
+    try {
+      const selected = await appApi.pickDirectory(cleanupOutputDir || cleanupInputDir || outputDir || undefined)
+      if (selected) {
+        setCleanupOutputDir(selected)
+      }
+    } catch (error) {
+      reportLocalActionError(error, copy.pickFolderFailed)
+    }
+  }
+
+  async function openLocalFolder() {
+    const targetPath = outputDir || inputPath || mergeInputPaths[0] || mergeInputDir || cleanupInputPath || cleanupInputDir
+    try {
+      await appApi.openPath(targetPath)
+    } catch (error) {
+      reportLocalActionError(error, copy.openFolderFailed)
     }
   }
 
@@ -1534,7 +1571,7 @@ export default function MediaToolsView({ embedded = false, onBack }: MediaToolsV
                   </div>
                   <div className="action-row media-toolbar-actions">
                     <button className="ghost-button" type="button" onClick={() => void inspect()}>{inspection ? copy.refresh : copy.inspect}</button>
-                    <button className="ghost-button" type="button" onClick={() => void appApi.openPath(outputDir || inputPath || mergeInputPaths[0] || mergeInputDir || cleanupInputPath || cleanupInputDir)}>{copy.openFolder}</button>
+                    <button className="ghost-button" type="button" onClick={() => void openLocalFolder()}>{copy.openFolder}</button>
                     <button className="ghost-button" type="button" onClick={() => embedded ? onBack?.() : window.close()}>
                       {embedded ? copy.backToDownload : copy.closeWindow}
                     </button>

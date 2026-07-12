@@ -1,0 +1,114 @@
+name: Windows package gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      yt_dlp_version:
+        description: Exact yt-dlp release tag to package
+        required: true
+        default: "2026.07.04"
+
+jobs:
+  build_candidate:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    outputs:
+      app_version: ${{ steps.app_version.outputs.value }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read candidate version
+        id: app_version
+        shell: bash
+        run: |
+          echo "value=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Run automated checks
+        run: npm test
+
+      - name: Build the versioned Windows candidate
+        shell: bash
+        env:
+          YTDLP_VERSION: ${{ inputs.yt_dlp_version }}
+        run: npm run dist:win
+
+      - name: Confirm checksum is still gated
+        shell: bash
+        run: test ! -e "release/${{ steps.app_version.outputs.value }}/SHA256SUMS.txt"
+
+      - name: Upload unverified candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-dock-${{ steps.app_version.outputs.value }}-windows-candidate
+          path: |
+            release/${{ steps.app_version.outputs.value }}/Media Dock-${{ steps.app_version.outputs.value }}-win.zip
+            release/${{ steps.app_version.outputs.value }}/YT-DLP-WINDOWS.json
+            release/${{ steps.app_version.outputs.value }}/RELEASE-NOTES.md
+          if-no-files-found: error
+          retention-days: 14
+
+  verify_candidate:
+    needs: build_candidate
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download the exact candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: media-dock-${{ needs.build_candidate.outputs.app_version }}-windows-candidate
+          path: release/${{ needs.build_candidate.outputs.app_version }}
+
+      - name: Run Windows packaging regression tests
+        run: npm run test:windows-package
+
+      - name: Smoke-test the packaged runtime and write checksums
+        shell: pwsh
+        run: |
+          $version = "${{ needs.build_candidate.outputs.app_version }}"
+          $releaseDir = Join-Path (Resolve-Path "release").Path $version
+          $packages = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter "Media Dock-$version-win.zip")
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one versioned Windows candidate, found $($packages.Count)."
+          }
+          $manifest = Join-Path $releaseDir "YT-DLP-WINDOWS.json"
+          $checksum = Join-Path $releaseDir "SHA256SUMS.txt"
+          & ./scripts/verify-windows-package.ps1 `
+            -PackagePath $packages[0].FullName `
+            -YtDlpManifestPath $manifest `
+            -ChecksumPath $checksum `
+            -WriteChecksum
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $checksum)) {
+            throw "Native Windows runtime verification did not produce SHA256SUMS.txt."
+          }
+
+      - name: Upload verified Windows candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: media-dock-${{ needs.build_candidate.outputs.app_version }}-windows-verified
+          path: |
+            release/${{ needs.build_candidate.outputs.app_version }}/Media Dock-${{ needs.build_candidate.outputs.app_version }}-win.zip
+            release/${{ needs.build_candidate.outputs.app_version }}/YT-DLP-WINDOWS.json
+            release/${{ needs.build_candidate.outputs.app_version }}/RELEASE-NOTES.md
+            release/${{ needs.build_candidate.outputs.app_version }}/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
