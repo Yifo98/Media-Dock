@@ -164,7 +164,7 @@ function getText(language: Language) {
         refreshTools: '刷新环境',
         refreshingTools: '刷新中...',
         refreshedWithDeno: '环境已刷新，已检测到 Deno。',
-        refreshedWithoutDeno: '环境已刷新，暂时还没检测到 Deno。',
+        refreshedWithoutDeno: '环境已刷新，Deno 缺失或无法运行。',
         refreshFailed: '环境刷新失败。',
         checkUpdates: '检查更新',
         checkingUpdates: '检查中...',
@@ -190,6 +190,7 @@ function getText(language: Language) {
         updatingYtDlp: '更新中...',
         ytDlpUpdated: 'yt-dlp 已更新完成。',
         ytDlpUpdateFailed: 'yt-dlp 更新失败。',
+        ytDlpUpdateFailedUnchanged: 'yt-dlp 修复/更新失败，原文件未修改。',
         downloadCoreVersion: 'yt-dlp 版本',
         denoVersion: 'Deno 版本',
         denoUpdateReady: 'Deno 有新版本',
@@ -203,6 +204,8 @@ function getText(language: Language) {
         installDenoAuto: '自动安装 Deno',
         installingDeno: '安装中...',
         denoInstalled: 'Deno 已安装 / 更新完成。',
+        denoInstallFailedUnchanged: 'Deno 安装/更新失败，现有文件未修改。',
+        runtimeNetworkHint: '请检查 Windows 系统代理、防火墙或 GitHub 连通性后重试。',
         denoInstallAutoHint: '检测到 Deno 缺失或版本落后时，可自动下载官方 Deno zip，并放入同级数据目录的 tools/bin。',
         workspace: '工作区',
         mediaTools: '媒体工具',
@@ -386,7 +389,7 @@ function getText(language: Language) {
         refreshTools: 'Refresh runtime',
         refreshingTools: 'Refreshing...',
         refreshedWithDeno: 'Runtime refreshed. Deno is now available.',
-        refreshedWithoutDeno: 'Runtime refreshed. Deno is still missing.',
+        refreshedWithoutDeno: 'Runtime refreshed. Deno is missing or cannot run.',
         refreshFailed: 'Failed to refresh runtime.',
         checkUpdates: 'Check updates',
         checkingUpdates: 'Checking...',
@@ -412,6 +415,7 @@ function getText(language: Language) {
         updatingYtDlp: 'Updating...',
         ytDlpUpdated: 'yt-dlp has been updated.',
         ytDlpUpdateFailed: 'Failed to update yt-dlp.',
+        ytDlpUpdateFailedUnchanged: 'yt-dlp repair/update failed; the existing file was not changed.',
         downloadCoreVersion: 'yt-dlp version',
         denoVersion: 'Deno version',
         denoUpdateReady: 'Deno update available',
@@ -425,6 +429,8 @@ function getText(language: Language) {
         installDenoAuto: 'Install Deno automatically',
         installingDeno: 'Installing...',
         denoInstalled: 'Deno has been installed / updated.',
+        denoInstallFailedUnchanged: 'Deno install/update failed; the existing file was not changed.',
+        runtimeNetworkHint: 'Check the Windows system proxy, firewall, or GitHub connectivity, then retry.',
         denoInstallAutoHint: 'When Deno is missing or outdated, download the official Deno zip and place it in the sibling data folder tools/bin.',
         workspace: 'Workspace',
         mediaTools: 'Media tools',
@@ -1190,6 +1196,11 @@ function App() {
   const lastBilibiliSelectedIndexRef = useRef<number | null>(null)
   const lastBilibiliSelectionActionRef = useRef<'select' | 'deselect' | null>(null)
   const logViewerRef = useRef<HTMLDivElement | null>(null)
+  const runtimeInstallLockRef = useRef(false)
+  const runtimeProgressLogRef = useRef<Record<RuntimeToolProgressUpdate['tool'], string | null>>({
+    deno: null,
+    'yt-dlp': null,
+  })
   const text = getText(language)
   const normalizedHeroTitle = text.heroTitle.replace(/[。.]$/, '')
   const cookiesPluginLabel = language === 'zh' ? '推荐插件：MediaCookies' : 'Recommended extension: MediaCookies'
@@ -1207,6 +1218,7 @@ function App() {
   const runtimeProgressPercent = typeof runtimeInstallProgress?.percent === 'number'
     ? Math.min(100, Math.max(0, runtimeInstallProgress.percent))
     : null
+  const runtimeMutationInFlight = ytDlpUpdating || denoInstalling
   const presetCopy = EXTRA_PRESETS[language]
 
   const appendCollectionLog = useCallback((line: string) => {
@@ -1320,11 +1332,26 @@ function App() {
 
     const unsubscribe = appApi.onRuntimeToolUpdate((event) => {
       setRuntimeInstallProgress(event)
-      if (event.stage !== 'complete' && event.stage !== 'error') {
+      if (event.stage === 'error') {
+        setStatus('error')
+        setStatusMessage(event.message)
+      } else if (event.stage === 'complete') {
+        setStatus('success')
+        setStatusMessage(event.message)
+      } else {
         setStatus('running')
         setStatusMessage(event.message)
       }
-      setLogs((current) => [...current, `[runtime] ${event.tool}: ${event.message}`].slice(-600))
+
+      const percentBucket = typeof event.percent === 'number'
+        ? Math.min(100, Math.floor(event.percent / 10) * 10)
+        : null
+      const logKey = `${event.stage}|${event.message}|${percentBucket ?? 'none'}`
+      if (runtimeProgressLogRef.current[event.tool] !== logKey) {
+        runtimeProgressLogRef.current[event.tool] = logKey
+        const progressSuffix = percentBucket === null ? '' : ` (${percentBucket}%)`
+        setLogs((current) => [...current, `[runtime] ${event.tool}: ${event.message}${progressSuffix}`].slice(-600))
+      }
     })
     return unsubscribe
   }, [])
@@ -1361,12 +1388,13 @@ function App() {
   const blockingLinkInspections = linkInspections.filter((item) => item.severity === 'error')
   const cookieTarget = cookieTargets.length === 1 ? cookieTargets[0] : null
   const recommendedCookieFile = useMemo(() => findRecommendedCookieFile(cookieFiles, cookieTarget), [cookieFiles, cookieTarget])
-  const canStart = urls.length > 0 && outputDir.trim().length > 0 && queue.running === 0 && queue.pending === 0 && blockingLinkInspections.length === 0
+  const canStart = urls.length > 0 && outputDir.trim().length > 0 && queue.running === 0 && queue.pending === 0 && blockingLinkInspections.length === 0 && !runtimeMutationInFlight
   const bootstrapError = !appApi ? text.bootstrapError : null
   const effectiveStatus = bootstrapError ? 'error' : status
   const effectiveMessage = bootstrapError ?? statusMessage
   const visibleLogs = bootstrapError ? ['[bootstrap] window.appApi is unavailable'] : logs
-  const denoHint = paths?.denoPath ? text.denoReady : text.denoMissing
+  const denoRuntimeReady = Boolean(paths?.denoPath && paths.denoVersion)
+  const denoHint = denoRuntimeReady ? text.denoReady : text.denoMissing
   const sortedJobs = jobOrder.map((jobId) => jobs[jobId]).filter(Boolean)
   const activeDownloadJobs = sortedJobs.filter((job) => job.status === 'running')
   const finishedDownloadJobs = sortedJobs.filter((job) => job.status === 'success')
@@ -1530,7 +1558,7 @@ function App() {
         setCookieFile('')
       }
       setStatus('idle')
-      setStatusMessage(nextPaths.denoPath ? text.refreshedWithDeno : text.refreshedWithoutDeno)
+      setStatusMessage(nextPaths.denoPath && nextPaths.denoVersion ? text.refreshedWithDeno : text.refreshedWithoutDeno)
     } catch (error) {
       const message = error instanceof Error ? error.message : text.refreshFailed
       setStatus('error')
@@ -1542,8 +1570,9 @@ function App() {
   }
 
   async function installDenoRuntime() {
-    if (!appApi) return
+    if (!appApi || runtimeInstallLockRef.current) return
 
+    runtimeInstallLockRef.current = true
     setDenoInstalling(true)
     setRuntimeInstallProgress({ tool: 'deno', stage: 'checking', message: text.installingDeno, percent: null })
     try {
@@ -1554,12 +1583,17 @@ function App() {
       await refreshRuntimeState()
       await checkRuntimeToolUpdates(true)
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Deno install failed.'
+      const detail = error instanceof Error ? error.message : 'Deno install failed.'
+      const networkHint = /fetch|network|ECONN|ETIMEDOUT|ENOTFOUND|github\.com/i.test(detail)
+        ? ` ${text.runtimeNetworkHint}`
+        : ''
+      const message = `${text.denoInstallFailedUnchanged} ${detail}${networkHint}`
       setStatus('error')
       setStatusMessage(message)
       setLogs((current) => [...current, `[runtime] ${message}`].slice(-600))
     } finally {
       setDenoInstalling(false)
+      runtimeInstallLockRef.current = false
     }
   }
 
@@ -1599,8 +1633,9 @@ function App() {
   }
 
   async function updateYtDlpRuntime() {
-    if (!appApi) return
+    if (!appApi || runtimeInstallLockRef.current) return
 
+    runtimeInstallLockRef.current = true
     setYtDlpUpdating(true)
     setRuntimeInstallProgress({ tool: 'yt-dlp', stage: 'checking', message: text.updatingYtDlp, percent: null })
     try {
@@ -1611,12 +1646,17 @@ function App() {
       await refreshRuntimeState()
       await checkRuntimeToolUpdates(true)
     } catch (error) {
-      const message = error instanceof Error ? error.message : text.ytDlpUpdateFailed
+      const detail = error instanceof Error ? error.message : text.ytDlpUpdateFailed
+      const networkHint = /fetch|network|ECONN|ETIMEDOUT|ENOTFOUND|github\.com/i.test(detail)
+        ? ` ${text.runtimeNetworkHint}`
+        : ''
+      const message = `${text.ytDlpUpdateFailedUnchanged} ${detail}${networkHint}`
       setStatus('error')
       setStatusMessage(message)
       setLogs((current) => [...current, `[runtime] ${message}`].slice(-600))
     } finally {
       setYtDlpUpdating(false)
+      runtimeInstallLockRef.current = false
     }
   }
 
@@ -1730,6 +1770,7 @@ function App() {
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start queue.'
+      setQueue({ total: 0, pending: 0, running: 0, completed: 0, failed: 0, cancelled: 0, concurrency })
       setStatus('error')
       setStatusMessage(message)
       setLogs((current) => [...current, `[ui] ${message}`])
@@ -2087,15 +2128,15 @@ function App() {
           </div>
           <div className="status-card">
             <span className="status-card__label">{text.compatibility}</span>
-            <strong>{paths?.denoPath ? text.readyForYoutube : text.basicMode}</strong>
+            <strong>{denoRuntimeReady ? text.readyForYoutube : text.basicMode}</strong>
             <p>{denoHint}</p>
             {paths?.denoVersion ? <small className="status-card__meta">{text.denoVersion}: {paths.denoVersion}</small> : null}
-            {!paths?.denoPath ? (
+            {!denoRuntimeReady ? (
               <div className="status-card__actions">
                 <button
                   className="ghost-button ghost-button--small"
                   type="button"
-                  disabled={denoInstalling || queue.running > 0 || queue.pending > 0}
+                  disabled={runtimeMutationInFlight || queue.running > 0 || queue.pending > 0}
                   onClick={() => void installDenoRuntime()}
                 >
                   {denoInstalling ? text.installingDeno : text.installDenoAuto}
@@ -2115,17 +2156,17 @@ function App() {
               .join('\n')}
           </code>
           <div className="section-actions">
-            <button className="ghost-button ghost-button--small" type="button" disabled={runtimeRefreshing || queue.running > 0 || queue.pending > 0} onClick={() => void refreshRuntimeState()}>
+            <button className="ghost-button ghost-button--small" type="button" disabled={runtimeRefreshing || runtimeMutationInFlight || queue.running > 0 || queue.pending > 0} onClick={() => void refreshRuntimeState()}>
               {runtimeRefreshing ? text.refreshingTools : text.refreshTools}
             </button>
-            <button className="ghost-button ghost-button--small" type="button" disabled={runtimeToolUpdateChecking} onClick={() => void checkRuntimeToolUpdates(false)}>
+            <button className="ghost-button ghost-button--small" type="button" disabled={runtimeToolUpdateChecking || runtimeMutationInFlight} onClick={() => void checkRuntimeToolUpdates(false)}>
               {runtimeToolUpdateChecking ? text.checkingToolUpdates : text.checkToolUpdates}
             </button>
             {runtimeToolUpdateInfo?.ytDlp.updateAvailable ? (
               <button
                 className="ghost-button ghost-button--small"
                 type="button"
-                disabled={ytDlpUpdating || queue.running > 0 || queue.pending > 0}
+                disabled={runtimeMutationInFlight || queue.running > 0 || queue.pending > 0}
                 onClick={() => void updateYtDlpRuntime()}
               >
                 {ytDlpUpdating
@@ -2139,7 +2180,7 @@ function App() {
               <button
                 className="ghost-button ghost-button--small"
                 type="button"
-                disabled={denoInstalling || queue.running > 0 || queue.pending > 0}
+                disabled={runtimeMutationInFlight || queue.running > 0 || queue.pending > 0}
                 onClick={() => void installDenoRuntime()}
               >
                 {denoInstalling ? text.installingDeno : text.updateDeno}

@@ -37,6 +37,191 @@ app.whenReady().then(async () => {
 
   try {
     await win.loadFile(path.resolve(__dirname, '../../dist/index.html'))
+    if (action === 'runtimeProgressDedup') {
+      const completed = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('.log-line')).some((line) => line.textContent.includes('DEDUP_PROGRESS (100%)'))`,
+      )
+      if (!completed) throw new Error('Runtime progress burst did not reach the renderer')
+      const lines = await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('.log-line'))
+          .map((line) => line.textContent)
+          .filter((line) => line.includes('DEDUP_PROGRESS'))
+      `, true)
+      if (lines.length !== 4 || !['(0%)', '(10%)', '(20%)', '(100%)'].every((bucket) => lines.some((line) => line.includes(bucket)))) {
+        console.error(`[RED] progress burst produced ${lines.length} log lines: ${lines.join(' | ')}`)
+        app.exit(1)
+        return
+      }
+      console.log('[GREEN] runtime progress logs are limited to one line per 10% bucket.')
+      app.exit(0)
+      return
+    }
+    if (action === 'runtimeRepairFailure') {
+      const checkLabels = ['检查更新', 'Check updates']
+      const repairLabels = ['修复 yt-dlp', 'Repair yt-dlp']
+      const checkReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(checkLabels)}.includes(button.textContent.trim()))`,
+      )
+      if (!checkReady) throw new Error('Runtime update check button did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(checkLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      const repairReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(repairLabels)}.includes(button.textContent.trim()))`,
+      )
+      if (!repairReady) throw new Error('Repair action did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(repairLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      const failureExplained = await waitFor(
+        win,
+        `document.body.innerText.includes('原文件未修改') || document.body.innerText.includes('existing file was not changed')`,
+        1200,
+      )
+      if (!failureExplained) {
+        console.error('[RED] failed repair did not explain that the existing runtime was unchanged.')
+        app.exit(1)
+        return
+      }
+      const reloadFinished = new Promise((resolve) => win.webContents.once('did-finish-load', resolve))
+      win.webContents.reload()
+      await reloadFinished
+      const repairStillRequired = await waitFor(
+        win,
+        `document.body.innerText.includes('BROKEN')`,
+      )
+      if (!repairStillRequired) {
+        console.error('[RED] failed repair was not reported as still required after restart.')
+        app.exit(2)
+        return
+      }
+      console.log('[GREEN] failed repair remains required and clearly reports no file change.')
+      app.exit(0)
+      return
+    }
+    if (action === 'unrunnableDeno') {
+      const loaded = await waitFor(
+        win,
+        `document.body.innerText.includes('version probe failed')`,
+      )
+      if (!loaded) throw new Error('Unrunnable Deno self-check did not render')
+      const result = await win.webContents.executeJavaScript(`({
+        optimized: document.body.innerText.includes('YouTube 已优化') || document.body.innerText.includes('YouTube optimized'),
+        basic: document.body.innerText.includes('基础模式') || document.body.innerText.includes('Basic mode')
+      })`, true)
+      if (result.optimized || !result.basic) {
+        console.error('[RED] an unrunnable Deno path was presented as YouTube optimized.')
+        app.exit(1)
+        return
+      }
+      console.log('[GREEN] an unrunnable Deno path stays in basic mode.')
+      app.exit(0)
+      return
+    }
+    if (action === 'downloadPreflightFailure') {
+      const startLabels = ['开始', 'Start']
+      const inputReady = await waitFor(win, `Boolean(document.querySelector('.link-row__input'))`)
+      if (!inputReady) throw new Error('Download URL input did not render')
+      await win.webContents.executeJavaScript(`
+        (() => {
+          const input = document.querySelector('.link-row__input')
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+          setter.call(input, 'https://example.com/media')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })()
+      `, true)
+      const startReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(startLabels)}.includes(button.textContent.trim()) && !button.disabled)`,
+      )
+      if (!startReady) throw new Error('Start download button did not become available')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(startLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      const rejected = await waitFor(
+        win,
+        `document.body.innerText.includes('yt-dlp is damaged or cannot report its version')`,
+        1200,
+      )
+      if (!rejected) throw new Error('Download preflight failure did not reach the renderer')
+      await waitFor(
+        win,
+        `/0$/.test(document.querySelector('.progress-shell--overview .progress-meta span')?.textContent?.trim() ?? '')`,
+        500,
+      )
+      const pendingText = await win.webContents.executeJavaScript(
+        `document.querySelector('.progress-shell--overview .progress-meta span')?.textContent?.trim()`,
+        true,
+      )
+      if (!/0$/.test(pendingText ?? '')) {
+        console.error(`[RED] rejected download left a ghost queue: ${pendingText}.`)
+        app.exit(1)
+        return
+      }
+      console.log('[GREEN] rejected download left the queue empty.')
+      app.exit(0)
+      return
+    }
+    if (action === 'runtimeInstallMutex') {
+      const checkLabels = ['检查更新', 'Check updates']
+      const repairLabels = ['修复 yt-dlp', 'Repair yt-dlp']
+      const denoLabels = ['更新 Deno', 'Update Deno']
+      const checkReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(checkLabels)}.includes(button.textContent.trim()))`,
+      )
+      if (!checkReady) throw new Error('Runtime update check button did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(checkLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      const actionsReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(repairLabels)}.includes(button.textContent.trim())) && Array.from(document.querySelectorAll('button')).some((button) => ${JSON.stringify(denoLabels)}.includes(button.textContent.trim()))`,
+      )
+      if (!actionsReady) throw new Error('Both runtime install actions did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(repairLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      const repairRunning = await waitFor(
+        win,
+        `document.body.innerText.includes('正在验证下载内核') || document.body.innerText.includes('Verifying download core')`,
+        1000,
+      )
+      if (!repairRunning) throw new Error('yt-dlp repair did not start')
+      const denoDisabled = await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(denoLabels)}.includes(button.textContent.trim()))
+          .disabled
+      `, true)
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => ${JSON.stringify(denoLabels)}.includes(button.textContent.trim()))
+          .click()
+      `, true)
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      const counts = await win.webContents.executeJavaScript('window.appApi.getRuntimeInvocationCounts()', true)
+      if (!denoDisabled || counts.denoInstallCalls !== 0) {
+        console.error(`[RED] Deno install remained available during yt-dlp repair; calls=${counts.denoInstallCalls}.`)
+        app.exit(1)
+        return
+      }
+      console.log('[GREEN] runtime install actions are mutually exclusive.')
+      app.exit(0)
+      return
+    }
     if (action === 'ytDlpRepair') {
       const checkLabels = ['检查更新', 'Check updates']
       const repairLabels = ['修复 yt-dlp', 'Repair yt-dlp']

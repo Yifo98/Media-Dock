@@ -36,3 +36,23 @@ for (const action of ['openPath', 'pickDirectory', 'pickDirectoryCancel', 'showI
 test('damaged yt-dlp exposes a repair action and verification stage', () => {
   assertRendererAction('ytDlpRepair')
 })
+
+test('runtime install actions stay mutually exclusive', () => {
+  assertRendererAction('runtimeInstallMutex')
+})
+
+test('runtime progress logs emit only once per 10% bucket', () => {
+  assertRendererAction('runtimeProgressDedup')
+})
+
+test('download preflight failure leaves the queue empty', () => {
+  assertRendererAction('downloadPreflightFailure')
+})
+
+test('an unrunnable Deno path does not claim YouTube optimization', () => {
+  assertRendererAction('unrunnableDeno')
+})
+
+test('failed runtime repair remains required and explains that no file changed', () => {
+  assertRendererAction('runtimeRepairFailure')
+})

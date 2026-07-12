@@ -1,10 +1,8 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { chmodSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, dirname, extname, isAbsolute, join, parse, relative } from 'node:path'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 import { assertSafeLocalPath } from './core/localPath.js'
@@ -15,6 +13,16 @@ import {
   type RuntimeExecutableInspection,
 } from './core/runtimeExecutable.js'
 import { compareVersions, normalizeVersion } from './core/version.js'
+import {
+  downloadRuntimeFile,
+  fetchRuntimeJson,
+  type RuntimeDownloadProgress,
+  type RuntimeFetch,
+} from './core/runtimeNetwork.js'
+import {
+  RuntimeOperationCoordinator,
+  type RuntimeToolInstallTarget,
+} from './core/runtimeOperationCoordinator.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -27,7 +35,7 @@ type MediaSubtitleExportFormat = 'srt' | 'ass' | 'vtt'
 type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
-type RuntimeToolInstallTarget = 'deno' | 'yt-dlp'
+const electronRuntimeFetch: RuntimeFetch = async (input, init) => await net.fetch(input, init)
 
 type DownloadRequest = {
   urls: string[]
@@ -384,7 +392,7 @@ let mediaCancelled = false
 let activeSubtitleCleanupAbort: AbortController | null = null
 let subtitleCleanupCancelled = false
 let ytDlpInspectionCache: { key: string; promise: Promise<RuntimeExecutableInspection> } | null = null
-let ytDlpInstallPromise: Promise<RuntimeToolInstallResult> | null = null
+const runtimeOperations = new RuntimeOperationCoordinator()
 
 const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
   '请帮我优化以下这份视频字幕文档。这份文档是通过 OCR 自动生成的，包含大量冗余和识别错误，同时含有时间戳和序号，需要请按以下规则进行清理和修复文字，最终形成一整份纯文本。',
@@ -1355,13 +1363,11 @@ function selectUpdateAsset(assets: NonNullable<GitHubReleasePayload['assets']>) 
 
 async function checkForUpdates(): Promise<UpdateCheckResult> {
   const currentVersion = app.getVersion()
-  const response = await fetch(GITHUB_LATEST_RELEASE_API)
-
-  if (!response.ok) {
-    throw new Error(`Update check failed with status ${response.status}.`)
-  }
-
-  const release = await response.json() as GitHubReleasePayload
+  const release = await fetchRuntimeJson<GitHubReleasePayload>({
+    fetchImpl: electronRuntimeFetch,
+    url: GITHUB_LATEST_RELEASE_API,
+    label: 'Media Dock update metadata request',
+  })
   const latestVersion = release.tag_name ? normalizeVersion(release.tag_name) : null
   const asset = selectUpdateAsset(release.assets ?? [])
 
@@ -1379,38 +1385,16 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
 async function downloadUrlToFile(
   url: string,
   targetPath: string,
-  onProgress?: (progress: { receivedBytes: number; totalBytes: number | null; percent: number | null }) => void,
+  label: string,
+  onProgress?: (progress: RuntimeDownloadProgress) => void,
 ) {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Download failed with status ${response.status}.`)
-  }
-  if (!response.body) {
-    throw new Error('Download response did not include a body.')
-  }
-
-  ensureDirectory(dirname(targetPath))
-  const totalBytesHeader = Number(response.headers.get('content-length') ?? 0)
-  const totalBytes = Number.isFinite(totalBytesHeader) && totalBytesHeader > 0 ? totalBytesHeader : null
-  let receivedBytes = 0
-  const source = Readable.fromWeb(response.body)
-
-  onProgress?.({ receivedBytes, totalBytes, percent: totalBytes ? 0 : null })
-  source.on('data', (chunk: Buffer) => {
-    receivedBytes += chunk.byteLength
-    onProgress?.({
-      receivedBytes,
-      totalBytes,
-      percent: totalBytes ? Math.min(100, (receivedBytes / totalBytes) * 100) : null,
-    })
+  return await downloadRuntimeFile({
+    fetchImpl: electronRuntimeFetch,
+    url,
+    targetPath,
+    label,
+    onProgress,
   })
-
-  await pipeline(source, createWriteStream(targetPath))
-  if (totalBytes !== null && receivedBytes !== totalBytes) {
-    throw new Error(`Incomplete download: received ${receivedBytes} of ${totalBytes} bytes.`)
-  }
-  onProgress?.({ receivedBytes, totalBytes, percent: 100 })
-  return { receivedBytes, totalBytes }
 }
 
 async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
@@ -1421,7 +1405,7 @@ async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
 
   const outputDir = ensureDirectory(getUpdateDownloadDir())
   const targetPath = join(outputDir, update.assetName)
-  await downloadUrlToFile(update.assetUrl, targetPath)
+  await downloadUrlToFile(update.assetUrl, targetPath, 'Media Dock update asset download')
   shell.showItemInFolder(targetPath)
 
   return {
@@ -1448,21 +1432,19 @@ function selectYtDlpDownloadAsset(assets: NonNullable<GitHubReleasePayload['asse
 }
 
 async function fetchLatestYtDlpRelease() {
-  const response = await fetch(YT_DLP_LATEST_RELEASE_API)
-  if (!response.ok) {
-    throw new Error(`yt-dlp update check failed with status ${response.status}.`)
-  }
-
-  return await response.json() as GitHubReleasePayload
+  return await fetchRuntimeJson<GitHubReleasePayload>({
+    fetchImpl: electronRuntimeFetch,
+    url: YT_DLP_LATEST_RELEASE_API,
+    label: 'yt-dlp metadata request',
+  })
 }
 
 async function fetchLatestDenoRelease() {
-  const response = await fetch(DENO_LATEST_RELEASE_API)
-  if (!response.ok) {
-    throw new Error(`Deno update check failed with status ${response.status}.`)
-  }
-
-  return await response.json() as GitHubReleasePayload
+  return await fetchRuntimeJson<GitHubReleasePayload>({
+    fetchImpl: electronRuntimeFetch,
+    url: DENO_LATEST_RELEASE_API,
+    label: 'Deno metadata request',
+  })
 }
 
 async function probeYtDlpVersion(executablePath: string) {
@@ -1510,8 +1492,12 @@ async function getCurrentDenoVersion() {
     return null
   }
 
+  return await probeDenoVersion(denoPath)
+}
+
+async function probeDenoVersion(executablePath: string) {
   try {
-    const result = await runProcessCollectOutput(denoPath, ['--version'], 15000)
+    const result = await runProcessCollectOutput(executablePath, ['--version'], 15000)
     const versionLine = `${result.stdout}\n${result.stderr}`
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -1575,7 +1561,7 @@ async function installYtDlpRuntime(): Promise<RuntimeToolInstallResult> {
     expectedSha256: asset.digest,
     expectedSize: asset.size,
     platform: process.platform,
-    download: async (temporaryPath) => await downloadUrlToFile(asset.url, temporaryPath, ({ percent }) => {
+    download: async (temporaryPath) => await downloadUrlToFile(asset.url, temporaryPath, 'yt-dlp asset download', ({ percent }) => {
       emitRuntimeToolProgress({
         tool: 'yt-dlp',
         stage: 'downloading',
@@ -1590,7 +1576,7 @@ async function installYtDlpRuntime(): Promise<RuntimeToolInstallResult> {
       } else if (stage === 'verifying') {
         emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: '正在验证 yt-dlp 完整性和版本...', percent: null })
       } else {
-        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: '正在原子替换 yt-dlp 可执行文件...', percent: null })
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: '正在替换 yt-dlp 可执行文件...', percent: null })
       }
     },
   })
@@ -1747,44 +1733,65 @@ async function installDenoRuntime(): Promise<RuntimeToolInstallResult> {
   }
 
   const binDir = ensureDirectory(getRuntimeToolsInstallBinDir())
-  const downloadDir = ensureDirectory(getRuntimeToolsDownloadDir())
+  const downloadDir = getRuntimeToolsDownloadDir()
+  rmSync(downloadDir, { recursive: true, force: true })
+  ensureDirectory(downloadDir)
   const archiveName = getDenoArchiveName()
   const archivePath = join(downloadDir, archiveName)
   const extractDir = join(downloadDir, `deno-${latestVersion}`)
   const executableName = getExecutableName('deno')
   const targetPath = join(binDir, executableName)
 
-  await downloadUrlToFile(asset.url, archivePath, ({ percent }) => {
-    emitRuntimeToolProgress({
-      tool: 'deno',
-      stage: 'downloading',
-      message: `正在下载 Deno ${latestVersion}...`,
-      percent,
+  try {
+    await downloadUrlToFile(asset.url, archivePath, 'Deno asset download', ({ percent }) => {
+      emitRuntimeToolProgress({
+        tool: 'deno',
+        stage: 'downloading',
+        message: `正在下载 Deno ${latestVersion}...`,
+        percent,
+      })
     })
-  })
-  emitRuntimeToolProgress({ tool: 'deno', stage: 'extracting', message: '正在解压 Deno...', percent: null })
-  await extractZip(archivePath, extractDir)
+    emitRuntimeToolProgress({ tool: 'deno', stage: 'extracting', message: '正在解压 Deno...', percent: null })
+    await extractZip(archivePath, extractDir)
 
-  const extractedDeno = findFileRecursive(extractDir, executableName)
-  if (!extractedDeno) {
-    throw new Error(`Downloaded Deno archive did not contain ${executableName}.`)
+    const extractedDeno = findFileRecursive(extractDir, executableName)
+    if (!extractedDeno) {
+      throw new Error(`Downloaded Deno archive did not contain ${executableName}.`)
+    }
+
+    const installed = await installValidatedRuntimeExecutable({
+      targetPath,
+      expectedVersion: latestVersion,
+      platform: process.platform,
+      download: async (temporaryPath) => {
+        copyFileSync(extractedDeno, temporaryPath)
+        const size = statSync(temporaryPath).size
+        return { receivedBytes: size, totalBytes: size }
+      },
+      probeVersion: probeDenoVersion,
+      onStage: (stage) => {
+        if (stage === 'verifying') {
+          emitRuntimeToolProgress({ tool: 'deno', stage, message: '正在验证 Deno 版本...', percent: null })
+        } else if (stage === 'installing') {
+          emitRuntimeToolProgress({ tool: 'deno', stage, message: '正在替换 Deno 可执行文件...', percent: null })
+        }
+      },
+    })
+
+    const result: RuntimeToolInstallResult = {
+      tool: 'deno',
+      path: installed.path,
+      version: installed.version,
+    }
+    emitRuntimeToolProgress({ tool: 'deno', stage: 'complete', message: `Deno 已安装到 ${result.version}。`, percent: 100 })
+    return result
+  } finally {
+    try {
+      rmSync(downloadDir, { recursive: true, force: true })
+    } catch {
+      // A stale scratch directory is preferable to masking the install result.
+    }
   }
-
-  emitRuntimeToolProgress({ tool: 'deno', stage: 'installing', message: '正在写入 Deno 可执行文件...', percent: null })
-  copyFileSync(extractedDeno, targetPath)
-  if (!isWindows) {
-    chmodSync(targetPath, 0o755)
-  }
-
-  rmSync(downloadDir, { recursive: true, force: true })
-
-  const result: RuntimeToolInstallResult = {
-    tool: 'deno',
-    path: targetPath,
-    version: await getCurrentDenoVersion() ?? latestVersion,
-  }
-  emitRuntimeToolProgress({ tool: 'deno', stage: 'complete', message: `Deno 已安装到 ${result.version}。`, percent: 100 })
-  return result
 }
 
 function getSubtitleCleanupConfigPath() {
@@ -2320,6 +2327,7 @@ async function getSelfCheckItems(): Promise<SelfCheckItem[]> {
   const ffmpegPath = getFfmpegPath()
   const ffprobePath = getFfprobePath()
   const denoPath = getDenoPath()
+  const denoVersion = await getCurrentDenoVersion()
 
   return [
     {
@@ -2346,8 +2354,9 @@ async function getSelfCheckItems(): Promise<SelfCheckItem[]> {
     {
       key: 'deno',
       label: 'Deno',
-      ok: denoPath !== null,
-      detail: denoPath ?? 'Not found',
+      ok: Boolean(denoPath && denoVersion),
+      health: !denoPath ? 'missing' : denoVersion ? 'ready' : 'invalid',
+      detail: !denoPath ? 'Not found' : `${denoPath} (${denoVersion ?? 'version probe failed'})`,
     },
     {
       key: 'cookies',
@@ -2370,7 +2379,20 @@ function emitMedia(payload: unknown) {
 }
 
 function emitRuntimeToolProgress(payload: RuntimeToolProgressUpdate) {
-  mainWindow?.webContents.send('runtime-tools:update', payload)
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return
+  try {
+    mainWindow.webContents.send('runtime-tools:update', payload)
+  } catch {
+    // Progress delivery must not turn a completed atomic install into a reported failure.
+  }
+}
+
+function claimRuntimeToolInstall(tool: RuntimeToolInstallTarget) {
+  runtimeOperations.claimRuntimeInstall(tool, queueSnapshot.running > 0 || queueSnapshot.pending > 0)
+}
+
+function releaseRuntimeToolInstall(tool: RuntimeToolInstallTarget) {
+  runtimeOperations.releaseRuntimeInstall(tool)
 }
 
 function emitQueue(message?: string) {
@@ -4115,6 +4137,7 @@ ipcMain.handle('collections:resolve', async (event, sourceUrl: string) => {
 })
 
 ipcMain.handle('runtime:installDeno', async () => {
+  claimRuntimeToolInstall('deno')
   try {
     return await installDenoRuntime()
   } catch (error) {
@@ -4125,6 +4148,8 @@ ipcMain.handle('runtime:installDeno', async () => {
       percent: null,
     })
     throw error
+  } finally {
+    releaseRuntimeToolInstall('deno')
   }
 })
 
@@ -4133,14 +4158,9 @@ ipcMain.handle('runtime:checkToolUpdates', async () => {
 })
 
 ipcMain.handle('runtime:updateYtDlp', async () => {
-  let installPromise: Promise<RuntimeToolInstallResult> | null = null
+  claimRuntimeToolInstall('yt-dlp')
   try {
-    if (queueSnapshot.running > 0 || queueSnapshot.pending > 0) {
-      throw new Error('Stop active downloads before repairing yt-dlp.')
-    }
-    installPromise = ytDlpInstallPromise ?? installYtDlpRuntime()
-    ytDlpInstallPromise = installPromise
-    return await installPromise
+    return await installYtDlpRuntime()
   } catch (error) {
     emitRuntimeToolProgress({
       tool: 'yt-dlp',
@@ -4150,9 +4170,7 @@ ipcMain.handle('runtime:updateYtDlp', async () => {
     })
     throw error
   } finally {
-    if (installPromise && ytDlpInstallPromise === installPromise) {
-      ytDlpInstallPromise = null
-    }
+    releaseRuntimeToolInstall('yt-dlp')
   }
 })
 
@@ -4444,51 +4462,53 @@ ipcMain.handle('download:cancel', () => {
 
 ipcMain.handle('download:start', async (_event, request: DownloadRequest) => {
   const urls = request.urls.map((item) => item.trim()).filter(Boolean)
-  if (activeJobs.size > 0 || pendingJobs.length > 0) {
-    throw new Error('A download queue is already running.')
-  }
-  const ytDlpInspection = await inspectCurrentYtDlp()
-  if (ytDlpInspection.status === 'missing') {
-    throw new Error('yt-dlp was not found. Check for core tool updates to install it.')
-  }
-  if (ytDlpInspection.status === 'invalid') {
-    throw new Error('yt-dlp is damaged or cannot report its version. Use Repair yt-dlp before downloading.')
-  }
-  if (!statSync(request.outputDir).isDirectory()) {
-    throw new Error(`Output directory does not exist: ${request.outputDir}`)
-  }
-  if (request.cookieFile && !existsSync(request.cookieFile)) {
-    throw new Error(`Cookie file does not exist: ${request.cookieFile}`)
-  }
-  if (!request.cookieFile) {
-    const missingCookieFiles = uniquePaths((request.urlCookieFiles ?? []).filter((value): value is string => Boolean(value?.trim())))
-      .filter((cookiePath) => !existsSync(cookiePath))
-    if (missingCookieFiles.length > 0) {
-      throw new Error(`Cookie file does not exist: ${missingCookieFiles[0]}`)
+  runtimeOperations.claimDownloadStart(activeJobs.size > 0 || pendingJobs.length > 0)
+  try {
+    const ytDlpInspection = await inspectCurrentYtDlp()
+    if (ytDlpInspection.status === 'missing') {
+      throw new Error('yt-dlp was not found. Check for core tool updates to install it.')
     }
-  }
-  if (urls.length === 0) {
-    throw new Error('No URLs were provided.')
-  }
+    if (ytDlpInspection.status === 'invalid') {
+      throw new Error('yt-dlp is damaged or cannot report its version. Use Repair yt-dlp before downloading.')
+    }
+    if (!statSync(request.outputDir).isDirectory()) {
+      throw new Error(`Output directory does not exist: ${request.outputDir}`)
+    }
+    if (request.cookieFile && !existsSync(request.cookieFile)) {
+      throw new Error(`Cookie file does not exist: ${request.cookieFile}`)
+    }
+    if (!request.cookieFile) {
+      const missingCookieFiles = uniquePaths((request.urlCookieFiles ?? []).filter((value): value is string => Boolean(value?.trim())))
+        .filter((cookiePath) => !existsSync(cookiePath))
+      if (missingCookieFiles.length > 0) {
+        throw new Error(`Cookie file does not exist: ${missingCookieFiles[0]}`)
+      }
+    }
+    if (urls.length === 0) {
+      throw new Error('No URLs were provided.')
+    }
 
-  activeBatchRequest = request
-  batchCancelled = false
-  pendingJobs = urls.map((url, index) => ({
-    jobId: `${Date.now()}-${index + 1}`,
-    url,
-    index: index + 1,
-    totalJobs: urls.length,
-  }))
-  queueSnapshot = {
-    total: urls.length,
-    pending: pendingJobs.length,
-    running: 0,
-    completed: 0,
-    failed: 0,
-    cancelled: 0,
-    concurrency: Math.max(1, Math.min(request.concurrency, 3)),
-  }
+    activeBatchRequest = request
+    batchCancelled = false
+    pendingJobs = urls.map((url, index) => ({
+      jobId: `${Date.now()}-${index + 1}`,
+      url,
+      index: index + 1,
+      totalJobs: urls.length,
+    }))
+    queueSnapshot = {
+      total: urls.length,
+      pending: pendingJobs.length,
+      running: 0,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+      concurrency: Math.max(1, Math.min(request.concurrency, 3)),
+    }
 
-  emitQueue(`Queue started with ${urls.length} job(s).`)
-  scheduleNextJobs()
+    emitQueue(`Queue started with ${urls.length} job(s).`)
+    scheduleNextJobs()
+  } finally {
+    runtimeOperations.releaseDownloadStart()
+  }
 })

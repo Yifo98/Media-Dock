@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import {
   chmodSync,
   closeSync,
@@ -7,11 +7,11 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  renameSync,
   rmSync,
   statSync,
 } from 'node:fs'
-import { basename, dirname, extname, join } from 'node:path'
+import { dirname } from 'node:path'
+import { createSiblingTemporaryPath, replaceFileFromTemporary } from './atomicFile.js'
 import { compareVersions, normalizeVersion } from './version.js'
 
 export type RuntimeExecutableStatus = 'ready' | 'missing' | 'invalid'
@@ -57,12 +57,6 @@ function calculateSha256(filePath: string) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex')
 }
 
-function temporaryExecutablePath(targetPath: string) {
-  const extension = extname(targetPath)
-  const stem = basename(targetPath, extension)
-  return join(dirname(targetPath), `.${stem}.${randomUUID()}.download${extension}`)
-}
-
 export async function inspectRuntimeExecutable(
   executablePath: string | null,
   probeVersion: (executablePath: string) => Promise<string | null>,
@@ -90,7 +84,7 @@ export async function installValidatedRuntimeExecutable(
 ) {
   const targetDir = dirname(options.targetPath)
   mkdirSync(targetDir, { recursive: true })
-  const temporaryPath = temporaryExecutablePath(options.targetPath)
+  const temporaryPath = createSiblingTemporaryPath(options.targetPath, 'download')
 
   try {
     options.onStage?.('downloading')
@@ -144,13 +138,17 @@ export async function installValidatedRuntimeExecutable(
     }
 
     options.onStage?.('installing')
-    renameSync(temporaryPath, options.targetPath)
+    replaceFileFromTemporary(temporaryPath, options.targetPath)
 
     return {
       path: options.targetPath,
       version,
     }
   } finally {
-    rmSync(temporaryPath, { force: true })
+    try {
+      rmSync(temporaryPath, { force: true })
+    } catch {
+      // Cleanup must not hide the validation or replacement error.
+    }
   }
 }
