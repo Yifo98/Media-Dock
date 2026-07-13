@@ -16,6 +16,7 @@ const EMPTY_WORKSPACE: WorkspaceSnapshot = Object.freeze({
   revision: 0,
   tasks: Object.freeze([]),
   deliverables: Object.freeze([]),
+  authenticationProfiles: Object.freeze([]),
   systemOperations: Object.freeze([]),
 })
 
@@ -71,6 +72,10 @@ const messages = {
     dataBoundaryValue: 'Media Dock Data/v3 · 与 2.1.2 隔离',
     runtime: '本地媒体运行环境',
     runtimeValue: 'FFmpeg + FFprobe · 启动时验证',
+    authentication: '认证档案',
+    authenticationValue: 'MediaCookies 本地包 · Cookie 值不进入界面和日志',
+    importAuthentication: '导入 MediaCookies ZIP',
+    noAuthentication: '还没有认证档案。公开视频不受影响；登录内容需要时再导入。',
     emptyInspector: '选择来源或任务后，这里会显示计划、工具版本和诊断证据。',
     plan: '任务计划',
     steps: '处理步骤',
@@ -130,6 +135,10 @@ const messages = {
     dataBoundaryValue: 'Media Dock Data/v3 · isolated from 2.1.2',
     runtime: 'Local media runtime',
     runtimeValue: 'FFmpeg + FFprobe · verified at launch',
+    authentication: 'Authentication Profiles',
+    authenticationValue: 'Local MediaCookies packages · Cookie values stay out of UI and logs',
+    importAuthentication: 'Import MediaCookies ZIP',
+    noAuthentication: 'No Authentication Profiles yet. Public media still works; import one when signed-in access is needed.',
     emptyInspector: 'Select a Source or task to inspect its plan, runtime versions, and diagnostic evidence.',
     plan: 'Task Plan',
     steps: 'Processing steps',
@@ -293,6 +302,19 @@ export default function MediaDockV3App() {
     if (selected) setOutputDirectory(selected)
   }
 
+  async function importAuthenticationProfile() {
+    setBusy(true)
+    setErrorMessage(null)
+    try {
+      const snapshot = await api.importAuthenticationProfile()
+      if (snapshot) setWorkspace(snapshot)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function startTask() {
     if (!plan) return
     setBusy(true)
@@ -443,7 +465,11 @@ export default function MediaDockV3App() {
           <article><span>01</span><div><strong>{copy.engine}</strong><small>{copy.engineValue}</small></div><b>{copy.revision} {workspace.revision}</b></article>
           <article><span>02</span><div><strong>{copy.dataBoundary}</strong><small>{copy.dataBoundaryValue}</small></div><b>LOCAL</b></article>
           <article><span>03</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small></div><b>READY</b></article>
+          <article><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small></div><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{copy.importAuthentication}</button></article>
         </div>
+        {workspace.authenticationProfiles.length === 0
+          ? <p className="md3-empty-line">{copy.noAuthentication}</p>
+          : <div className="md3-profile-list">{workspace.authenticationProfiles.map((profile) => <article key={profile.id}><i /><div><strong>{profile.displayName}</strong><small>{profile.services.join(' · ')}</small></div><b>{profile.health.toUpperCase()}</b></article>)}</div>}
       </SpacePage>
     )
   }

@@ -4120,6 +4120,30 @@ async function initializeV3TaskEngine() {
         })
         return result.canceled ? null : result.filePaths[0] ?? null
       },
+      async importAuthenticationProfile() {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: resolveDefaultDownloads(),
+          properties: ['openFile'],
+          filters: [
+            { name: 'MediaCookies package', extensions: ['zip'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        })
+        const zipPath = result.filePaths[0]
+        if (result.canceled || !zipPath) return null
+        const extractDirectory = join(v3DataDirectory, 'authentication-imports', `extract-${Date.now()}`)
+        try {
+          await extractZip(zipPath, extractDirectory)
+          const packageRoot = findCookieExportRoot(extractDirectory)
+          if (!packageRoot) throw new Error('The selected ZIP is not a supported MediaCookies package.')
+          return await v3TaskEngine!.importAuthenticationPackage({
+            sourceDirectory: packageRoot,
+            displayName: parse(zipPath).name,
+          })
+        } finally {
+          rmSync(extractDirectory, { recursive: true, force: true })
+        }
+      },
     },
   )
 }

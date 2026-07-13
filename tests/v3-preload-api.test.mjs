@@ -26,6 +26,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     'contractVersion',
     'createTask',
     'getWorkspaceSnapshot',
+    'importAuthenticationProfile',
     'inspectSource',
     'onWorkspaceChanged',
     'pickLocalSource',
@@ -38,6 +39,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
   await api.getWorkspaceSnapshot()
   await api.pickLocalSource('/media')
   await api.pickOutputDirectory('/deliverables')
+  await api.importAuthenticationProfile()
   await api.inspectSource({ kind: 'local-file', path: '/media/input.wav' })
   await api.planTask({ recipeId: 'audio-compatible' })
   await api.createTask({ planVersion: 1 })
@@ -47,6 +49,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     { channel: 'media-dock:v3:get-workspace', payload: undefined },
     { channel: 'media-dock:v3:pick-local-source', payload: '/media' },
     { channel: 'media-dock:v3:pick-output-directory', payload: '/deliverables' },
+    { channel: 'media-dock:v3:import-authentication-profile', payload: undefined },
     { channel: 'media-dock:v3:inspect-source', payload: { kind: 'local-file', path: '/media/input.wav' } },
     { channel: 'media-dock:v3:plan-task', payload: { recipeId: 'audio-compatible' } },
     { channel: 'media-dock:v3:create-task', payload: { planVersion: 1 } },

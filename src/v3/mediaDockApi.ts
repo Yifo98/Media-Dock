@@ -63,6 +63,7 @@ export type TaskPlan = Readonly<{
   deliveryName: string
   steps: readonly TaskPlanStep[]
   runtimeVersions: Readonly<{ ffmpeg: string; ytDlp?: string }>
+  authenticationProfileId?: string
 }>
 
 export type MediaTaskSnapshot = Readonly<{
@@ -83,11 +84,20 @@ export type DeliverableSnapshot = Readonly<{
   createdAt: string
 }>
 
+export type AuthenticationProfileSnapshot = Readonly<{
+  id: string
+  displayName: string
+  services: readonly string[]
+  health: 'ready'
+  createdAt: string
+}>
+
 export type WorkspaceSnapshot = Readonly<{
   contractVersion: 1
   revision: number
   tasks: readonly MediaTaskSnapshot[]
   deliverables: readonly DeliverableSnapshot[]
+  authenticationProfiles: readonly AuthenticationProfileSnapshot[]
   systemOperations: readonly Readonly<{ id: string }>[]
 }>
 
@@ -103,6 +113,7 @@ export type MediaDockV3Api = Readonly<{
   getWorkspaceSnapshot(): Promise<WorkspaceSnapshot>
   pickLocalSource(currentPath?: string): Promise<string | null>
   pickOutputDirectory(currentPath?: string): Promise<string | null>
+  importAuthenticationProfile(): Promise<WorkspaceSnapshot | null>
   inspectSource(input: Readonly<{ kind: 'local-file'; path: string }> | Readonly<{ kind: 'network-url'; url: string }>): Promise<SourceInspection>
   planTask(input: PlanTaskInput): Promise<TaskPlan>
   createTask(plan: TaskPlan): Promise<WorkspaceSnapshot>

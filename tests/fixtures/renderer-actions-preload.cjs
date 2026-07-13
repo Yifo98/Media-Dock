@@ -159,6 +159,7 @@ let v3Workspace = {
   revision: 0,
   tasks: [],
   deliverables: [],
+  authenticationProfiles: [],
   systemOperations: [],
 }
 let v3WorkspaceListener = null
@@ -168,6 +169,22 @@ const mediaDockApi = {
   getWorkspaceSnapshot: async () => v3Workspace,
   pickLocalSource: async () => action === 'v3LocalFlow' ? 'I:\\素材\\field-note.wav' : null,
   pickOutputDirectory: async () => action === 'v3LocalFlow' || action === 'v3NetworkFlow' ? 'I:\\成品' : null,
+  importAuthenticationProfile: async () => {
+    if (action !== 'v3AuthProfile') return null
+    v3Workspace = {
+      ...v3Workspace,
+      revision: v3Workspace.revision + 1,
+      authenticationProfiles: [{
+        id: 'auth-profile-fixture',
+        displayName: 'My MediaCookies',
+        services: ['youtube'],
+        health: 'ready',
+        createdAt: '2026-07-13T08:00:00.000Z',
+      }],
+    }
+    v3WorkspaceListener?.(v3Workspace)
+    return v3Workspace
+  },
   inspectSource: async (input) => action === 'v3LocalFlow'
     ? {
         status: 'ready',

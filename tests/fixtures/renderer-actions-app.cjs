@@ -32,6 +32,7 @@ app.whenReady().then(async () => {
       revision: 0,
       tasks: [],
       deliverables: [],
+      authenticationProfiles: [],
       systemOperations: [],
     }))
   }
@@ -53,7 +54,7 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3LocalFlow' || action === 'v3NetworkFlow' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3LocalFlow' || action === 'v3NetworkFlow' || action === 'v3AuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3ProductionPreload') {
       const rendered = await waitFor(
@@ -153,6 +154,36 @@ app.whenReady().then(async () => {
       )
       if (!delivered) throw new Error('Completed network Deliverable did not appear in Deliverable Library')
       console.log('[GREEN] Media Dock 3 advances a pasted public link through a completed network-media journey.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3AuthProfile') {
+      const systemReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('.md3-rail nav button')).some((button) => button.textContent.trim() === '系统中心')`,
+      )
+      if (!systemReady) throw new Error('System Center navigation did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('.md3-rail nav button'))
+          .find((button) => button.textContent.trim() === '系统中心')
+          .click()
+      `, true)
+      const importReady = await waitFor(
+        win,
+        `Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === '导入 MediaCookies ZIP')`,
+      )
+      if (!importReady) throw new Error('Authentication Profile import action did not render')
+      await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('button'))
+          .find((button) => button.textContent.trim() === '导入 MediaCookies ZIP')
+          .click()
+      `, true)
+      const imported = await waitFor(
+        win,
+        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes('youtube')`,
+      )
+      if (!imported) throw new Error('Imported Authentication Profile did not appear in System Center')
+      console.log('[GREEN] Media Dock 3 imports a secret-free Authentication Profile into System Center.')
       app.exit(0)
       return
     }

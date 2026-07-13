@@ -4,6 +4,7 @@ export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   getWorkspace: 'media-dock:v3:get-workspace',
   pickLocalSource: 'media-dock:v3:pick-local-source',
   pickOutputDirectory: 'media-dock:v3:pick-output-directory',
+  importAuthenticationProfile: 'media-dock:v3:import-authentication-profile',
   inspectSource: 'media-dock:v3:inspect-source',
   planTask: 'media-dock:v3:plan-task',
   createTask: 'media-dock:v3:create-task',
@@ -23,6 +24,7 @@ type WorkspaceTarget = Readonly<{
 type MediaDockV3Pickers = Readonly<{
   pickLocalSource(currentPath: string | undefined): Promise<string | null>
   pickOutputDirectory(currentPath: string | undefined): Promise<string | null>
+  importAuthenticationProfile(): Promise<ReturnType<MediaTaskEngine['getWorkspaceSnapshot']> | null>
 }>
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -155,6 +157,9 @@ function parseTaskPlan(value: unknown): TaskPlan {
         ? {}
         : { ytDlp: requireString(runtimeVersions.ytDlp, 'Task Plan yt-dlp version') }),
     }),
+    ...(plan.authenticationProfileId === undefined
+      ? {}
+      : { authenticationProfileId: requireString(plan.authenticationProfileId, 'Task Plan Authentication Profile id') }),
   })
 }
 
@@ -167,6 +172,7 @@ export function registerMediaDockV3Ipc(
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.getWorkspace, () => engine.getWorkspaceSnapshot())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickLocalSource, (_event, payload) => pickers.pickLocalSource(optionalString(payload, 'Current source path')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory, (_event, payload) => pickers.pickOutputDirectory(optionalString(payload, 'Current output directory')))
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.importAuthenticationProfile, () => pickers.importAuthenticationProfile())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.inspectSource, (_event, payload) => engine.inspectSource(parseSourceInput(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.planTask, (_event, payload) => engine.planTask(parsePlanTaskInput(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.createTask, (_event, payload) => engine.createTask(parseTaskPlan(payload)))
@@ -183,6 +189,7 @@ export function registerMediaDockV3Ipc(
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.getWorkspace)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickLocalSource)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory)
+    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.importAuthenticationProfile)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.inspectSource)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.planTask)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.createTask)

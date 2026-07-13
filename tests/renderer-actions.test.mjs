@@ -76,3 +76,7 @@ test('3.0 Workbench advances a pasted public link through a completed network-me
 test('the production preload exposes the Media Dock 3 contract inside the Electron sandbox', () => {
   assertRendererAction('v3ProductionPreload')
 })
+
+test('3.0 System Center imports and presents a secret-free Authentication Profile', () => {
+  assertRendererAction('v3AuthProfile')
+})

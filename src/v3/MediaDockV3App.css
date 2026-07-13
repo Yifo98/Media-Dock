@@ -235,6 +235,15 @@
 .md3-system-list small { overflow: hidden; color: var(--md3-ink-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .md3-deliverable-list time,
 .md3-system-list b { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; font-weight: 600; }
+.md3-system-action { min-height: 36px; padding: 0 13px; border: 1px solid var(--md3-line); border-radius: 11px; color: var(--md3-ink); background: var(--md3-surface); cursor: pointer; font-size: 9px; font-weight: 750; }
+.md3-system-action:disabled { cursor: wait; opacity: 0.55; }
+.md3-profile-list { display: grid; margin-top: 28px; border-top: 1px solid var(--md3-line); }
+.md3-profile-list article { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; min-height: 68px; border-bottom: 1px solid var(--md3-line); }
+.md3-profile-list i { width: 8px; height: 8px; border-radius: 50%; background: #6eaf91; box-shadow: 0 0 0 4px color-mix(in srgb, #6eaf91 14%, transparent); }
+.md3-profile-list div { display: grid; min-width: 0; gap: 4px; }
+.md3-profile-list strong { font-size: 11px; }
+.md3-profile-list small { color: var(--md3-ink-faint); font-size: 9px; }
+.md3-profile-list b { color: #6eaf91; font-family: ui-monospace, monospace; font-size: 8px; }
 
 .md3-inspector { position: relative; z-index: 4; min-width: 0; max-height: 100vh; overflow: auto; padding: 29px 24px; border-left: 1px solid var(--md3-line); background: var(--md3-surface); }
 .md3-inspector > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 25px; border-bottom: 1px solid var(--md3-line); }

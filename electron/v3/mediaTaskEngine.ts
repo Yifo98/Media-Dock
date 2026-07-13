@@ -5,6 +5,11 @@ import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 
 import { runRuntimeProcessCollectOutput } from '../core/runtimeProcess.js'
+import {
+  authenticationServiceMatches,
+  copyAuthenticationPackage,
+  inspectAuthenticationPackage,
+} from './authenticationProfiles.js'
 import { sanitizeDeliveryFileName } from './deliveryNaming.js'
 import { getLocalMediaRecipeOptions, inspectLocalMediaSource } from './localMediaSourceAdapter.js'
 import { getNetworkMediaRecipeOptions, inspectNetworkMediaSource } from './networkMediaSourceAdapter.js'
@@ -21,6 +26,14 @@ export type DeliverableSnapshot = Readonly<{
 
 export type SystemOperationSnapshot = Readonly<{
   id: string
+}>
+
+export type AuthenticationProfileSnapshot = Readonly<{
+  id: string
+  displayName: string
+  services: readonly string[]
+  health: 'ready'
+  createdAt: string
 }>
 
 export type LocalFileSourceInput = Readonly<{
@@ -107,6 +120,7 @@ export type TaskPlan = Readonly<{
     ffmpeg: string
     ytDlp?: string
   }>
+  authenticationProfileId?: string
 }>
 
 export type MediaTaskSnapshot = Readonly<{
@@ -137,12 +151,14 @@ export type WorkspaceSnapshot = Readonly<{
   revision: number
   tasks: readonly MediaTaskSnapshot[]
   deliverables: readonly DeliverableSnapshot[]
+  authenticationProfiles: readonly AuthenticationProfileSnapshot[]
   systemOperations: readonly SystemOperationSnapshot[]
 }>
 
 export type MediaTaskEngine = Readonly<{
   inspectSource(input: SourceInput): Promise<SourceInspection>
   planTask(input: PlanTaskInput): Promise<TaskPlan>
+  importAuthenticationPackage(input: Readonly<{ sourceDirectory: string; displayName: string }>): Promise<WorkspaceSnapshot>
   createTask(plan: TaskPlan): WorkspaceSnapshot
   runTask(taskId: string): Promise<WorkspaceSnapshot>
   subscribeWorkspace(listener: (snapshot: WorkspaceSnapshot) => void): () => void
@@ -157,7 +173,7 @@ export type CreateMediaTaskEngineOptions = Readonly<{
     ffmpeg?: ManagedRuntimeReference
     ytDlp?: ManagedRuntimeReference
   }>
-  idFactory?: (kind: 'task' | 'deliverable') => string
+  idFactory?: (kind: 'task' | 'deliverable' | 'authentication-profile') => string
   now?: () => Date
 }>
 
@@ -180,6 +196,14 @@ type DeliverableRow = Readonly<{
   task_id: string
   path: string
   delivery_name: string
+  created_at: string
+}>
+
+type AuthenticationProfileRow = Readonly<{
+  id: string
+  display_name: string
+  services_json: string
+  directory_name: string
   created_at: string
 }>
 
@@ -239,12 +263,29 @@ function readDeliverables(database: DatabaseSync): readonly DeliverableSnapshot[
   })))
 }
 
+function readAuthenticationProfiles(database: DatabaseSync): readonly AuthenticationProfileSnapshot[] {
+  const rows = database.prepare(`
+    SELECT id, display_name, services_json, directory_name, created_at
+    FROM authentication_profiles
+    ORDER BY created_at ASC, id ASC
+  `).all() as AuthenticationProfileRow[]
+
+  return Object.freeze(rows.map((row) => Object.freeze({
+    id: row.id,
+    displayName: row.display_name,
+    services: Object.freeze(JSON.parse(row.services_json) as string[]),
+    health: 'ready' as const,
+    createdAt: row.created_at,
+  })))
+}
+
 function readWorkspaceSnapshot(database: DatabaseSync): WorkspaceSnapshot {
   return Object.freeze({
     contractVersion: MEDIA_DOCK_CONTRACT_VERSION,
     revision: readRevision(database),
     tasks: readTasks(database),
     deliverables: readDeliverables(database),
+    authenticationProfiles: readAuthenticationProfiles(database),
     systemOperations: Object.freeze([]),
   })
 }
@@ -381,10 +422,19 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       delivery_name TEXT NOT NULL,
       created_at TEXT NOT NULL
     ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS authentication_profiles (
+      id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      services_json TEXT NOT NULL,
+      directory_name TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    ) STRICT;
   `)
 
   let isClosed = false
   const workspaceListeners = new Set<(snapshot: WorkspaceSnapshot) => void>()
+  const authenticationProfilesRoot = path.join(options.dataDirectory, 'authentication-profiles')
 
   function publishWorkspace(): WorkspaceSnapshot {
     const snapshot = readWorkspaceSnapshot(database)
@@ -396,6 +446,25 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       }
     }
     return snapshot
+  }
+
+  function findMatchingAuthenticationProfile(sourceService: string): AuthenticationProfileSnapshot | null {
+    const matches = readAuthenticationProfiles(database)
+      .filter((profile) => profile.services.some((service) => authenticationServiceMatches(service, sourceService)))
+    return matches.length === 1 ? matches[0] : null
+  }
+
+  function resolveAuthenticationCookiePath(profileId: string, sourceService: string): string {
+    const row = database.prepare(`
+      SELECT id, display_name, services_json, directory_name, created_at
+      FROM authentication_profiles
+      WHERE id = ?
+    `).get(profileId) as AuthenticationProfileRow | undefined
+    if (!row) throw new Error(`Authentication Profile does not exist: ${profileId}`)
+    const services = JSON.parse(row.services_json) as string[]
+    const service = services.find((candidate) => authenticationServiceMatches(candidate, sourceService))
+    if (!service) throw new Error(`Authentication Profile ${profileId} does not match ${sourceService}.`)
+    return path.join(authenticationProfilesRoot, row.directory_name, 'by-service', `${service}.cookies.txt`)
   }
 
   return Object.freeze({
@@ -441,6 +510,9 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         throw new Error('The yt-dlp managed runtime is required to plan this task.')
       }
 
+      const authenticationProfile = input.source.kind === 'network-url'
+        ? findMatchingAuthenticationProfile(input.source.serviceName)
+        : null
       return freezeTaskPlan({
         planVersion: 1,
         source: input.source,
@@ -452,7 +524,42 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
           ffmpeg: ffmpeg.version,
           ...(ytDlp ? { ytDlp: ytDlp.version } : {}),
         }),
+        ...(authenticationProfile ? { authenticationProfileId: authenticationProfile.id } : {}),
       })
+    },
+
+    async importAuthenticationPackage(input): Promise<WorkspaceSnapshot> {
+      if (isClosed) throw new Error('Media Task Engine is closed.')
+      const displayName = input.displayName.trim()
+      if (!displayName) throw new Error('Authentication Profile display name must not be empty.')
+      const files = await inspectAuthenticationPackage(input.sourceDirectory)
+      const id = options.idFactory?.('authentication-profile') ?? randomUUID()
+      if (!/^[a-zA-Z0-9._-]+$/u.test(id)) throw new Error('Authentication Profile id is unsafe.')
+      const timestamp = (options.now?.() ?? new Date()).toISOString()
+      const targetDirectory = path.join(authenticationProfilesRoot, id)
+      const stagingDirectory = path.join(authenticationProfilesRoot, `.${id}.staging`)
+      await mkdir(authenticationProfilesRoot, { recursive: true })
+      if (await pathExists(targetDirectory)) throw new Error(`Authentication Profile already exists: ${id}`)
+      await copyAuthenticationPackage(files, stagingDirectory, targetDirectory)
+
+      database.exec('BEGIN IMMEDIATE')
+      try {
+        database.prepare(`
+          INSERT INTO authentication_profiles (id, display_name, services_json, directory_name, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(id, displayName, JSON.stringify(files.map((file) => file.service)), id, timestamp)
+        database.prepare(`
+          UPDATE workspace_metadata
+          SET revision = revision + 1
+          WHERE singleton = 1
+        `).run()
+        database.exec('COMMIT')
+      } catch (error) {
+        database.exec('ROLLBACK')
+        await rm(targetDirectory, { recursive: true, force: true })
+        throw error
+      }
+      return publishWorkspace()
     },
 
     createTask(plan: TaskPlan): WorkspaceSnapshot {
@@ -542,6 +649,9 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         publishWorkspace()
 
         if (task.plan.source.kind === 'network-url' && ytDlp) {
+          const authenticationCookiePath = task.plan.authenticationProfileId
+            ? resolveAuthenticationCookiePath(task.plan.authenticationProfileId, task.plan.source.serviceName)
+            : null
           await runRuntimeProcessCollectOutput({
             command: ytDlp.command,
             args: [
@@ -555,6 +665,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
               'bv*+ba/b',
               '--merge-output-format',
               'mp4',
+              ...(authenticationCookiePath ? ['--cookies', authenticationCookiePath] : []),
               '--output',
               stagedDeliveryPath,
               task.plan.source.locator,

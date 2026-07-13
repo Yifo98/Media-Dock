@@ -68,6 +68,31 @@ writeFileSync(args[outputFlag + 1], Buffer.from('fixture-network-media'))
 `)
 }
 
+function writeCookieAwareFakeYtDlp(filePath, secretValue) {
+  writeFileSync(filePath, `
+const { readFileSync, writeFileSync } = require('node:fs')
+const args = process.argv.slice(2)
+if (args.includes('--dump-single-json')) {
+  process.stdout.write(JSON.stringify({
+    id: 'private-episode',
+    title: 'Private Episode',
+    duration: 8,
+    webpage_url: 'https://youtube.example/watch?v=private',
+    extractor_key: 'Youtube',
+    ext: 'webm',
+    vcodec: 'vp9',
+    acodec: 'opus',
+  }))
+  process.exit(0)
+}
+const cookieFlag = args.indexOf('--cookies')
+const outputFlag = args.indexOf('--output')
+if (cookieFlag === -1 || outputFlag === -1) process.exit(2)
+if (!readFileSync(args[cookieFlag + 1], 'utf8').includes(${JSON.stringify(secretValue)})) process.exit(3)
+writeFileSync(args[outputFlag + 1], Buffer.from('authenticated-network-media'))
+`)
+}
+
 const ffprobeCommand = process.env.MEDIA_DOCK_TEST_FFPROBE ?? 'ffprobe'
 const hasFfprobe = spawnSync(ffprobeCommand, ['-version'], { stdio: 'ignore' }).status === 0
 const ffmpegCommand = process.env.MEDIA_DOCK_TEST_FFMPEG ?? 'ffmpeg'
@@ -83,6 +108,7 @@ test('a new Media Task Engine exposes an empty revisioned workspace snapshot', a
         revision: 0,
         tasks: [],
         deliverables: [],
+        authenticationProfiles: [],
         systemOperations: [],
       })
     } finally {
@@ -254,6 +280,7 @@ test('creating a Media Task advances the workspace revision and survives an engi
         problem: null,
       }],
       deliverables: [],
+      authenticationProfiles: [],
       systemOperations: [],
     })
     engine.close()
@@ -485,6 +512,80 @@ test('network delivery names sanitize URL-title separators without dropping Unic
       })
 
       assert.equal(plan.deliveryName, '系列 _ 第 1 集_ 开场_ - 视频.mp4')
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('an imported MediaCookies package stays secret while its profile is pinned by an authenticated network task', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const dataDirectory = path.join(rootDirectory, 'data')
+    const packageDirectory = path.join(rootDirectory, 'MediaCookies Export')
+    const serviceDirectory = path.join(packageDirectory, 'by-service')
+    const outputDirectory = path.join(rootDirectory, 'output')
+    const fakeYtDlpPath = path.join(rootDirectory, 'cookie-aware-yt-dlp.cjs')
+    const cookieSecret = 'SECRET_COOKIE_VALUE_MUST_NOT_LEAK'
+    mkdirSync(serviceDirectory, { recursive: true })
+    mkdirSync(outputDirectory)
+    writeFileSync(
+      path.join(serviceDirectory, 'youtube.cookies.txt'),
+      `# Netscape HTTP Cookie File\n.youtube.example\tTRUE\t/\tTRUE\t2147483647\tSID\t${cookieSecret}\n`,
+    )
+    writeCookieAwareFakeYtDlp(fakeYtDlpPath, cookieSecret)
+
+    let timestampOffset = 0
+    const engine = createMediaTaskEngine({
+      dataDirectory,
+      idFactory: (kind) => kind === 'authentication-profile'
+        ? 'auth-profile-001'
+        : kind === 'task'
+          ? 'task-auth-001'
+          : 'deliverable-auth-001',
+      now: () => new Date(Date.parse('2026-07-13T08:00:00.000Z') + timestampOffset++ * 1_000),
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: '2026.07.04-fixture' },
+        ffmpeg: { command: 'ffmpeg', version: '7.1-fixture' },
+      },
+    })
+
+    try {
+      const imported = await engine.importAuthenticationPackage({
+        sourceDirectory: packageDirectory,
+        displayName: 'My MediaCookies',
+      })
+      assert.deepEqual(imported.authenticationProfiles, [{
+        id: 'auth-profile-001',
+        displayName: 'My MediaCookies',
+        services: ['youtube'],
+        health: 'ready',
+        createdAt: '2026-07-13T08:00:00.000Z',
+      }])
+      assert.equal(JSON.stringify(imported).includes(cookieSecret), false)
+      assert.equal(JSON.stringify(imported).includes(packageDirectory), false)
+
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://youtube.example/watch?v=private',
+      })
+      assert.equal(inspection.status, 'ready')
+      if (inspection.status !== 'ready') return
+      const plan = await engine.planTask({
+        source: inspection.source,
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'en',
+      })
+      assert.equal(plan.authenticationProfileId, 'auth-profile-001')
+      assert.equal(JSON.stringify(plan).includes(cookieSecret), false)
+      assert.equal(JSON.stringify(plan).includes('cookies.txt'), false)
+
+      engine.createTask(plan)
+      rmSync(packageDirectory, { recursive: true, force: true })
+      const completed = await engine.runTask('task-auth-001')
+      assert.equal(completed.tasks[0].state, 'completed')
+      assert.equal(existsSync(path.join(outputDirectory, 'Private Episode - Video.mp4')), true)
+      assert.equal(JSON.stringify(completed).includes(cookieSecret), false)
     } finally {
       engine.close()
     }
