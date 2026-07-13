@@ -60,3 +60,11 @@ test('an unrunnable Deno path does not claim YouTube optimization', () => {
 test('failed runtime repair remains required and explains that no file changed', () => {
   assertRendererAction('runtimeRepairFailure')
 })
+
+test('3.0 Workbench opens with Source Dock and one contextual primary action', () => {
+  assertRendererAction('v3Workbench')
+})
+
+test('3.0 Workbench advances one primary action through a completed local-media journey', () => {
+  assertRendererAction('v3LocalFlow')
+})

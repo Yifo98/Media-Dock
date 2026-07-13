@@ -27,6 +27,7 @@ subtitle-cleanup-config.json
 .codex-tmp/
 .playwright-cli/
 output/playwright/
+output/qa/
 Media Dock.lnk
 
 # Editor directories and files

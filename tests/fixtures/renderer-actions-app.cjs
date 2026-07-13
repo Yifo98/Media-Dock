@@ -1,7 +1,11 @@
 const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs')
 const path = require('node:path')
 
 const action = process.env.MEDIA_DOCK_RENDERER_ACTION
+const screenshotPath = process.env.MEDIA_DOCK_RENDERER_SCREENSHOT
+const screenshotWidth = Number(process.env.MEDIA_DOCK_RENDERER_WIDTH ?? 1280)
+const screenshotHeight = Number(process.env.MEDIA_DOCK_RENDERER_HEIGHT ?? 800)
 const labels = {
   openPath: ['打开 cookies 目录', 'Open cookies folder'],
   pickDirectory: ['选择目录', 'Browse'],
@@ -23,9 +27,9 @@ async function waitFor(win, expression, timeoutMs = 5000) {
 app.commandLine.appendSwitch('disable-gpu')
 app.whenReady().then(async () => {
   const win = new BrowserWindow({
-    show: false,
-    width: 1500,
-    height: 1000,
+    show: Boolean(screenshotPath),
+    width: screenshotPath ? screenshotWidth : 1500,
+    height: screenshotPath ? screenshotHeight : 1000,
     webPreferences: {
       preload: path.join(__dirname, 'renderer-actions-preload.cjs'),
       contextIsolation: true,
@@ -36,7 +40,64 @@ app.whenReady().then(async () => {
   })
 
   try {
-    await win.loadFile(path.resolve(__dirname, '../../dist/index.html'))
+    await win.loadFile(
+      path.resolve(__dirname, '../../dist/index.html'),
+      action === 'v3Workbench' || action === 'v3LocalFlow' ? { hash: 'v3' } : undefined,
+    )
+    if (action === 'v3Workbench') {
+      const workbenchReady = await waitFor(
+        win,
+        `Boolean(document.querySelector('.md3-source-dock')) && document.body.innerText.includes('来源入口')`,
+      )
+      if (!workbenchReady) throw new Error('Media Dock 3 Workbench did not render Source Dock')
+      const primaryActions = await win.webContents.executeJavaScript(`
+        Array.from(document.querySelectorAll('.md3-primary-action'))
+          .filter((button) => button.offsetParent !== null)
+          .map((button) => button.textContent.trim())
+      `, true)
+      if (primaryActions.length !== 1 || !primaryActions[0].startsWith('选择本地媒体')) {
+        console.error(`[RED] expected one contextual primary action, got: ${primaryActions.join(' | ')}`)
+        app.exit(1)
+        return
+      }
+      if (screenshotPath) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+        const screenshot = await win.webContents.capturePage()
+        fs.writeFileSync(screenshotPath, screenshot.toPNG())
+      }
+      console.log('[GREEN] Media Dock 3 Workbench opens with Source Dock and one contextual primary action.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3LocalFlow') {
+      async function clickPrimary(label) {
+        const ready = await waitFor(
+          win,
+          `Array.from(document.querySelectorAll('.md3-primary-action')).some((button) => button.textContent.trim().startsWith(${JSON.stringify(label)}) && !button.disabled)`,
+        )
+        if (!ready) throw new Error(`Primary action did not reach: ${label}`)
+        await win.webContents.executeJavaScript(`
+          Array.from(document.querySelectorAll('.md3-primary-action'))
+            .find((button) => button.textContent.trim().startsWith(${JSON.stringify(label)}))
+            .click()
+        `, true)
+      }
+
+      await clickPrimary('选择本地媒体')
+      await clickPrimary('检查来源')
+      await clickPrimary('选择成品位置')
+      await clickPrimary('开始处理')
+      await clickPrimary('查看成品')
+      const delivered = await waitFor(
+        win,
+        `document.body.innerText.includes('成品库') && document.body.innerText.includes('field-note - 音频.m4a')`,
+      )
+      if (!delivered) throw new Error('Completed Deliverable did not appear in Deliverable Library')
+      console.log('[GREEN] Media Dock 3 advances one primary action through a completed local-media journey.')
+      app.exit(0)
+      return
+    }
     if (action === 'runtimeProgressSync') {
       const midpointVisible = await waitFor(
         win,

@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import MediaToolsView from './MediaToolsView'
+import MediaDockV3App from './v3/MediaDockV3App'
 import './index.css'
 
 function escapeHtml(value: string) {
@@ -45,8 +46,11 @@ if (!root) {
   throw new Error('Root element #root was not found.')
 }
 
+const route = window.location.hash
+document.documentElement.dataset.product = route === '#v3' ? 'v3' : 'legacy'
+
 createRoot(root).render(
   <StrictMode>
-    {window.location.hash === '#media-tools' ? <MediaToolsView /> : <App />}
+    {route === '#v3' ? <MediaDockV3App /> : route === '#media-tools' ? <MediaToolsView /> : <App />}
   </StrictMode>,
 )

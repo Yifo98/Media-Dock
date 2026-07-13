@@ -3939,12 +3939,13 @@ function startNextJobs() {
 
 function createAppWindow(hash = '') {
   const windowIconPath = getWindowIconPath()
+  const isV3Window = hash === '#v3'
   const win = new BrowserWindow({
-    width: 1500,
-    height: 1000,
-    minWidth: 1280,
-    minHeight: 840,
-    backgroundColor: '#09111f',
+    width: isV3Window ? 1280 : 1500,
+    height: isV3Window ? 800 : 1000,
+    minWidth: isV3Window ? 760 : 1280,
+    minHeight: isV3Window ? 520 : 840,
+    backgroundColor: isV3Window ? '#f4f1eb' : '#09111f',
     title: APP_DISPLAY_NAME,
     ...(windowIconPath ? { icon: windowIconPath } : {}),
     autoHideMenuBar: true,
@@ -4016,7 +4017,7 @@ function createAppWindow(hash = '') {
 }
 
 function createWindow() {
-  mainWindow = createAppWindow()
+  mainWindow = createAppWindow('#v3')
   mainWindow.on('closed', () => {
     mainWindow = null
   })

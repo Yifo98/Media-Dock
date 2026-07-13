@@ -153,3 +153,99 @@ const appApi = {
 
 contextBridge.exposeInMainWorld('appApi', appApi)
 contextBridge.exposeInMainWorld('ytDlpApi', appApi)
+
+let v3Workspace = {
+  contractVersion: 1,
+  revision: 0,
+  tasks: [],
+  deliverables: [],
+  systemOperations: [],
+}
+let v3WorkspaceListener = null
+
+const mediaDockApi = {
+  contractVersion: 1,
+  getWorkspaceSnapshot: async () => v3Workspace,
+  pickLocalSource: async () => action === 'v3LocalFlow' ? 'I:\\素材\\field-note.wav' : null,
+  pickOutputDirectory: async () => action === 'v3LocalFlow' ? 'I:\\成品' : null,
+  inspectSource: async ({ path }) => action === 'v3LocalFlow'
+    ? {
+        status: 'ready',
+        source: {
+          kind: 'local-file',
+          locator: path,
+          displayName: 'field-note.wav',
+          mediaKind: 'audio',
+          durationSeconds: 5,
+          formatName: 'wav',
+        },
+        recipes: [
+          { id: 'audio-compatible', deliverableKind: 'audio', extension: 'm4a' },
+          { id: 'keep-original', deliverableKind: 'source', extension: 'wav' },
+        ],
+      }
+    : null,
+  planTask: async ({ source, outputDirectory }) => ({
+    planVersion: 1,
+    source,
+    recipe: { id: 'audio-compatible', deliverableKind: 'audio', extension: 'm4a' },
+    outputDirectory,
+    deliveryName: 'field-note - 音频.m4a',
+    steps: [
+      { id: 'verify-input', stage: 'preparing' },
+      { id: 'transcode-audio', stage: 'processing', runtime: 'ffmpeg' },
+      { id: 'deliver', stage: 'delivering' },
+    ],
+    runtimeVersions: { ffmpeg: 'fixture-ffmpeg' },
+  }),
+  createTask: async (plan) => {
+    v3Workspace = {
+      ...v3Workspace,
+      revision: 1,
+      tasks: [{
+        id: 'task-v3-fixture',
+        state: 'queued',
+        stage: null,
+        createdAt: '2026-07-13T06:00:00.000Z',
+        updatedAt: '2026-07-13T06:00:00.000Z',
+        plan,
+        problem: null,
+      }],
+    }
+    v3WorkspaceListener?.(v3Workspace)
+    return v3Workspace
+  },
+  runTask: async () => {
+    v3Workspace = {
+      ...v3Workspace,
+      revision: 2,
+      tasks: v3Workspace.tasks.map((task) => ({ ...task, state: 'running', stage: 'processing' })),
+    }
+    v3WorkspaceListener?.(v3Workspace)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    const task = v3Workspace.tasks[0]
+    const deliveryPath = 'I:\\成品\\field-note - 音频.m4a'
+    v3Workspace = {
+      ...v3Workspace,
+      revision: 3,
+      tasks: [{ ...task, state: 'completed', stage: 'delivering', updatedAt: '2026-07-13T06:00:03.000Z' }],
+      deliverables: [{
+        id: 'deliverable-v3-fixture',
+        taskId: task.id,
+        path: deliveryPath,
+        deliveryName: 'field-note - 音频.m4a',
+        createdAt: '2026-07-13T06:00:03.000Z',
+      }],
+    }
+    v3WorkspaceListener?.(v3Workspace)
+    return v3Workspace
+  },
+  onWorkspaceChanged: (listener) => {
+    v3WorkspaceListener = listener
+    return () => {
+      if (v3WorkspaceListener === listener) v3WorkspaceListener = null
+    }
+  },
+}
+
+contextBridge.exposeInMainWorld('mediaDock', mediaDockApi)
