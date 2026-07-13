@@ -68,3 +68,7 @@ test('3.0 Workbench opens with Source Dock and one contextual primary action', (
 test('3.0 Workbench advances one primary action through a completed local-media journey', () => {
   assertRendererAction('v3LocalFlow')
 })
+
+test('3.0 Workbench advances a pasted public link through a completed network-media journey', () => {
+  assertRendererAction('v3NetworkFlow')
+})

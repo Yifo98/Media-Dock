@@ -28,10 +28,10 @@ const messages = {
     dark: '深色',
     eyebrow: 'MEDIA DOCK 3 · 创作视图',
     title: '让来源抵达成品。',
-    subtitle: '添加一份本地媒体，Media Dock 会先理解内容，再为你组织可靠的处理与交付。',
+    subtitle: '添加公开链接或本地媒体，Media Dock 会先理解内容，再为你组织可靠的处理与交付。',
     sourceDock: '来源入口',
-    sourceHint: '链接、文件和文件夹会在这里进入同一条媒体流程。首个切片已支持本地音视频。',
-    sourcePlaceholder: '选择一份本地音视频…',
+    sourceHint: '公开单条链接和本地音视频会在这里进入同一条媒体流程。',
+    sourcePlaceholder: '粘贴公开链接，或选择本地音视频…',
     browse: '浏览',
     clear: '清除来源',
     chooseSource: '选择本地媒体',
@@ -49,6 +49,7 @@ const messages = {
       'video-compatible': ['兼容性视频', '适合常见播放器和剪辑软件的 MP4。'],
       'audio-compatible': ['通用音频', '转换为清晰、易分享的 M4A。'],
       'keep-original': ['保留原始媒体', '不改变媒体内容，安全交付一份原格式成品。'],
+      'network-video': ['通用网络视频', '获取公开链接并交付常用播放器可用的 MP4。'],
     },
     destination: '成品位置',
     destinationHint: '任务会在目标磁盘使用隔离暂存区，验证完成后才显示最终文件。',
@@ -86,10 +87,10 @@ const messages = {
     dark: 'Dark',
     eyebrow: 'MEDIA DOCK 3 · CREATOR VIEW',
     title: 'Bring every source to shore.',
-    subtitle: 'Add local media. Media Dock understands it first, then organizes dependable processing and delivery.',
+    subtitle: 'Add a public link or local media. Media Dock understands it first, then organizes dependable processing and delivery.',
     sourceDock: 'Source Dock',
-    sourceHint: 'Links, files, and folders enter one media flow here. The first slice supports local audio and video.',
-    sourcePlaceholder: 'Choose local audio or video…',
+    sourceHint: 'Public single-item links and local media enter one dependable flow here.',
+    sourcePlaceholder: 'Paste a public link or choose local media…',
     browse: 'Browse',
     clear: 'Clear source',
     chooseSource: 'Choose local media',
@@ -107,6 +108,7 @@ const messages = {
       'video-compatible': ['Compatible video', 'An MP4 for common players and editing tools.'],
       'audio-compatible': ['Universal audio', 'A clear, shareable M4A deliverable.'],
       'keep-original': ['Keep original media', 'Deliver the original format without changing its content.'],
+      'network-video': ['Universal network video', 'Acquire a public link and deliver a broadly compatible MP4.'],
     },
     destination: 'Deliverable location',
     destinationHint: 'The task stages on the target volume and reveals the final name only after verification.',
@@ -272,7 +274,10 @@ export default function MediaDockV3App() {
     setBusy(true)
     setErrorMessage(null)
     try {
-      const nextInspection = await api.inspectSource({ kind: 'local-file', path: sourcePath.trim() })
+      const sourceValue = sourcePath.trim()
+      const nextInspection = await api.inspectSource(/^https?:\/\//iu.test(sourceValue)
+        ? { kind: 'network-url', url: sourceValue }
+        : { kind: 'local-file', path: sourceValue })
       setInspection(nextInspection)
       setSelectedRecipe(nextInspection.status === 'ready' ? nextInspection.recipes[0]?.id ?? null : null)
     } catch (error) {
@@ -466,7 +471,7 @@ export default function MediaDockV3App() {
           {!readyInspection && !activeTask ? <p>{copy.emptyInspector}</p> : (
             <div className="md3-inspector-content">
               {readyInspection && <section><span>SOURCE</span><strong>{readyInspection.source.displayName}</strong><small title={readyInspection.source.locator}>{readyInspection.source.locator}</small></section>}
-              {plan && <section><span>{copy.plan.toUpperCase()}</span><strong>{plan.deliveryName}</strong><small>{plan.outputDirectory}</small><h3>{copy.steps}</h3><ol>{plan.steps.map((step) => <li key={step.id}><i />{copy.stage[step.stage]}</li>)}</ol><code>FFmpeg · {plan.runtimeVersions.ffmpeg}</code></section>}
+              {plan && <section><span>{copy.plan.toUpperCase()}</span><strong>{plan.deliveryName}</strong><small>{plan.outputDirectory}</small><h3>{copy.steps}</h3><ol>{plan.steps.map((step) => <li key={step.id}><i />{copy.stage[step.stage]}</li>)}</ol><code>{plan.runtimeVersions.ytDlp ? `yt-dlp · ${plan.runtimeVersions.ytDlp} / ` : ''}FFmpeg · {plan.runtimeVersions.ffmpeg}</code></section>}
               {activeTask?.problem && <section className="is-problem"><span>{copy.problem.toUpperCase()}</span><strong>{activeTask.problem.code}</strong></section>}
             </div>
           )}

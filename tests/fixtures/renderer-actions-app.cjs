@@ -42,7 +42,7 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3LocalFlow' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3LocalFlow' || action === 'v3NetworkFlow' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3Workbench') {
       const workbenchReady = await waitFor(
@@ -95,6 +95,43 @@ app.whenReady().then(async () => {
       )
       if (!delivered) throw new Error('Completed Deliverable did not appear in Deliverable Library')
       console.log('[GREEN] Media Dock 3 advances one primary action through a completed local-media journey.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3NetworkFlow') {
+      async function clickPrimary(label) {
+        const ready = await waitFor(
+          win,
+          `Array.from(document.querySelectorAll('.md3-primary-action')).some((button) => button.textContent.trim().startsWith(${JSON.stringify(label)}) && !button.disabled)`,
+        )
+        if (!ready) throw new Error(`Primary action did not reach: ${label}`)
+        await win.webContents.executeJavaScript(`
+          Array.from(document.querySelectorAll('.md3-primary-action'))
+            .find((button) => button.textContent.trim().startsWith(${JSON.stringify(label)}))
+            .click()
+        `, true)
+      }
+
+      const inputReady = await waitFor(win, `Boolean(document.querySelector('.md3-source-field input'))`)
+      if (!inputReady) throw new Error('Source Dock input did not render')
+      await win.webContents.executeJavaScript(`
+        (() => {
+          const input = document.querySelector('.md3-source-field input')
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+          setter.call(input, 'https://media.example/watch?v=42')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })()
+      `, true)
+      await clickPrimary('检查来源')
+      await clickPrimary('选择成品位置')
+      await clickPrimary('开始处理')
+      await clickPrimary('查看成品')
+      const delivered = await waitFor(
+        win,
+        `document.body.innerText.includes('成品库') && document.body.innerText.includes('山海 Episode 42 - 视频.mp4')`,
+      )
+      if (!delivered) throw new Error('Completed network Deliverable did not appear in Deliverable Library')
+      console.log('[GREEN] Media Dock 3 advances a pasted public link through a completed network-media journey.')
       app.exit(0)
       return
     }

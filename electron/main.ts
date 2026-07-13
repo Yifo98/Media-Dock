@@ -4039,11 +4039,11 @@ function createMediaToolsWindow() {
   return mediaToolsWindow
 }
 
-async function probeMediaRuntimeVersion(command: string) {
+async function probeMediaRuntimeVersion(command: string, args = ['-version']) {
   try {
     const result = await runRuntimeProcessCollectOutput({
       command,
-      args: ['-version'],
+      args,
       timeoutMs: 10_000,
       workingDirectory: getDevRootDir(),
       env: process.env,
@@ -4057,9 +4057,11 @@ async function probeMediaRuntimeVersion(command: string) {
 async function initializeV3TaskEngine() {
   const ffmpegCommand = getFfmpegPath()
   const ffprobeCommand = getFfprobePath()
-  const [ffmpegVersion, ffprobeVersion] = await Promise.all([
+  const ytDlpCommand = getYtDlpPath()
+  const [ffmpegVersion, ffprobeVersion, ytDlpVersion] = await Promise.all([
     probeMediaRuntimeVersion(ffmpegCommand),
     probeMediaRuntimeVersion(ffprobeCommand),
+    probeMediaRuntimeVersion(ytDlpCommand, ['--version']),
   ])
 
   v3TaskEngine = createMediaTaskEngine({
@@ -4067,6 +4069,7 @@ async function initializeV3TaskEngine() {
     managedRuntimes: {
       ffmpeg: { command: ffmpegCommand, version: ffmpegVersion },
       ffprobe: { command: ffprobeCommand, version: ffprobeVersion },
+      ytDlp: { command: ytDlpCommand, version: ytDlpVersion },
     },
   })
   unregisterV3Ipc = registerMediaDockV3Ipc(

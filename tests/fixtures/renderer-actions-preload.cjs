@@ -167,13 +167,13 @@ const mediaDockApi = {
   contractVersion: 1,
   getWorkspaceSnapshot: async () => v3Workspace,
   pickLocalSource: async () => action === 'v3LocalFlow' ? 'I:\\素材\\field-note.wav' : null,
-  pickOutputDirectory: async () => action === 'v3LocalFlow' ? 'I:\\成品' : null,
-  inspectSource: async ({ path }) => action === 'v3LocalFlow'
+  pickOutputDirectory: async () => action === 'v3LocalFlow' || action === 'v3NetworkFlow' ? 'I:\\成品' : null,
+  inspectSource: async (input) => action === 'v3LocalFlow'
     ? {
         status: 'ready',
         source: {
           kind: 'local-file',
-          locator: path,
+          locator: input.path,
           displayName: 'field-note.wav',
           mediaKind: 'audio',
           durationSeconds: 5,
@@ -184,19 +184,46 @@ const mediaDockApi = {
           { id: 'keep-original', deliverableKind: 'source', extension: 'wav' },
         ],
       }
-    : null,
+    : action === 'v3NetworkFlow'
+      ? {
+          status: 'ready',
+          source: {
+            kind: 'network-url',
+            locator: input.url,
+            displayName: '山海 Episode 42',
+            mediaKind: 'video',
+            durationSeconds: 42.5,
+            formatName: 'webm',
+            sourceId: 'public-episode-42',
+            serviceName: 'FixtureTV',
+          },
+          recipes: [
+            { id: 'network-video', deliverableKind: 'video', extension: 'mp4' },
+          ],
+        }
+      : null,
   planTask: async ({ source, outputDirectory }) => ({
     planVersion: 1,
     source,
-    recipe: { id: 'audio-compatible', deliverableKind: 'audio', extension: 'm4a' },
+    recipe: source.kind === 'network-url'
+      ? { id: 'network-video', deliverableKind: 'video', extension: 'mp4' }
+      : { id: 'audio-compatible', deliverableKind: 'audio', extension: 'm4a' },
     outputDirectory,
-    deliveryName: 'field-note - 音频.m4a',
-    steps: [
-      { id: 'verify-input', stage: 'preparing' },
-      { id: 'transcode-audio', stage: 'processing', runtime: 'ffmpeg' },
-      { id: 'deliver', stage: 'delivering' },
-    ],
-    runtimeVersions: { ffmpeg: 'fixture-ffmpeg' },
+    deliveryName: source.kind === 'network-url' ? '山海 Episode 42 - 视频.mp4' : 'field-note - 音频.m4a',
+    steps: source.kind === 'network-url'
+      ? [
+          { id: 'verify-input', stage: 'preparing' },
+          { id: 'acquire-network', stage: 'acquiring', runtime: 'yt-dlp' },
+          { id: 'deliver', stage: 'delivering' },
+        ]
+      : [
+          { id: 'verify-input', stage: 'preparing' },
+          { id: 'transcode-audio', stage: 'processing', runtime: 'ffmpeg' },
+          { id: 'deliver', stage: 'delivering' },
+        ],
+    runtimeVersions: source.kind === 'network-url'
+      ? { ffmpeg: 'fixture-ffmpeg', ytDlp: '2026.07.04-fixture' }
+      : { ffmpeg: 'fixture-ffmpeg' },
   }),
   createTask: async (plan) => {
     v3Workspace = {
@@ -219,12 +246,12 @@ const mediaDockApi = {
     v3Workspace = {
       ...v3Workspace,
       revision: 2,
-      tasks: v3Workspace.tasks.map((task) => ({ ...task, state: 'running', stage: 'processing' })),
+      tasks: v3Workspace.tasks.map((task) => ({ ...task, state: 'running', stage: task.plan.source.kind === 'network-url' ? 'acquiring' : 'processing' })),
     }
     v3WorkspaceListener?.(v3Workspace)
     await new Promise((resolve) => setTimeout(resolve, 80))
     const task = v3Workspace.tasks[0]
-    const deliveryPath = 'I:\\成品\\field-note - 音频.m4a'
+    const deliveryPath = `I:\\成品\\${task.plan.deliveryName}`
     v3Workspace = {
       ...v3Workspace,
       revision: 3,
@@ -233,7 +260,7 @@ const mediaDockApi = {
         id: 'deliverable-v3-fixture',
         taskId: task.id,
         path: deliveryPath,
-        deliveryName: 'field-note - 音频.m4a',
+        deliveryName: task.plan.deliveryName,
         createdAt: '2026-07-13T06:00:03.000Z',
       }],
     }

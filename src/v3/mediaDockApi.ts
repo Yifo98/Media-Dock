@@ -10,8 +10,21 @@ export type InspectedLocalSource = Readonly<{
   formatName: string
 }>
 
+export type InspectedNetworkSource = Readonly<{
+  kind: 'network-url'
+  locator: string
+  displayName: string
+  mediaKind: 'video' | 'audio'
+  durationSeconds: number | null
+  formatName: string
+  sourceId: string
+  serviceName: string
+}>
+
+export type InspectedSource = InspectedLocalSource | InspectedNetworkSource
+
 export type DeliverableRecipeOption = Readonly<{
-  id: 'video-compatible' | 'audio-compatible' | 'keep-original'
+  id: 'video-compatible' | 'audio-compatible' | 'keep-original' | 'network-video'
   deliverableKind: 'video' | 'audio' | 'source'
   extension: string
 }>
@@ -28,7 +41,7 @@ export type ProblemSnapshot = Readonly<{
 export type SourceInspection =
   | Readonly<{
       status: 'ready'
-      source: InspectedLocalSource
+      source: InspectedSource
       recipes: readonly DeliverableRecipeOption[]
     }>
   | Readonly<{
@@ -37,19 +50,19 @@ export type SourceInspection =
     }>
 
 export type TaskPlanStep = Readonly<{
-  id: 'verify-input' | 'transcode-audio' | 'deliver'
-  stage: 'preparing' | 'processing' | 'delivering'
-  runtime?: 'ffmpeg'
+  id: 'verify-input' | 'transcode-audio' | 'acquire-network' | 'deliver'
+  stage: 'preparing' | 'acquiring' | 'processing' | 'delivering'
+  runtime?: 'ffmpeg' | 'yt-dlp'
 }>
 
 export type TaskPlan = Readonly<{
   planVersion: 1
-  source: InspectedLocalSource
+  source: InspectedSource
   recipe: DeliverableRecipeOption
   outputDirectory: string
   deliveryName: string
   steps: readonly TaskPlanStep[]
-  runtimeVersions: Readonly<{ ffmpeg: string }>
+  runtimeVersions: Readonly<{ ffmpeg: string; ytDlp?: string }>
 }>
 
 export type MediaTaskSnapshot = Readonly<{
@@ -79,7 +92,7 @@ export type WorkspaceSnapshot = Readonly<{
 }>
 
 export type PlanTaskInput = Readonly<{
-  source: InspectedLocalSource
+  source: InspectedSource
   recipeId: DeliverableRecipeOption['id']
   outputDirectory: string
   language: Language
@@ -90,7 +103,7 @@ export type MediaDockV3Api = Readonly<{
   getWorkspaceSnapshot(): Promise<WorkspaceSnapshot>
   pickLocalSource(currentPath?: string): Promise<string | null>
   pickOutputDirectory(currentPath?: string): Promise<string | null>
-  inspectSource(input: Readonly<{ kind: 'local-file'; path: string }>): Promise<SourceInspection>
+  inspectSource(input: Readonly<{ kind: 'local-file'; path: string }> | Readonly<{ kind: 'network-url'; url: string }>): Promise<SourceInspection>
   planTask(input: PlanTaskInput): Promise<TaskPlan>
   createTask(plan: TaskPlan): Promise<WorkspaceSnapshot>
   runTask(taskId: string): Promise<WorkspaceSnapshot>

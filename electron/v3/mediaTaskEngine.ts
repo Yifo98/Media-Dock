@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { runRuntimeProcessCollectOutput } from '../core/runtimeProcess.js'
 import { sanitizeDeliveryFileName } from './deliveryNaming.js'
 import { getLocalMediaRecipeOptions, inspectLocalMediaSource } from './localMediaSourceAdapter.js'
+import { getNetworkMediaRecipeOptions, inspectNetworkMediaSource } from './networkMediaSourceAdapter.js'
 
 export const MEDIA_DOCK_CONTRACT_VERSION = 1 as const
 
@@ -27,6 +28,13 @@ export type LocalFileSourceInput = Readonly<{
   path: string
 }>
 
+export type NetworkUrlSourceInput = Readonly<{
+  kind: 'network-url'
+  url: string
+}>
+
+export type SourceInput = LocalFileSourceInput | NetworkUrlSourceInput
+
 export type InspectedLocalSource = Readonly<{
   kind: 'local-file'
   locator: string
@@ -36,15 +44,28 @@ export type InspectedLocalSource = Readonly<{
   formatName: string
 }>
 
+export type InspectedNetworkSource = Readonly<{
+  kind: 'network-url'
+  locator: string
+  displayName: string
+  mediaKind: 'video' | 'audio'
+  durationSeconds: number | null
+  formatName: string
+  sourceId: string
+  serviceName: string
+}>
+
+export type InspectedSource = InspectedLocalSource | InspectedNetworkSource
+
 export type DeliverableRecipeOption = Readonly<{
-  id: 'video-compatible' | 'audio-compatible' | 'keep-original'
+  id: 'video-compatible' | 'audio-compatible' | 'keep-original' | 'network-video'
   deliverableKind: 'video' | 'audio' | 'source'
   extension: string
 }>
 
 export type ReadySourceInspection = Readonly<{
   status: 'ready'
-  source: InspectedLocalSource
+  source: InspectedSource
   recipes: readonly DeliverableRecipeOption[]
 }>
 
@@ -56,7 +77,7 @@ export type ProblemAction = Readonly<{
 export type ProblemSnapshot = Readonly<{
   code: string
   category: 'source' | 'media-processing'
-  stage: 'preparing' | 'processing' | 'delivering'
+  stage: 'preparing' | 'acquiring' | 'processing' | 'delivering'
   titleKey: string
   summaryKey: string
   actions: readonly ProblemAction[]
@@ -70,20 +91,21 @@ export type NeedsAttentionSourceInspection = Readonly<{
 export type SourceInspection = ReadySourceInspection | NeedsAttentionSourceInspection
 
 export type TaskPlanStep = Readonly<{
-  id: 'verify-input' | 'transcode-audio' | 'deliver'
-  stage: 'preparing' | 'processing' | 'delivering'
-  runtime?: 'ffmpeg'
+  id: 'verify-input' | 'transcode-audio' | 'acquire-network' | 'deliver'
+  stage: 'preparing' | 'acquiring' | 'processing' | 'delivering'
+  runtime?: 'ffmpeg' | 'yt-dlp'
 }>
 
 export type TaskPlan = Readonly<{
   planVersion: 1
-  source: InspectedLocalSource
+  source: InspectedSource
   recipe: DeliverableRecipeOption
   outputDirectory: string
   deliveryName: string
   steps: readonly TaskPlanStep[]
   runtimeVersions: Readonly<{
     ffmpeg: string
+    ytDlp?: string
   }>
 }>
 
@@ -98,7 +120,7 @@ export type MediaTaskSnapshot = Readonly<{
 }>
 
 export type PlanTaskInput = Readonly<{
-  source: InspectedLocalSource
+  source: InspectedSource
   recipeId: DeliverableRecipeOption['id']
   outputDirectory: string
   language: 'zh-CN' | 'en'
@@ -106,6 +128,7 @@ export type PlanTaskInput = Readonly<{
 
 export type ManagedRuntimeReference = Readonly<{
   command: string
+  argsPrefix?: readonly string[]
   version: string
 }>
 
@@ -118,7 +141,7 @@ export type WorkspaceSnapshot = Readonly<{
 }>
 
 export type MediaTaskEngine = Readonly<{
-  inspectSource(input: LocalFileSourceInput): Promise<SourceInspection>
+  inspectSource(input: SourceInput): Promise<SourceInspection>
   planTask(input: PlanTaskInput): Promise<TaskPlan>
   createTask(plan: TaskPlan): WorkspaceSnapshot
   runTask(taskId: string): Promise<WorkspaceSnapshot>
@@ -132,6 +155,7 @@ export type CreateMediaTaskEngineOptions = Readonly<{
   managedRuntimes?: Readonly<{
     ffprobe?: ManagedRuntimeReference
     ffmpeg?: ManagedRuntimeReference
+    ytDlp?: ManagedRuntimeReference
   }>
   idFactory?: (kind: 'task' | 'deliverable') => string
   now?: () => Date
@@ -283,16 +307,20 @@ async function assertWritableOutputDirectory(outputDirectory: string): Promise<v
   await access(outputDirectory, constants.W_OK)
 }
 
-function createDeliveryName(source: InspectedLocalSource, recipe: DeliverableRecipeOption, language: PlanTaskInput['language']): string {
-  if (recipe.id === 'keep-original') {
+function createDeliveryName(source: InspectedSource, recipe: DeliverableRecipeOption, language: PlanTaskInput['language']): string {
+  if (source.kind === 'local-file' && recipe.id === 'keep-original') {
     return source.displayName
   }
 
   const sourceExtension = path.extname(source.displayName)
-  const sourceStem = path.basename(source.displayName, sourceExtension)
+  const sourceStem = source.kind === 'network-url'
+    ? source.displayName
+    : path.basename(source.displayName, sourceExtension)
   const role = recipe.id === 'audio-compatible'
     ? language === 'zh-CN' ? '音频' : 'Audio'
-    : language === 'zh-CN' ? '兼容视频' : 'Compatible Video'
+    : recipe.id === 'network-video'
+      ? language === 'zh-CN' ? '视频' : 'Video'
+      : language === 'zh-CN' ? '兼容视频' : 'Compatible Video'
 
   return sanitizeDeliveryFileName(`${sourceStem} - ${role}.${recipe.extension}`)
 }
@@ -302,6 +330,14 @@ function createTaskPlanSteps(recipe: DeliverableRecipeOption): readonly TaskPlan
     return Object.freeze([
       Object.freeze({ id: 'verify-input', stage: 'preparing' }),
       Object.freeze({ id: 'transcode-audio', stage: 'processing', runtime: 'ffmpeg' }),
+      Object.freeze({ id: 'deliver', stage: 'delivering' }),
+    ])
+  }
+
+  if (recipe.id === 'network-video') {
+    return Object.freeze([
+      Object.freeze({ id: 'verify-input', stage: 'preparing' }),
+      Object.freeze({ id: 'acquire-network', stage: 'acquiring', runtime: 'yt-dlp' }),
       Object.freeze({ id: 'deliver', stage: 'delivering' }),
     ])
   }
@@ -363,12 +399,20 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   }
 
   return Object.freeze({
-    async inspectSource(input: LocalFileSourceInput): Promise<SourceInspection> {
+    async inspectSource(input: SourceInput): Promise<SourceInspection> {
       if (isClosed) {
         throw new Error('Media Task Engine is closed.')
       }
 
-      return await inspectLocalMediaSource(input.path, options.managedRuntimes?.ffprobe?.command ?? 'ffprobe')
+      if (input.kind === 'local-file') {
+        return await inspectLocalMediaSource(input.path, options.managedRuntimes?.ffprobe?.command ?? 'ffprobe')
+      }
+
+      const ytDlp = options.managedRuntimes?.ytDlp
+      if (!ytDlp) {
+        throw new Error('The yt-dlp managed runtime is required to inspect a network source.')
+      }
+      return await inspectNetworkMediaSource(input.url, ytDlp)
     },
 
     async planTask(input: PlanTaskInput): Promise<TaskPlan> {
@@ -378,7 +422,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
 
       await assertWritableOutputDirectory(input.outputDirectory)
 
-      const recipe = getLocalMediaRecipeOptions(input.source.mediaKind, input.source.locator)
+      const recipeOptions = input.source.kind === 'local-file'
+        ? getLocalMediaRecipeOptions(input.source.mediaKind, input.source.locator)
+        : getNetworkMediaRecipeOptions()
+      const recipe = recipeOptions
         .find((candidate) => candidate.id === input.recipeId)
       if (!recipe) {
         throw new Error(`Recipe ${input.recipeId} is not compatible with ${input.source.mediaKind} media.`)
@@ -389,6 +436,11 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         throw new Error('The FFmpeg managed runtime is required to plan this task.')
       }
 
+      const ytDlp = input.source.kind === 'network-url' ? options.managedRuntimes?.ytDlp : undefined
+      if (input.source.kind === 'network-url' && !ytDlp) {
+        throw new Error('The yt-dlp managed runtime is required to plan this task.')
+      }
+
       return freezeTaskPlan({
         planVersion: 1,
         source: input.source,
@@ -396,7 +448,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         outputDirectory: input.outputDirectory,
         deliveryName: createDeliveryName(input.source, recipe, input.language),
         steps: createTaskPlanSteps(recipe),
-        runtimeVersions: Object.freeze({ ffmpeg: ffmpeg.version }),
+        runtimeVersions: Object.freeze({
+          ffmpeg: ffmpeg.version,
+          ...(ytDlp ? { ytDlp: ytDlp.version } : {}),
+        }),
       })
     },
 
@@ -443,6 +498,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       if (!ffmpeg || ffmpeg.version !== task.plan.runtimeVersions.ffmpeg) {
         throw new Error(`Media Task ${taskId} requires FFmpeg ${task.plan.runtimeVersions.ffmpeg}.`)
       }
+      const ytDlp = task.plan.source.kind === 'network-url' ? options.managedRuntimes?.ytDlp : undefined
+      if (task.plan.source.kind === 'network-url' && (!ytDlp || ytDlp.version !== task.plan.runtimeVersions.ytDlp)) {
+        throw new Error(`Media Task ${taskId} requires yt-dlp ${task.plan.runtimeVersions.ytDlp}.`)
+      }
 
       updateTaskExecutionState(
         database,
@@ -461,9 +520,11 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
 
       try {
         await assertWritableOutputDirectory(task.plan.outputDirectory)
-        const sourceStat = await stat(task.plan.source.locator)
-        if (!sourceStat.isFile()) {
-          throw new Error(`Local media source is not a file: ${task.plan.source.locator}`)
+        if (task.plan.source.kind === 'local-file') {
+          const sourceStat = await stat(task.plan.source.locator)
+          if (!sourceStat.isFile()) {
+            throw new Error(`Local media source is not a file: ${task.plan.source.locator}`)
+          }
         }
         if (await pathExists(finalDeliveryPath)) {
           throw new Error(`Delivery already exists: ${finalDeliveryPath}`)
@@ -474,33 +535,58 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
           database,
           taskId,
           'running',
-          'processing',
+          task.plan.source.kind === 'network-url' ? 'acquiring' : 'processing',
           (options.now?.() ?? new Date()).toISOString(),
           null,
         )
         publishWorkspace()
 
-        await runRuntimeProcessCollectOutput({
-          command: ffmpeg.command,
-          args: [
-            '-hide_banner',
-            '-loglevel',
-            'error',
-            '-nostdin',
-            '-y',
-            '-i',
-            task.plan.source.locator,
-            '-vn',
-            '-c:a',
-            'aac',
-            '-b:a',
-            '192k',
-            stagedDeliveryPath,
-          ],
-          timeoutMs: 120_000,
-          workingDirectory: taskStagingDirectory,
-          env: process.env,
-        })
+        if (task.plan.source.kind === 'network-url' && ytDlp) {
+          await runRuntimeProcessCollectOutput({
+            command: ytDlp.command,
+            args: [
+              ...(ytDlp.argsPrefix ?? []),
+              '--no-update',
+              '--no-playlist',
+              '--newline',
+              '--ffmpeg-location',
+              path.isAbsolute(ffmpeg.command) ? path.dirname(ffmpeg.command) : ffmpeg.command,
+              '-f',
+              'bv*+ba/b',
+              '--merge-output-format',
+              'mp4',
+              '--output',
+              stagedDeliveryPath,
+              task.plan.source.locator,
+            ],
+            timeoutMs: 30 * 60_000,
+            workingDirectory: taskStagingDirectory,
+            env: process.env,
+          })
+        } else {
+          await runRuntimeProcessCollectOutput({
+            command: ffmpeg.command,
+            args: [
+              ...(ffmpeg.argsPrefix ?? []),
+              '-hide_banner',
+              '-loglevel',
+              'error',
+              '-nostdin',
+              '-y',
+              '-i',
+              task.plan.source.locator,
+              '-vn',
+              '-c:a',
+              'aac',
+              '-b:a',
+              '192k',
+              stagedDeliveryPath,
+            ],
+            timeoutMs: 120_000,
+            workingDirectory: taskStagingDirectory,
+            env: process.env,
+          })
+        }
 
         const stagedStat = await stat(stagedDeliveryPath)
         if (!stagedStat.isFile() || stagedStat.size === 0) {
@@ -537,12 +623,13 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         await rmdir(stagingRoot).catch(() => undefined)
         return publishWorkspace()
       } catch (error) {
+        const isNetworkTask = task.plan.source.kind === 'network-url'
         const problem = Object.freeze({
-          code: 'media.processing.failed',
+          code: isNetworkTask ? 'network.acquisition.failed' : 'media.processing.failed',
           category: 'media-processing' as const,
-          stage: 'processing' as const,
-          titleKey: 'problem.mediaProcessingFailed.title',
-          summaryKey: 'problem.mediaProcessingFailed.summary',
+          stage: isNetworkTask ? 'acquiring' as const : 'processing' as const,
+          titleKey: isNetworkTask ? 'problem.networkAcquisitionFailed.title' : 'problem.mediaProcessingFailed.title',
+          summaryKey: isNetworkTask ? 'problem.networkAcquisitionFailed.summary' : 'problem.mediaProcessingFailed.summary',
           actions: Object.freeze([
             Object.freeze({ id: 'retry-task', kind: 'retry-task' as const }),
           ]),
@@ -551,7 +638,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
           database,
           taskId,
           'needs-attention',
-          'processing',
+          isNetworkTask ? 'acquiring' : 'processing',
           (options.now?.() ?? new Date()).toISOString(),
           problem,
         )

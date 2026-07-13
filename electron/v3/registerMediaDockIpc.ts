@@ -46,21 +46,27 @@ function optionalString(value: unknown, label: string): string | undefined {
   return requireString(value, label)
 }
 
-function parseLocalSourceInput(value: unknown) {
+function parseSourceInput(value: unknown) {
   const input = requireRecord(value, 'Source input')
-  if (input.kind !== 'local-file') {
-    throw new TypeError('Source input kind must be local-file.')
+  if (input.kind === 'local-file') {
+    return Object.freeze({
+      kind: 'local-file' as const,
+      path: requireString(input.path, 'Source path'),
+    })
   }
-  return Object.freeze({
-    kind: 'local-file' as const,
-    path: requireString(input.path, 'Source path'),
-  })
+  if (input.kind === 'network-url') {
+    return Object.freeze({
+      kind: 'network-url' as const,
+      url: requireString(input.url, 'Source URL'),
+    })
+  }
+  throw new TypeError('Source input kind must be local-file or network-url.')
 }
 
-function parseInspectedLocalSource(value: unknown): PlanTaskInput['source'] {
+function parseInspectedSource(value: unknown): PlanTaskInput['source'] {
   const source = requireRecord(value, 'Inspected Source')
-  if (source.kind !== 'local-file') {
-    throw new TypeError('Inspected Source kind must be local-file.')
+  if (source.kind !== 'local-file' && source.kind !== 'network-url') {
+    throw new TypeError('Inspected Source kind is unsupported.')
   }
   if (!['video', 'audio', 'unknown'].includes(String(source.mediaKind))) {
     throw new TypeError('Inspected Source mediaKind is unsupported.')
@@ -68,26 +74,38 @@ function parseInspectedLocalSource(value: unknown): PlanTaskInput['source'] {
   if (source.durationSeconds !== null && typeof source.durationSeconds !== 'number') {
     throw new TypeError('Inspected Source durationSeconds must be a number or null.')
   }
-  return Object.freeze({
-    kind: 'local-file',
+  const common = {
     locator: requireString(source.locator, 'Source locator'),
     displayName: requireString(source.displayName, 'Source displayName'),
     mediaKind: source.mediaKind as PlanTaskInput['source']['mediaKind'],
     durationSeconds: source.durationSeconds as number | null,
     formatName: requireString(source.formatName, 'Source formatName'),
-  })
+  }
+  if (source.kind === 'network-url') {
+    if (source.mediaKind !== 'video' && source.mediaKind !== 'audio') {
+      throw new TypeError('Network Source mediaKind must be video or audio.')
+    }
+    return Object.freeze({
+      kind: 'network-url',
+      ...common,
+      mediaKind: source.mediaKind as 'video' | 'audio',
+      sourceId: requireString(source.sourceId, 'Source id'),
+      serviceName: requireString(source.serviceName, 'Source serviceName'),
+    })
+  }
+  return Object.freeze({ kind: 'local-file', ...common })
 }
 
 function parsePlanTaskInput(value: unknown): PlanTaskInput {
   const input = requireRecord(value, 'Task Plan input')
-  if (!['video-compatible', 'audio-compatible', 'keep-original'].includes(String(input.recipeId))) {
+  if (!['video-compatible', 'audio-compatible', 'keep-original', 'network-video'].includes(String(input.recipeId))) {
     throw new TypeError('Task Plan recipeId is unsupported.')
   }
   if (input.language !== 'zh-CN' && input.language !== 'en') {
     throw new TypeError('Task Plan language must be zh-CN or en.')
   }
   return Object.freeze({
-    source: parseInspectedLocalSource(input.source),
+    source: parseInspectedSource(input.source),
     recipeId: input.recipeId as PlanTaskInput['recipeId'],
     outputDirectory: requireString(input.outputDirectory, 'Task Plan outputDirectory'),
     language: input.language,
@@ -100,7 +118,7 @@ function parseTaskPlan(value: unknown): TaskPlan {
     throw new TypeError('Task Plan version is unsupported.')
   }
   const recipe = requireRecord(plan.recipe, 'Task Plan recipe')
-  if (!['video-compatible', 'audio-compatible', 'keep-original'].includes(String(recipe.id))) {
+  if (!['video-compatible', 'audio-compatible', 'keep-original', 'network-video'].includes(String(recipe.id))) {
     throw new TypeError('Task Plan recipe is unsupported.')
   }
   if (!['video', 'audio', 'source'].includes(String(recipe.deliverableKind))) {
@@ -113,7 +131,7 @@ function parseTaskPlan(value: unknown): TaskPlan {
 
   return Object.freeze({
     planVersion: 1,
-    source: parseInspectedLocalSource(plan.source),
+    source: parseInspectedSource(plan.source),
     recipe: Object.freeze({
       id: recipe.id as TaskPlan['recipe']['id'],
       deliverableKind: recipe.deliverableKind as TaskPlan['recipe']['deliverableKind'],
@@ -128,11 +146,14 @@ function parseTaskPlan(value: unknown): TaskPlan {
         stage: requireString(step.stage, `Task Plan step ${index + 1} stage`) as TaskPlan['steps'][number]['stage'],
         ...(step.runtime === undefined
           ? {}
-          : { runtime: requireString(step.runtime, `Task Plan step ${index + 1} runtime`) as 'ffmpeg' }),
+          : { runtime: requireString(step.runtime, `Task Plan step ${index + 1} runtime`) as 'ffmpeg' | 'yt-dlp' }),
       })
     })),
     runtimeVersions: Object.freeze({
       ffmpeg: requireString(runtimeVersions.ffmpeg, 'Task Plan FFmpeg version'),
+      ...(runtimeVersions.ytDlp === undefined
+        ? {}
+        : { ytDlp: requireString(runtimeVersions.ytDlp, 'Task Plan yt-dlp version') }),
     }),
   })
 }
@@ -146,7 +167,7 @@ export function registerMediaDockV3Ipc(
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.getWorkspace, () => engine.getWorkspaceSnapshot())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickLocalSource, (_event, payload) => pickers.pickLocalSource(optionalString(payload, 'Current source path')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory, (_event, payload) => pickers.pickOutputDirectory(optionalString(payload, 'Current output directory')))
-  ipc.handle(MEDIA_DOCK_V3_CHANNELS.inspectSource, (_event, payload) => engine.inspectSource(parseLocalSourceInput(payload)))
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.inspectSource, (_event, payload) => engine.inspectSource(parseSourceInput(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.planTask, (_event, payload) => engine.planTask(parsePlanTaskInput(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.createTask, (_event, payload) => engine.createTask(parseTaskPlan(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.runTask, (_event, payload) => engine.runTask(requireString(payload, 'Media Task id')))

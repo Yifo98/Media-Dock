@@ -40,6 +40,34 @@ function writeSilentWave(filePath) {
   writeFileSync(filePath, buffer)
 }
 
+function writeFakeYtDlp(filePath) {
+  writeFileSync(filePath, `
+const { writeFileSync } = require('node:fs')
+
+const args = process.argv.slice(2)
+if (args.includes('--dump-single-json')) {
+  process.stdout.write(JSON.stringify({
+    id: 'public-episode-42',
+    title: '山海 Episode 42',
+    duration: 42.5,
+    webpage_url: 'https://media.example/watch?v=42',
+    extractor_key: 'FixtureTV',
+    ext: 'webm',
+    vcodec: 'vp9',
+    acodec: 'opus',
+  }))
+  process.exit(0)
+}
+
+const outputFlag = args.indexOf('--output')
+if (outputFlag === -1 || !args[outputFlag + 1]) {
+  process.stderr.write('missing --output')
+  process.exit(2)
+}
+writeFileSync(args[outputFlag + 1], Buffer.from('fixture-network-media'))
+`)
+}
+
 const ffprobeCommand = process.env.MEDIA_DOCK_TEST_FFPROBE ?? 'ffprobe'
 const hasFfprobe = spawnSync(ffprobeCommand, ['-version'], { stdio: 'ignore' }).status === 0
 const ffmpegCommand = process.env.MEDIA_DOCK_TEST_FFMPEG ?? 'ffmpeg'
@@ -319,6 +347,144 @@ test('Source Inspection returns an actionable Problem when a local file is missi
         },
       })
       assert.equal(engine.getWorkspaceSnapshot().revision, 0)
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('Source Inspection resolves a public network URL through the pinned yt-dlp runtime', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const fakeYtDlpPath = path.join(rootDirectory, 'fake-yt-dlp.cjs')
+    writeFakeYtDlp(fakeYtDlpPath)
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: '2026.07.04-fixture' },
+      },
+    })
+
+    try {
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://media.example/watch?v=42',
+      })
+
+      assert.deepEqual(inspection, {
+        status: 'ready',
+        source: {
+          kind: 'network-url',
+          locator: 'https://media.example/watch?v=42',
+          displayName: '山海 Episode 42',
+          mediaKind: 'video',
+          durationSeconds: 42.5,
+          formatName: 'webm',
+          sourceId: 'public-episode-42',
+          serviceName: 'FixtureTV',
+        },
+        recipes: [
+          { id: 'network-video', deliverableKind: 'video', extension: 'mp4' },
+        ],
+      })
+      assert.equal(engine.getWorkspaceSnapshot().revision, 0)
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('a queued network task acquires into staging and safely delivers an indexed MP4', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const fakeYtDlpPath = path.join(rootDirectory, 'fake-yt-dlp.cjs')
+    const outputDirectory = path.join(rootDirectory, '中文 成品')
+    writeFakeYtDlp(fakeYtDlpPath)
+    mkdirSync(outputDirectory)
+    let timestampOffset = 0
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      idFactory: (kind) => kind === 'task' ? 'task-network-001' : 'deliverable-network-001',
+      now: () => new Date(Date.parse('2026-07-13T06:00:00.000Z') + timestampOffset++ * 1_000),
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: '2026.07.04-fixture' },
+        ffmpeg: { command: 'ffmpeg', version: '7.1-fixture' },
+      },
+    })
+
+    try {
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://media.example/watch?v=42',
+      })
+      assert.equal(inspection.status, 'ready')
+      if (inspection.status !== 'ready') return
+
+      const plan = await engine.planTask({
+        source: inspection.source,
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'zh-CN',
+      })
+      assert.deepEqual(plan.steps, [
+        { id: 'verify-input', stage: 'preparing' },
+        { id: 'acquire-network', stage: 'acquiring', runtime: 'yt-dlp' },
+        { id: 'deliver', stage: 'delivering' },
+      ])
+      assert.deepEqual(plan.runtimeVersions, {
+        ffmpeg: '7.1-fixture',
+        ytDlp: '2026.07.04-fixture',
+      })
+
+      engine.createTask(plan)
+      const completedSnapshot = await engine.runTask('task-network-001')
+      const deliveryPath = path.join(outputDirectory, '山海 Episode 42 - 视频.mp4')
+
+      assert.equal(completedSnapshot.tasks[0].state, 'completed')
+      assert.equal(completedSnapshot.tasks[0].stage, 'delivering')
+      assert.deepEqual(completedSnapshot.deliverables, [{
+        id: 'deliverable-network-001',
+        taskId: 'task-network-001',
+        path: deliveryPath,
+        deliveryName: '山海 Episode 42 - 视频.mp4',
+        createdAt: '2026-07-13T06:00:03.000Z',
+      }])
+      assert.equal(existsSync(deliveryPath), true)
+      assert.equal(existsSync(path.join(outputDirectory, '.media-dock-staging')), false)
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('network delivery names sanitize URL-title separators without dropping Unicode title segments', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const outputDirectory = path.join(rootDirectory, 'output')
+    mkdirSync(outputDirectory)
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      managedRuntimes: {
+        ytDlp: { command: 'yt-dlp', version: '2026.07.04-test' },
+        ffmpeg: { command: 'ffmpeg', version: '7.1-test' },
+      },
+    })
+
+    try {
+      const plan = await engine.planTask({
+        source: {
+          kind: 'network-url',
+          locator: 'https://media.example/watch?v=title',
+          displayName: '系列 / 第 1 集: 开场?',
+          mediaKind: 'video',
+          durationSeconds: 12,
+          formatName: 'webm',
+          sourceId: 'title',
+          serviceName: 'FixtureTV',
+        },
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'zh-CN',
+      })
+
+      assert.equal(plan.deliveryName, '系列 _ 第 1 集_ 开场_ - 视频.mp4')
     } finally {
       engine.close()
     }
