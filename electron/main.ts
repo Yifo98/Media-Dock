@@ -24,6 +24,8 @@ import {
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
 import { runRuntimeProcessCollectOutput } from './core/runtimeProcess.js'
+import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
+import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -374,6 +376,8 @@ const preloadPath = join(__dirname, '..', 'electron', 'preload.cjs')
 
 let mainWindow: BrowserWindow | null = null
 let mediaToolsWindow: BrowserWindow | null = null
+let v3TaskEngine: MediaTaskEngine | null = null
+let unregisterV3Ipc: (() => void) | null = null
 let activeBatchRequest: DownloadRequest | null = null
 let pendingJobs: Array<{ jobId: string; url: string; index: number; totalJobs: number }> = []
 const activeJobs = new Map<string, JobContext>()
@@ -4034,8 +4038,68 @@ function createMediaToolsWindow() {
   return mediaToolsWindow
 }
 
-app.whenReady().then(() => {
+async function probeMediaRuntimeVersion(command: string) {
+  try {
+    const result = await runRuntimeProcessCollectOutput({
+      command,
+      args: ['-version'],
+      timeoutMs: 10_000,
+      workingDirectory: getDevRootDir(),
+      env: process.env,
+    })
+    return result.stdout.split(/\r?\n/u).find((line) => line.trim().length > 0)?.trim() ?? 'unavailable'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+async function initializeV3TaskEngine() {
+  const ffmpegCommand = getFfmpegPath()
+  const ffprobeCommand = getFfprobePath()
+  const [ffmpegVersion, ffprobeVersion] = await Promise.all([
+    probeMediaRuntimeVersion(ffmpegCommand),
+    probeMediaRuntimeVersion(ffprobeCommand),
+  ])
+
+  v3TaskEngine = createMediaTaskEngine({
+    dataDirectory: ensureDirectory(join(getPortableDataRootDir(), 'v3')),
+    managedRuntimes: {
+      ffmpeg: { command: ffmpegCommand, version: ffmpegVersion },
+      ffprobe: { command: ffprobeCommand, version: ffprobeVersion },
+    },
+  })
+  unregisterV3Ipc = registerMediaDockV3Ipc(
+    ipcMain,
+    v3TaskEngine,
+    () => BrowserWindow.getAllWindows()
+      .filter((window) => !window.isDestroyed())
+      .map((window) => window.webContents),
+    {
+      async pickLocalSource(currentPath) {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          properties: ['openFile'],
+          filters: [
+            { name: 'Media', extensions: ['mp4', 'mkv', 'mov', 'webm', 'mp3', 'm4a', 'wav', 'flac', 'aac', 'opus'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      },
+      async pickOutputDirectory(currentPath) {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          properties: ['openDirectory', 'createDirectory'],
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      },
+    },
+  )
+}
+
+app.whenReady().then(async () => {
   applyDockIcon()
+  await initializeV3TaskEngine()
   createWindow()
 
   app.on('activate', () => {
@@ -4043,6 +4107,13 @@ app.whenReady().then(() => {
       createWindow()
     }
   })
+})
+
+app.on('before-quit', () => {
+  unregisterV3Ipc?.()
+  unregisterV3Ipc = null
+  v3TaskEngine?.close()
+  v3TaskEngine = null
 })
 
 app.on('window-all-closed', () => {

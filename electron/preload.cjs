@@ -1,4 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron')
+const { createMediaDockV3Api } = require('./v3/preloadApi.cjs')
 
 const appApi = {
   getPaths: () => ipcRenderer.invoke('paths:get'),
@@ -60,3 +61,4 @@ const appApi = {
 
 contextBridge.exposeInMainWorld('ytDlpApi', appApi)
 contextBridge.exposeInMainWorld('appApi', appApi)
+contextBridge.exposeInMainWorld('mediaDock', createMediaDockV3Api(ipcRenderer))

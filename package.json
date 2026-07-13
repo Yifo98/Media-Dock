@@ -67,6 +67,7 @@
       "dist/**",
       "dist-electron/**",
       "electron/preload.cjs",
+      "electron/v3/preloadApi.cjs",
       "package.json"
     ],
     "extraResources": [
