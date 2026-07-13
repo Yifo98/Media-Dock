@@ -25,6 +25,7 @@
     "preview": "vite preview",
     "start": "electron .",
     "launch:mac": "zsh scripts/launch-mac.sh",
+    "launch:mac:v3": "zsh scripts/launch-mac-v3-preview.sh",
     "dist": "npm run build && electron-builder",
     "dist:mac": "zsh scripts/build-mac-share.sh",
     "dist:win": "zsh scripts/build-win-share.sh",

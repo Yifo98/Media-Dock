@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -26,15 +26,26 @@ async function waitFor(win, expression, timeoutMs = 5000) {
 
 app.commandLine.appendSwitch('disable-gpu')
 app.whenReady().then(async () => {
+  if (action === 'v3ProductionPreload') {
+    ipcMain.handle('media-dock:v3:get-workspace', () => ({
+      contractVersion: 1,
+      revision: 0,
+      tasks: [],
+      deliverables: [],
+      systemOperations: [],
+    }))
+  }
   const win = new BrowserWindow({
     show: Boolean(screenshotPath),
     width: screenshotPath ? screenshotWidth : 1500,
     height: screenshotPath ? screenshotHeight : 1000,
     webPreferences: {
-      preload: path.join(__dirname, 'renderer-actions-preload.cjs'),
+      preload: action === 'v3ProductionPreload'
+        ? path.resolve(__dirname, '../../electron/preload.cjs')
+        : path.join(__dirname, 'renderer-actions-preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: action === 'v3ProductionPreload',
       partition: `renderer-actions-${action}-${Date.now()}`,
     },
   })
@@ -42,8 +53,18 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3LocalFlow' || action === 'v3NetworkFlow' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3LocalFlow' || action === 'v3NetworkFlow' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
+    if (action === 'v3ProductionPreload') {
+      const rendered = await waitFor(
+        win,
+        `document.body.innerText.includes('让来源抵达成品。') && !document.body.innerText.includes('Renderer error')`,
+      )
+      if (!rendered) throw new Error('Production preload did not expose the Media Dock 3 contract')
+      console.log('[GREEN] the production preload exposes the Media Dock 3 sandbox contract.')
+      app.exit(0)
+      return
+    }
     if (action === 'v3Workbench') {
       const workbenchReady = await waitFor(
         win,

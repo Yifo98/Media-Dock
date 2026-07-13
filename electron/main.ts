@@ -24,6 +24,7 @@ import {
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
 import { runRuntimeProcessCollectOutput } from './core/runtimeProcess.js'
+import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
 import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
 
@@ -345,6 +346,7 @@ type JobContext = {
 
 const isWindows = process.platform === 'win32'
 const APP_DISPLAY_NAME = 'Media Dock'
+const WINDOW_DISPLAY_NAME = process.env.MEDIA_DOCK_V3_PREVIEW === '1' ? 'Media Dock 3 Preview' : APP_DISPLAY_NAME
 const windowsHomeDir = process.env.USERPROFILE ?? homedir()
 const windowsLocalAppDataDir = process.env.LOCALAPPDATA ?? join(windowsHomeDir, 'AppData', 'Local')
 const windowsProgramFilesDir = process.env.ProgramFiles ?? 'C:\\Program Files'
@@ -377,6 +379,7 @@ const preloadPath = join(__dirname, '..', 'electron', 'preload.cjs')
 let mainWindow: BrowserWindow | null = null
 let mediaToolsWindow: BrowserWindow | null = null
 let v3TaskEngine: MediaTaskEngine | null = null
+let v3RuntimeRegistry: ManagedRuntimeRegistry | null = null
 let unregisterV3Ipc: (() => void) | null = null
 let activeBatchRequest: DownloadRequest | null = null
 let pendingJobs: Array<{ jobId: string; url: string; index: number; totalJobs: number }> = []
@@ -3946,7 +3949,7 @@ function createAppWindow(hash = '') {
     minWidth: isV3Window ? 760 : 1280,
     minHeight: isV3Window ? 520 : 840,
     backgroundColor: isV3Window ? '#f4f1eb' : '#09111f',
-    title: APP_DISPLAY_NAME,
+    title: WINDOW_DISPLAY_NAME,
     ...(windowIconPath ? { icon: windowIconPath } : {}),
     autoHideMenuBar: true,
     webPreferences: {
@@ -3956,6 +3959,13 @@ function createAppWindow(hash = '') {
       sandbox: true,
     },
   })
+
+  if (isV3Window) {
+    win.on('page-title-updated', (event) => {
+      event.preventDefault()
+      win.setTitle(WINDOW_DISPLAY_NAME)
+    })
+  }
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -4030,7 +4040,7 @@ function createMediaToolsWindow() {
   }
 
   mediaToolsWindow = createAppWindow('#media-tools')
-  mediaToolsWindow.setTitle(`${APP_DISPLAY_NAME} - Tools`)
+  mediaToolsWindow.setTitle(`${WINDOW_DISPLAY_NAME} - Tools`)
   mediaToolsWindow.setMinimumSize(1100, 760)
   mediaToolsWindow.on('closed', () => {
     mediaToolsWindow = null
@@ -4064,12 +4074,25 @@ async function initializeV3TaskEngine() {
     probeMediaRuntimeVersion(ytDlpCommand, ['--version']),
   ])
 
-  v3TaskEngine = createMediaTaskEngine({
-    dataDirectory: ensureDirectory(join(getPortableDataRootDir(), 'v3')),
-    managedRuntimes: {
+  const v3DataDirectory = ensureDirectory(join(getPortableDataRootDir(), 'v3'))
+  v3RuntimeRegistry = createManagedRuntimeRegistry({
+    rootDirectory: join(v3DataDirectory, 'tools'),
+    baselines: {
       ffmpeg: { command: ffmpegCommand, version: ffmpegVersion },
       ffprobe: { command: ffprobeCommand, version: ffprobeVersion },
-      ytDlp: { command: ytDlpCommand, version: ytDlpVersion },
+      'yt-dlp': { command: ytDlpCommand, version: ytDlpVersion },
+    },
+  })
+  const activeFfmpeg = v3RuntimeRegistry.getActive('ffmpeg')!
+  const activeFfprobe = v3RuntimeRegistry.getActive('ffprobe')!
+  const activeYtDlp = v3RuntimeRegistry.getActive('yt-dlp')!
+
+  v3TaskEngine = createMediaTaskEngine({
+    dataDirectory: v3DataDirectory,
+    managedRuntimes: {
+      ffmpeg: activeFfmpeg,
+      ffprobe: activeFfprobe,
+      ytDlp: activeYtDlp,
     },
   })
   unregisterV3Ipc = registerMediaDockV3Ipc(
@@ -4118,6 +4141,7 @@ app.on('before-quit', () => {
   unregisterV3Ipc = null
   v3TaskEngine?.close()
   v3TaskEngine = null
+  v3RuntimeRegistry = null
 })
 
 app.on('window-all-closed', () => {

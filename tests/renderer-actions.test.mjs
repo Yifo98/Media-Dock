@@ -72,3 +72,7 @@ test('3.0 Workbench advances one primary action through a completed local-media 
 test('3.0 Workbench advances a pasted public link through a completed network-media journey', () => {
   assertRendererAction('v3NetworkFlow')
 })
+
+test('the production preload exposes the Media Dock 3 contract inside the Electron sandbox', () => {
+  assertRendererAction('v3ProductionPreload')
+})

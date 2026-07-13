@@ -1,5 +1,35 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const { createMediaDockV3Api } = require('./v3/preloadApi.cjs')
+
+// Sandboxed Electron preloads cannot require local files. Keep this tiny bridge
+// self-contained and cover it with the production-preload renderer test.
+const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
+  getWorkspace: 'media-dock:v3:get-workspace',
+  pickLocalSource: 'media-dock:v3:pick-local-source',
+  pickOutputDirectory: 'media-dock:v3:pick-output-directory',
+  inspectSource: 'media-dock:v3:inspect-source',
+  planTask: 'media-dock:v3:plan-task',
+  createTask: 'media-dock:v3:create-task',
+  runTask: 'media-dock:v3:run-task',
+  workspaceChanged: 'media-dock:v3:workspace-changed',
+})
+
+function createMediaDockV3Api(renderer) {
+  return Object.freeze({
+    contractVersion: 1,
+    getWorkspaceSnapshot: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.getWorkspace),
+    pickLocalSource: (currentPath) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.pickLocalSource, currentPath),
+    pickOutputDirectory: (currentPath) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory, currentPath),
+    inspectSource: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.inspectSource, input),
+    planTask: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.planTask, input),
+    createTask: (plan) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.createTask, plan),
+    runTask: (taskId) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.runTask, taskId),
+    onWorkspaceChanged: (listener) => {
+      const wrapped = (_event, snapshot) => listener(snapshot)
+      renderer.on(MEDIA_DOCK_V3_CHANNELS.workspaceChanged, wrapped)
+      return () => renderer.removeListener(MEDIA_DOCK_V3_CHANNELS.workspaceChanged, wrapped)
+    },
+  })
+}
 
 const appApi = {
   getPaths: () => ipcRenderer.invoke('paths:get'),
