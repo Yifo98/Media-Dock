@@ -181,10 +181,15 @@ app.whenReady().then(async () => {
           const header = document.querySelector('.md3-workspace-header')
           main.style.height = '560px'
           main.style.maxHeight = '560px'
-          const headerTop = header.getBoundingClientRect().top
           main.scrollTop = Math.min(400, main.scrollHeight - main.clientHeight)
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-          return main.scrollHeight > main.clientHeight && main.scrollTop > 0 && Math.abs(header.getBoundingClientRect().top - headerTop) <= 2
+          const mainStyle = getComputedStyle(main)
+          const headerStyle = getComputedStyle(header)
+          return main.scrollHeight > main.clientHeight
+            && main.scrollTop > 0
+            && ['auto', 'scroll'].includes(mainStyle.overflowY)
+            && headerStyle.position === 'sticky'
+            && Number.parseFloat(headerStyle.top) === 0
         })()
       `, true)
       if (!taskCenterScrollable) throw new Error('Task Center cannot scroll while keeping workspace navigation pinned')
