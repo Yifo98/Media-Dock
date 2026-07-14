@@ -113,6 +113,11 @@ EOF
 }
 
 write_release_notes() {
+  local curated_notes="$PROJECT_ROOT/docs/release/$APP_VERSION.md"
+  if [[ -f "$curated_notes" ]]; then
+    cp "$curated_notes" "$VERSION_DIR/RELEASE-NOTES.md"
+    return
+  fi
   cat > "$VERSION_DIR/RELEASE-NOTES.md" <<EOF
 # Media Dock $APP_VERSION
 

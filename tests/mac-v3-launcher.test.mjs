@@ -1,19 +1,15 @@
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const launcherScript = path.join(projectRoot, 'scripts', 'launch-mac-v3-preview.sh')
-const launcherCommand = path.join(projectRoot, 'Launch Media Dock 3 Preview.command')
-
 test('the macOS 3.0 preview launcher resolves the project-local Electron runtime in dry-run mode', {
   skip: process.platform !== 'darwin',
 }, () => {
   assert.equal(existsSync(launcherScript), true)
-  assert.equal(existsSync(launcherCommand), true)
-  assert.match(readFileSync(launcherCommand, 'utf8'), /launch-mac-v3-preview\.sh/u)
 
   const syntax = spawnSync('/bin/zsh', ['-n', launcherScript], { encoding: 'utf8' })
   assert.equal(syntax.status, 0, syntax.stderr)

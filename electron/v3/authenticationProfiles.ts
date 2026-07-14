@@ -30,6 +30,10 @@ export async function inspectAuthenticationPackage(sourceDirectory: string): Pro
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.cookies.txt')) continue
     const service = normalizeServiceId(entry.name.slice(0, -'.cookies.txt'.length))
+    // MediaCookies also exports generic domain snapshots for advanced use. They
+    // are not product-level authentication profiles and would make automatic
+    // source matching noisy, so v3 imports only named service files.
+    if (service.startsWith('domain-')) continue
     const sourcePath = path.join(serviceDirectory, entry.name)
     const fileStat = await stat(sourcePath)
     if (!fileStat.isFile() || fileStat.size === 0 || fileStat.size > MAX_COOKIE_FILE_BYTES) {

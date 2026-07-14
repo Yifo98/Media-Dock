@@ -24,3 +24,23 @@ test('an absolute runtime executable launches even when the packaged app fallbac
     rmSync(rootDir, { recursive: true, force: true })
   }
 })
+
+test('runtime output observers receive complete stdout and stderr lines without changing collected output', async () => {
+  const lines = []
+  const result = await runRuntimeProcessCollectOutput({
+    command: process.execPath,
+    args: ['-e', "process.stdout.write('first\\npar'); process.stdout.write('tial'); process.stderr.write('warning\\n')"],
+    timeoutMs: 3000,
+    workingDirectory: tmpdir(),
+    env: process.env,
+    onOutputLine: (line, stream) => lines.push([stream, line]),
+  })
+
+  assert.equal(result.stdout, 'first\npartial')
+  assert.equal(result.stderr, 'warning\n')
+  assert.deepEqual(lines, [
+    ['stdout', 'first'],
+    ['stderr', 'warning'],
+    ['stdout', 'partial'],
+  ])
+})

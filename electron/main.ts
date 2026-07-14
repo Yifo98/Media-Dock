@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, release as osRelease } from 'node:os'
 import { delimiter, dirname, extname, isAbsolute, join, parse, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
@@ -25,8 +25,10 @@ import {
 } from './core/runtimeOperationCoordinator.js'
 import { runRuntimeProcessCollectOutput } from './core/runtimeProcess.js'
 import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
+import { importLatestLegacyAuthenticationPackage } from './v3/legacyAuthenticationImport.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
 import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
+import { buildSanitizedSupportDiagnostics } from './v3/supportDiagnostics.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -40,6 +42,10 @@ type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
 const electronRuntimeFetch: RuntimeFetch = async (input, init) => await net.fetch(input, init)
+const MEDIA_COOKIES_RESOURCE_URLS = Object.freeze({
+  'chrome-store': 'https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek',
+  github: 'https://github.com/Yifo98/MediaCookies',
+})
 
 type DownloadRequest = {
   urls: string[]
@@ -1023,7 +1029,9 @@ function normalizeBilibiliEpisode(episode: BilibiliApiEpisode, fallbackIndex: nu
   const title = scalarToString(episode.title) || String(fallbackIndex + 1)
   const longTitle = scalarToString(episode.long_title)
   const badge = episodeBadgeText(episode)
-  const duration = typeof episode.duration === 'number' && Number.isFinite(episode.duration) ? episode.duration : null
+  const duration = typeof episode.duration === 'number' && Number.isFinite(episode.duration)
+    ? episode.duration / 1_000
+    : null
 
   return {
     id,
@@ -4068,10 +4076,12 @@ async function initializeV3TaskEngine() {
   const ffmpegCommand = getFfmpegPath()
   const ffprobeCommand = getFfprobePath()
   const ytDlpCommand = getYtDlpPath()
-  const [ffmpegVersion, ffprobeVersion, ytDlpVersion] = await Promise.all([
+  const denoCommand = getDenoPath()
+  const [ffmpegVersion, ffprobeVersion, ytDlpVersion, denoVersion] = await Promise.all([
     probeMediaRuntimeVersion(ffmpegCommand),
     probeMediaRuntimeVersion(ffprobeCommand),
     probeMediaRuntimeVersion(ytDlpCommand, ['--version']),
+    denoCommand ? getCurrentDenoVersion() : Promise.resolve(null),
   ])
 
   const v3DataDirectory = ensureDirectory(join(getPortableDataRootDir(), 'v3'))
@@ -4081,20 +4091,25 @@ async function initializeV3TaskEngine() {
       ffmpeg: { command: ffmpegCommand, version: ffmpegVersion },
       ffprobe: { command: ffprobeCommand, version: ffprobeVersion },
       'yt-dlp': { command: ytDlpCommand, version: ytDlpVersion },
+      ...(denoCommand && denoVersion ? { deno: { command: denoCommand, version: denoVersion } } : {}),
     },
   })
   const activeFfmpeg = v3RuntimeRegistry.getActive('ffmpeg')!
   const activeFfprobe = v3RuntimeRegistry.getActive('ffprobe')!
   const activeYtDlp = v3RuntimeRegistry.getActive('yt-dlp')!
+  const activeDeno = v3RuntimeRegistry.getActive('deno')
 
   v3TaskEngine = createMediaTaskEngine({
     dataDirectory: v3DataDirectory,
+    resolveCollection: resolveMediaCollection,
     managedRuntimes: {
       ffmpeg: activeFfmpeg,
       ffprobe: activeFfprobe,
       ytDlp: activeYtDlp,
+      ...(activeDeno ? { deno: activeDeno } : {}),
     },
   })
+  await importLatestLegacyAuthenticationPackage(v3TaskEngine, getCookiesDir())
   unregisterV3Ipc = registerMediaDockV3Ipc(
     ipcMain,
     v3TaskEngine,
@@ -4112,6 +4127,17 @@ async function initializeV3TaskEngine() {
           ],
         })
         return result.canceled ? null : result.filePaths[0] ?? null
+      },
+      async pickLocalSources(currentPath) {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'Media', extensions: ['mp4', 'mkv', 'mov', 'webm', 'mp3', 'm4a', 'wav', 'flac', 'aac', 'opus'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        })
+        return result.canceled ? [] : result.filePaths
       },
       async pickOutputDirectory(currentPath) {
         const result = await dialog.showOpenDialog(mainWindow!, {
@@ -4143,6 +4169,48 @@ async function initializeV3TaskEngine() {
         } finally {
           rmSync(extractDirectory, { recursive: true, force: true })
         }
+      },
+      async openMediaCookiesResource(resource) {
+        await shell.openExternal(MEDIA_COOKIES_RESOURCE_URLS[resource])
+      },
+      async revealDeliverable(deliverableId) {
+        const deliverable = v3TaskEngine?.getWorkspaceSnapshot().deliverables.find((candidate) => candidate.id === deliverableId)
+        if (!deliverable) throw new Error(`Deliverable does not exist: ${deliverableId}`)
+        shell.showItemInFolder(deliverable.path)
+      },
+      async checkRuntimeUpdates() {
+        return await checkRuntimeToolUpdates()
+      },
+      async exportSupportDiagnostics(input) {
+        const generatedAt = new Date()
+        const report = buildSanitizedSupportDiagnostics({
+          generatedAt: generatedAt.toISOString(),
+          appVersion: app.getVersion(),
+          uiLanguage: input.language,
+          platform: { name: process.platform, release: osRelease(), arch: process.arch },
+          processVersions: {
+            electron: process.versions.electron ?? 'unknown',
+            chrome: process.versions.chrome ?? 'unknown',
+            node: process.versions.node,
+          },
+          runtimes: {
+            ffmpeg: v3RuntimeRegistry?.getActive('ffmpeg')?.version ?? 'not installed',
+            ffprobe: v3RuntimeRegistry?.getActive('ffprobe')?.version ?? 'not installed',
+            ytDlp: v3RuntimeRegistry?.getActive('yt-dlp')?.version ?? 'not installed',
+            deno: v3RuntimeRegistry?.getActive('deno')?.version ?? null,
+          },
+          homeDirectory: homedir(),
+          ...(input.recentError ? { recentError: input.recentError } : {}),
+          workspace: v3TaskEngine!.getWorkspaceSnapshot(),
+        })
+        const timestamp = generatedAt.toISOString().replace(/[-:]/gu, '').replace(/\.\d{3}Z$/u, 'Z').replace('T', '-')
+        const result = await dialog.showSaveDialog(mainWindow!, {
+          defaultPath: join(resolveDefaultDownloads(), `media-dock-support-${timestamp}.txt`),
+          filters: [{ name: 'Media Dock support log', extensions: ['txt'] }],
+        })
+        if (result.canceled || !result.filePath) return null
+        writeFileSync(result.filePath, report, 'utf8')
+        return result.filePath
       },
     },
   )

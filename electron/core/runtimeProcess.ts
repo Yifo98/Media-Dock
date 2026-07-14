@@ -25,6 +25,7 @@ export async function runRuntimeProcessCollectOutput(options: {
   timeoutMs: number
   workingDirectory: string
   env: NodeJS.ProcessEnv
+  onOutputLine?: (line: string, stream: 'stdout' | 'stderr') => void
 }) {
   const workingDirectory = resolveRuntimeProcessWorkingDirectory(options.command, options.workingDirectory)
   return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
@@ -35,16 +36,48 @@ export async function runRuntimeProcessCollectOutput(options: {
 
     let stdout = ''
     let stderr = ''
+    let stdoutLineBuffer = ''
+    let stderrLineBuffer = ''
+    const emitCompleteLines = (chunk: string, stream: 'stdout' | 'stderr') => {
+      const current = (stream === 'stdout' ? stdoutLineBuffer : stderrLineBuffer) + chunk
+      const lines = current.split(/[\r\n]+/u)
+      const remainder = /[\r\n]$/u.test(current) ? '' : lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line) continue
+        try {
+          options.onOutputLine?.(line, stream)
+        } catch {
+          // Observers must not be able to interrupt the managed runtime process.
+        }
+      }
+      if (stream === 'stdout') stdoutLineBuffer = remainder
+      else stderrLineBuffer = remainder
+    }
+    const emitRemainder = (stream: 'stdout' | 'stderr') => {
+      const remainder = stream === 'stdout' ? stdoutLineBuffer : stderrLineBuffer
+      if (!remainder) return
+      try {
+        options.onOutputLine?.(remainder, stream)
+      } catch {
+        // Observers must not be able to interrupt the managed runtime process.
+      }
+      if (stream === 'stdout') stdoutLineBuffer = ''
+      else stderrLineBuffer = ''
+    }
     const timeout = setTimeout(() => {
       child.kill('SIGTERM')
       reject(new Error(`${options.command} timed out after ${Math.round(options.timeoutMs / 1000)} seconds.`))
     }, options.timeoutMs)
 
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf8')
+      const text = chunk.toString('utf8')
+      stdout += text
+      emitCompleteLines(text, 'stdout')
     })
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8')
+      const text = chunk.toString('utf8')
+      stderr += text
+      emitCompleteLines(text, 'stderr')
     })
     child.on('error', (error) => {
       clearTimeout(timeout)
@@ -52,6 +85,8 @@ export async function runRuntimeProcessCollectOutput(options: {
     })
     child.on('close', (code) => {
       clearTimeout(timeout)
+      emitRemainder('stdout')
+      emitRemainder('stderr')
       if (code === 0) {
         resolve({ stdout, stderr })
         return

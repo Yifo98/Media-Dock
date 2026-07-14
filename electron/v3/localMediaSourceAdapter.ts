@@ -8,6 +8,7 @@ import type { DeliverableRecipeOption, NeedsAttentionSourceInspection, SourceIns
 type FfprobePayload = Readonly<{
   format?: Readonly<{
     duration?: string
+    start_time?: string
     format_name?: string
   }>
   streams?: readonly Readonly<{
@@ -84,7 +85,7 @@ export async function inspectLocalMediaSource(sourcePath: string, ffprobeCommand
       '-v',
       'error',
       '-show_entries',
-      'format=duration,format_name',
+      'format=duration,start_time,format_name',
       '-show_streams',
       '-of',
       'json',
@@ -111,6 +112,7 @@ export async function inspectLocalMediaSource(sourcePath: string, ffprobeCommand
       displayName: path.basename(sourcePath),
       mediaKind,
       durationSeconds: parseDurationSeconds(payload.format?.duration),
+      startTimeSeconds: parseDurationSeconds(payload.format?.start_time),
       formatName: payload.format?.format_name ?? 'unknown',
     }),
     recipes: getLocalMediaRecipeOptions(mediaKind, sourcePath),
