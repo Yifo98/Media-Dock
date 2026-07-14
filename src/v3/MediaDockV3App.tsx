@@ -252,8 +252,6 @@ export default function MediaDockV3App() {
     let active = true
     if (!qualityProbeSource) {
       setQualityInspection(null)
-      setDownloadPreflight(null)
-      setPreflightProblem(null)
       setQualityLoading(false)
       setQualityUnavailable(false)
       return () => {
@@ -611,6 +609,8 @@ export default function MediaDockV3App() {
   }
 
   function toggleCollectionEntry(entryId: string) {
+    setDownloadPreflight(null)
+    setPreflightProblem(null)
     setSelectedEntryIds((current) => {
       const next = new Set(current)
       if (next.has(entryId)) next.delete(entryId)
@@ -620,6 +620,8 @@ export default function MediaDockV3App() {
   }
 
   function toggleAllCollectionEntries() {
+    setDownloadPreflight(null)
+    setPreflightProblem(null)
     setSelectedEntryIds((current) => current.size === collectionEntries.length
       ? new Set()
       : new Set(collectionEntries.map((entry) => entry.source.locator)))
@@ -635,6 +637,8 @@ export default function MediaDockV3App() {
   }
 
   function toggleCollectionGroupEntries(entryIds: readonly string[]) {
+    setDownloadPreflight(null)
+    setPreflightProblem(null)
     setSelectedEntryIds((current) => {
       const next = new Set(current)
       const allSelected = entryIds.every((entryId) => next.has(entryId))

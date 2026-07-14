@@ -176,11 +176,14 @@ app.whenReady().then(async () => {
       const taskCenterReady = await waitFor(win, `document.querySelectorAll('.md3-task-list article').length === 30`)
       if (!taskCenterReady) throw new Error('Task Center did not render the full task history')
       const taskCenterScrollable = await win.webContents.executeJavaScript(`
-        (() => {
+        (async () => {
           const main = document.querySelector('.md3-main')
           const header = document.querySelector('.md3-workspace-header')
+          main.style.height = '560px'
+          main.style.maxHeight = '560px'
           const headerTop = header.getBoundingClientRect().top
           main.scrollTop = main.scrollHeight
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
           return main.scrollHeight > main.clientHeight && main.scrollTop > 0 && Math.abs(header.getBoundingClientRect().top - headerTop) < 1
         })()
       `, true)
