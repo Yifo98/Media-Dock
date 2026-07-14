@@ -15,7 +15,7 @@ const labels = {
   mediaOpenPath: ['打开输出目录', 'Open output folder'],
 }
 
-async function waitFor(win, expression, timeoutMs = 5000) {
+async function waitFor(win, expression, timeoutMs = 8000) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
     if (await win.webContents.executeJavaScript(expression, true)) return true
@@ -173,7 +173,7 @@ app.whenReady().then(async () => {
           .find((button) => button.querySelector('strong')?.textContent.trim() === '任务')
           .click()
       `, true)
-      const taskCenterReady = await waitFor(win, `document.querySelectorAll('.md3-task-list article').length === 12`)
+      const taskCenterReady = await waitFor(win, `document.querySelectorAll('.md3-task-list article').length === 30`)
       if (!taskCenterReady) throw new Error('Task Center did not render the full task history')
       const taskCenterScrollable = await win.webContents.executeJavaScript(`
         (() => {

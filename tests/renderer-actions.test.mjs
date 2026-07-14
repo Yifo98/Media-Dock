@@ -15,7 +15,7 @@ function runRendererAction(action) {
       ...process.env,
       MEDIA_DOCK_RENDERER_ACTION: action,
     },
-    timeout: 10000,
+    timeout: 20000,
   })
 }
 

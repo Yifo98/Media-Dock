@@ -156,7 +156,7 @@ const appApi = {
 contextBridge.exposeInMainWorld('appApi', appApi)
 contextBridge.exposeInMainWorld('ytDlpApi', appApi)
 
-const scrollingTasks = Array.from({ length: 12 }, (_, index) => ({
+const scrollingTasks = Array.from({ length: 30 }, (_, index) => ({
   id: `task-scroll-${index + 1}`,
   state: 'completed',
   stage: 'delivering',
