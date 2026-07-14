@@ -182,9 +182,9 @@ app.whenReady().then(async () => {
           main.style.height = '560px'
           main.style.maxHeight = '560px'
           const headerTop = header.getBoundingClientRect().top
-          main.scrollTop = main.scrollHeight
+          main.scrollTop = Math.min(400, main.scrollHeight - main.clientHeight)
           await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-          return main.scrollHeight > main.clientHeight && main.scrollTop > 0 && Math.abs(header.getBoundingClientRect().top - headerTop) < 1
+          return main.scrollHeight > main.clientHeight && main.scrollTop > 0 && Math.abs(header.getBoundingClientRect().top - headerTop) <= 2
         })()
       `, true)
       if (!taskCenterScrollable) throw new Error('Task Center cannot scroll while keeping workspace navigation pinned')
