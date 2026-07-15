@@ -29,6 +29,8 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(scriptDirectory, '..')
 const packageJson = JSON.parse(await readFile(path.join(projectRoot, 'package.json'), 'utf8'))
 const appVersion = packageJson.version
+const npmCliPath = String(process.env.npm_execpath ?? '').trim()
+const electronBuilderCliPath = path.join(projectRoot, 'node_modules', 'electron-builder', 'out', 'cli', 'cli.js')
 const releaseRoot = path.join(projectRoot, 'release')
 const versionDirectory = path.join(releaseRoot, appVersion)
 const toolsDirectory = path.join(projectRoot, 'tools')
@@ -43,6 +45,9 @@ const ffmpegUrl = String(process.env.FFMPEG_URL ?? '').trim()
 
 if (process.env.MEDIA_DOCK_SIGNED_RELEASE === '1' && ffmpegUrl.includes('/latest/')) {
   throw new Error('A signed release requires FFMPEG_URL to identify an immutable versioned FFmpeg asset.')
+}
+if (!npmCliPath) {
+  throw new Error('Run the native Windows build through `npm run dist:win` so the npm CLI can be resolved safely.')
 }
 
 async function run(command, args, options = {}) {
@@ -162,9 +167,9 @@ try {
   const runtimeManifestPath = path.join(versionDirectory, 'WINDOWS-RUNTIMES.json')
   await writeFile(runtimeManifestPath, `${JSON.stringify(runtimeManifest, null, 2)}\n`, 'utf8')
 
-  await run('npm.cmd', ['run', 'build'])
-  await run('npx.cmd', [
-    'electron-builder',
+  await run(process.execPath, [npmCliPath, 'run', 'build'])
+  await run(process.execPath, [
+    electronBuilderCliPath,
     '--config', 'electron-builder.config.cjs',
     '--win', 'zip',
     '--x64',

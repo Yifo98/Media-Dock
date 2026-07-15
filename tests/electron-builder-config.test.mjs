@@ -14,6 +14,10 @@ const macosWorkflow = readFileSync(
   new URL('../.github/workflows/macos-package-gate.yml', import.meta.url),
   'utf8',
 )
+const windowsBuildScript = readFileSync(
+  new URL('../scripts/build-windows-native.mjs', import.meta.url),
+  'utf8',
+)
 
 test('electron-builder owns the Windows executable identity and ZIP target', () => {
   assert.equal(build.appId, 'com.yifo.mediadock')
@@ -52,4 +56,6 @@ test('the Windows candidate is built and verified on a native Windows runner', (
   assert.match(windowsWorkflow, /Get-AuthenticodeSignature/)
   assert.match(windowsWorkflow, /ProductName/)
   assert.match(windowsWorkflow, /MEDIA_DOCK_FFMPEG_WINDOWS_URL/)
+  assert.doesNotMatch(windowsBuildScript, /run\(['"](?:npm|npx)\.cmd['"]/u)
+  assert.match(windowsBuildScript, /run\(process\.execPath/u)
 })
