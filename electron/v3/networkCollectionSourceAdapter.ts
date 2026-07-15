@@ -91,12 +91,19 @@ export async function inspectNetworkCollectionSource(
   if (!resolution) return collectionInspectionProblem()
 
   const serviceName = collectionServiceName(resolution.sourceUrl)
+  const seenEpisodeIds = new Set<string>()
   const groups = resolution.groups
     .map((group) => Object.freeze({
       id: group.id,
       title: group.title,
       entries: Object.freeze(group.episodes
-        .filter((episode) => episode.id && episode.link)
+        .filter((episode) => episode.id.trim() && episode.link.trim())
+        .filter((episode) => {
+          const episodeId = episode.id.trim()
+          if (seenEpisodeIds.has(episodeId)) return false
+          seenEpisodeIds.add(episodeId)
+          return true
+        })
         .map((episode) => {
           const nameParts = [resolution.title, episode.title, episode.subtitle].filter((part) => part.trim().length > 0)
           return Object.freeze({

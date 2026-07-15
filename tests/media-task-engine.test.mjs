@@ -382,6 +382,58 @@ test('creating work rejects a renderer-tampered Task Plan before it reaches SQLi
   })
 })
 
+test('a Task Batch creates one Media Task for repeated identical Task Plans', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const outputDirectory = path.join(rootDirectory, 'output')
+    const alternateOutputDirectory = path.join(rootDirectory, 'alternate-output')
+    mkdirSync(outputDirectory)
+    mkdirSync(alternateOutputDirectory)
+    let batchNumber = 0
+    let taskNumber = 0
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      idFactory: (kind) => kind === 'task-batch' ? `batch-${++batchNumber}` : kind === 'task' ? `task-${++taskNumber}` : 'unused-id',
+      managedRuntimes: {
+        ffmpeg: { command: 'ffmpeg', version: '7.1-test' },
+      },
+    })
+
+    try {
+      const plan = await engine.planTask({
+        source: {
+          kind: 'local-file',
+          locator: path.join(rootDirectory, 'source.wav'),
+          displayName: 'source.wav',
+          mediaKind: 'audio',
+          durationSeconds: 1,
+          formatName: 'wav',
+        },
+        recipeId: 'audio-compatible',
+        outputDirectory,
+        language: 'en',
+      })
+
+      const created = engine.createTaskBatch([plan, plan, plan], 'fast')
+
+      assert.deepEqual(created.taskBatches[0]?.taskIds, ['task-1'])
+      assert.deepEqual(created.tasks.map((task) => task.id), ['task-1'])
+
+      const alternatePlan = await engine.planTask({
+        source: plan.source,
+        recipeId: plan.recipe.id,
+        outputDirectory: alternateOutputDirectory,
+        language: 'en',
+      })
+      const distinctCreated = engine.createTaskBatch([plan, alternatePlan], 'fast')
+
+      assert.deepEqual(distinctCreated.taskBatches.at(-1)?.taskIds, ['task-2', 'task-3'])
+      assert.deepEqual(distinctCreated.tasks.map((task) => task.id), ['task-1', 'task-2', 'task-3'])
+    } finally {
+      engine.close()
+    }
+  })
+})
+
 test('creating a Media Task advances the workspace revision and survives an engine restart', async () => {
   await withTemporaryWorkspace(async (rootDirectory) => {
     const dataDirectory = path.join(rootDirectory, 'data')

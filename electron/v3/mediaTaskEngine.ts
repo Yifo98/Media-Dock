@@ -1046,6 +1046,13 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         throw new Error(`Unsupported Scheduling Profile: ${schedulingProfile}`)
       }
       plans.forEach(assertTaskPlanIntegrity)
+      const planFingerprints = new Set<string>()
+      const uniquePlans = plans.filter((plan) => {
+        const fingerprint = JSON.stringify(plan)
+        if (planFingerprints.has(fingerprint)) return false
+        planFingerprints.add(fingerprint)
+        return true
+      })
       const batchId = options.idFactory?.('task-batch') ?? randomUUID()
       const timestamp = (options.now?.() ?? new Date()).toISOString()
 
@@ -1064,7 +1071,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
           INSERT INTO task_batch_members (batch_id, task_id, position)
           VALUES (?, ?, ?)
         `)
-        plans.forEach((plan, position) => {
+        uniquePlans.forEach((plan, position) => {
           const taskId = options.idFactory?.('task') ?? randomUUID()
           insertTask.run(taskId, timestamp, timestamp, JSON.stringify(plan))
           insertMember.run(batchId, taskId, position)
