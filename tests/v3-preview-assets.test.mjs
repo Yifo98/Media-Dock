@@ -79,6 +79,7 @@ function visibleAlphaBounds(icon) {
 
 test('the v3 branch keeps its tracked launcher entry point unambiguous', () => {
   assert.equal(existsSync('scripts/launch-mac-v3-preview.sh'), true)
+  assert.equal(existsSync('scripts/Launch Media Dock 3 Preview.command'), true)
   assert.deepEqual(readdirSync('.').filter((name) => name.endsWith('.command')), [])
 })
 

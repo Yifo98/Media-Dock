@@ -4,6 +4,7 @@
 
 - `../Launch Media Dock 3 Preview.command`
   - macOS 日常启动入口。它和 `Media Dock Project/` 并排放在外层，双击即可构建并打开当前 3.0 预览。
+  - 可恢复副本保存在 `scripts/Launch Media Dock 3 Preview.command`；迁移电脑后可直接运行，也可复制到项目文件夹旁边。
 - `Media Dock Project/`
   - 完整开发仓库；源码、测试、构建产物、工具、应用数据和 `.git` 都收在这里。
 - `release/win-unpacked/Media Dock.exe`
@@ -61,3 +62,5 @@ The following generated clutter was removed:
 - `Media Dock Project/`
 
 不要单独移动启动器；它依赖同级的项目总文件夹。
+
+若从 GitHub 重新下载，仓库内的 `scripts/Launch Media Dock 3 Preview.command` 是同一启动器的可恢复副本，不包含任何本机路径或私人数据。
