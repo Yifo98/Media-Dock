@@ -1,12 +1,6 @@
 <p align="center">
-  <img src="build/icon.png" width="144" alt="Media Dock icon">
+  <img src="build/readme-hero.png" width="100%" alt="Media Dock · 泊 — 泊其所获，交其所成。A QIDU Utility">
 </p>
-
-<h1 align="center">Media Dock · 泊</h1>
-
-<p align="center"><strong>泊其所获，交其所成。</strong></p>
-<p align="center">Dock what is gathered, deliver what is made.</p>
-<p align="center"><sub>A QIDU Utility</sub></p>
 
 <p align="center">
   <a href="https://github.com/Yifo98/Media-Dock/releases/latest"><img alt="Stable release" src="https://img.shields.io/github/v/release/Yifo98/Media-Dock?display_name=tag&label=stable&sort=semver"></a>

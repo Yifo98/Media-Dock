@@ -9,6 +9,7 @@ mkdir -p "$ICONSET_DIR"
 trap 'rm -rf "$TEMP_DIR"' EXIT
 
 cd "$ROOT_DIR"
+"${PYTHON_BIN:-python3}" scripts/build-media-dock-brand-svg.py
 swift scripts/build-media-dock-3-icon.swift
 
 for spec in \
@@ -28,5 +29,11 @@ for spec in \
 done
 
 iconutil -c icns "$ICONSET_DIR" -o build/icon.icns
-"${PYTHON_BIN:-python3}" scripts/build-media-dock-windows-icon.py
+"${PYTHON_BIN:-python3}" scripts/build-media-dock-windows-icon.py \
+  build/icon.ico \
+  "$ICONSET_DIR/icon_16x16.png" \
+  "$ICONSET_DIR/icon_32x32.png" \
+  "$ICONSET_DIR/icon_32x32@2x.png" \
+  "$ICONSET_DIR/icon_128x128.png" \
+  "$ICONSET_DIR/icon_256x256.png"
 sips -s format png build/readme-hero.svg --out build/readme-hero.png >/dev/null

@@ -1,13 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" aria-hidden="true">
-  <path fill="#2B98A6" d="M150 308 248 222v326l105 93h318l105-93V222l98 86v300L724 758H300L150 608V308Z"/>
-  <path fill="#8ED7DD" d="m150 308 98-86v112l-98 86V308Zm626-86 98 86v112l-98-86V222Z"/>
-  <path fill="#CBECEF" d="m248 548 105 93h318l105-93v35l-91 81H339l-91-81v-35Z" opacity=".72"/>
-  <rect x="322" y="190" width="380" height="364" rx="34" fill="#30353A"/>
-  <path fill="#64C1CA" d="M475 324c0-14 16-22 27-14l92 63c10 7 10 22 0 29l-92 63c-11 8-27 0-27-14V324Z"/>
-  <g fill="#F8F5EF">
-    <rect x="354" y="220" width="42" height="28" rx="7"/><rect x="421" y="220" width="42" height="28" rx="7"/><rect x="488" y="220" width="42" height="28" rx="7"/><rect x="555" y="220" width="42" height="28" rx="7"/><rect x="622" y="220" width="42" height="28" rx="7"/>
-    <rect x="354" y="496" width="42" height="28" rx="7"/><rect x="421" y="496" width="42" height="28" rx="7"/><rect x="488" y="496" width="42" height="28" rx="7"/><rect x="555" y="496" width="42" height="28" rx="7"/><rect x="622" y="496" width="42" height="28" rx="7"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none" data-mark="media-dock-qidu-berth">
+  <title>Media Dock open berth mark</title>
+  <g id="berth">
+    <path fill="#2B98A6" d="M150 308 248 222v326l105 93h318l105-93V222l98 86v300L724 758H300L150 608V308Z"/>
+    <path fill="#8ED7DD" d="m150 308 98-86v112l-98 86V308Zm626-86 98 86v112l-98-86V222Z"/>
+    <path fill="#CBECEF" d="m248 548 105 93h318l105-93v35l-91 81H339l-91-81v-35Z" opacity=".72"/>
   </g>
-  <path fill="#4FB0BA" d="M244 802c92-10 189-15 289-15 99 0 181 5 247 15-83 12-170 18-261 18-98 0-190-6-275-18Z" opacity=".76"/>
-  <path fill="#4FB0BA" d="M308 835c70-8 144-12 222-12 76 0 140 4 193 12-64 10-132 15-204 15-78 0-148-5-211-15Z" opacity=".5"/>
+  <g id="media-frame">
+    <rect x="322" y="190" width="380" height="364" rx="34" fill="#30353A"/>
+    <path fill="#64C1CA" d="M475 324c0-14 16-22 27-14l92 63c10 7 10 22 0 29l-92 63c-11 8-27 0-27-14V324Z"/>
+    <g fill="#F8F5EF">
+      <rect x="354" y="220" width="42" height="28" rx="7"/>
+      <rect x="421" y="220" width="42" height="28" rx="7"/>
+      <rect x="488" y="220" width="42" height="28" rx="7"/>
+      <rect x="555" y="220" width="42" height="28" rx="7"/>
+      <rect x="622" y="220" width="42" height="28" rx="7"/>
+      <rect x="354" y="496" width="42" height="28" rx="7"/>
+      <rect x="421" y="496" width="42" height="28" rx="7"/>
+      <rect x="488" y="496" width="42" height="28" rx="7"/>
+      <rect x="555" y="496" width="42" height="28" rx="7"/>
+      <rect x="622" y="496" width="42" height="28" rx="7"/>
+    </g>
+  </g>
+  <g id="reflection" fill="#4FB0BA">
+    <path d="M244 802c92-10 189-15 289-15 99 0 181 5 247 15-83 12-170 18-261 18-98 0-190-6-275-18Z" opacity=".76"/>
+    <path d="M308 835c70-8 144-12 222-12 76 0 140 4 193 12-64 10-132 15-204 15-78 0-148-5-211-15Z" opacity=".5"/>
+    <path d="M392 865c43-5 89-8 136-8 46 0 85 3 117 8-39 7-80 10-124 10-48 0-91-3-129-10Z" opacity=".32"/>
+  </g>
 </svg>
