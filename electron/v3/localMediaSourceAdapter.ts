@@ -64,7 +64,11 @@ function sourceNotFoundProblem(): NeedsAttentionSourceInspection {
   })
 }
 
-export async function inspectLocalMediaSource(sourcePath: string, ffprobeCommand: string): Promise<SourceInspection> {
+export async function inspectLocalMediaSource(
+  sourcePath: string,
+  ffprobeCommand: string,
+  signal?: AbortSignal,
+): Promise<SourceInspection> {
   let sourceStat
   try {
     sourceStat = await stat(sourcePath)
@@ -94,6 +98,7 @@ export async function inspectLocalMediaSource(sourcePath: string, ffprobeCommand
     timeoutMs: 15_000,
     workingDirectory: path.dirname(sourcePath),
     env: process.env,
+    signal,
   })
 
   const payload = JSON.parse(result.stdout) as FfprobePayload

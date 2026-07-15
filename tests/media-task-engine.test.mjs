@@ -121,6 +121,23 @@ const hasFfprobe = spawnSync(ffprobeCommand, ['-version'], { stdio: 'ignore' }).
 const ffmpegCommand = process.env.MEDIA_DOCK_TEST_FFMPEG ?? 'ffmpeg'
 const hasFfmpeg = spawnSync(ffmpegCommand, ['-version'], { stdio: 'ignore' }).status === 0
 
+async function waitUntil(predicate, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  return predicate()
+}
+
+function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 test('a new Media Task Engine exposes an empty revisioned workspace snapshot', async () => {
   await withTemporaryWorkspace((dataDirectory) => {
     const engine = createMediaTaskEngine({ dataDirectory })
@@ -137,6 +154,68 @@ test('a new Media Task Engine exposes an empty revisioned workspace snapshot', a
       })
     } finally {
       engine.close()
+    }
+  })
+})
+
+test('engine shutdown waits for an active task process tree to terminate', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const dataDirectory = path.join(rootDirectory, 'data')
+    const outputDirectory = path.join(rootDirectory, 'output')
+    const sourcePath = path.join(rootDirectory, 'source.wav')
+    const pidPath = path.join(rootDirectory, 'runtime-pids.json')
+    mkdirSync(outputDirectory)
+    writeSilentWave(sourcePath)
+
+    const childScript = [
+      "const { spawn } = require('node:child_process')",
+      "const { writeFileSync } = require('node:fs')",
+      "const grandchild = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })",
+      "writeFileSync(process.env.MEDIA_DOCK_ENGINE_PID_PATH, JSON.stringify({ parent: process.pid, grandchild: grandchild.pid }))",
+      'setInterval(() => {}, 1000)',
+    ].join(';')
+    const previousPidPath = process.env.MEDIA_DOCK_ENGINE_PID_PATH
+    process.env.MEDIA_DOCK_ENGINE_PID_PATH = pidPath
+    const engine = createMediaTaskEngine({
+      dataDirectory,
+      idFactory: () => 'shutdown-task',
+      managedRuntimes: {
+        ffmpeg: {
+          command: process.execPath,
+          argsPrefix: ['-e', childScript, '--'],
+          version: 'shutdown-fixture',
+        },
+      },
+    })
+
+    try {
+      const plan = await engine.planTask({
+        source: {
+          kind: 'local-file',
+          locator: sourcePath,
+          displayName: 'source.wav',
+          mediaKind: 'audio',
+          durationSeconds: 0.1,
+          formatName: 'wav',
+        },
+        recipeId: 'audio-compatible',
+        outputDirectory,
+        language: 'en',
+      })
+      engine.createTask(plan)
+      const runningTask = engine.runTask('shutdown-task')
+      assert.equal(await waitUntil(() => existsSync(pidPath)), true)
+      const pids = JSON.parse(readFileSync(pidPath, 'utf8'))
+
+      await engine.shutdown()
+      await assert.rejects(runningTask, { name: 'AbortError' })
+      assert.equal(await waitUntil(() => !isProcessRunning(pids.parent) && !isProcessRunning(pids.grandchild)), true)
+      assert.equal(isProcessRunning(pids.parent), false)
+      assert.equal(isProcessRunning(pids.grandchild), false)
+    } finally {
+      await engine.shutdown()
+      if (previousPidPath === undefined) delete process.env.MEDIA_DOCK_ENGINE_PID_PATH
+      else process.env.MEDIA_DOCK_ENGINE_PID_PATH = previousPidPath
     }
   })
 })

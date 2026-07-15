@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 import { assertSafeLocalPath } from './core/localPath.js'
 import {
+  ensureWritablePortableDataDirectory,
+  getPortableDataDirectory,
+} from './core/portableData.js'
+import {
   getRuntimeUpdateAvailability,
   inspectRuntimeExecutable,
   installValidatedRuntimeExecutable,
@@ -23,7 +27,8 @@ import {
   RuntimeOperationCoordinator,
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
-import { runRuntimeProcessCollectOutput } from './core/runtimeProcess.js'
+import { runRuntimeProcessCollectOutput, terminateRuntimeProcessTree } from './core/runtimeProcess.js'
+import { extractZipArchive } from './core/zipArchive.js'
 import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
 import { importLatestLegacyAuthenticationPackage } from './v3/legacyAuthenticationImport.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
@@ -356,7 +361,6 @@ const WINDOW_DISPLAY_NAME = process.env.MEDIA_DOCK_V3_PREVIEW === '1' ? 'Media D
 const windowsHomeDir = process.env.USERPROFILE ?? homedir()
 const windowsLocalAppDataDir = process.env.LOCALAPPDATA ?? join(windowsHomeDir, 'AppData', 'Local')
 const windowsProgramFilesDir = process.env.ProgramFiles ?? 'C:\\Program Files'
-const windowsProgramFilesX86Dir = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
 const envRoot = process.env.YTDLP_ENV_ROOT
   ?? (
     isWindows
@@ -387,6 +391,7 @@ let mediaToolsWindow: BrowserWindow | null = null
 let v3TaskEngine: MediaTaskEngine | null = null
 let v3RuntimeRegistry: ManagedRuntimeRegistry | null = null
 let unregisterV3Ipc: (() => void) | null = null
+let portableDataRootDirectory: string | null = null
 let activeBatchRequest: DownloadRequest | null = null
 let pendingJobs: Array<{ jobId: string; url: string; index: number; totalJobs: number }> = []
 const activeJobs = new Map<string, JobContext>()
@@ -407,6 +412,9 @@ let activeSubtitleCleanupAbort: AbortController | null = null
 let subtitleCleanupCancelled = false
 let ytDlpInspectionCache: { key: string; promise: Promise<RuntimeExecutableInspection> } | null = null
 const runtimeOperations = new RuntimeOperationCoordinator()
+let applicationShutdownStarted = false
+let applicationShutdownCompleted = false
+let applicationShutdownPromise: Promise<void> | null = null
 
 const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
   '请帮我优化以下这份视频字幕文档。这份文档是通过 OCR 自动生成的，包含大量冗余和识别错误，同时含有时间戳和序号，需要请按以下规则进行清理和修复文字，最终形成一整份纯文本。',
@@ -451,7 +459,7 @@ function getBundledToolsDir() {
 
 function getPortableRootDir() {
   const explicitPortableRoot = process.env.MEDIA_DOCK_PORTABLE_ROOT?.trim()
-  if (app.isPackaged && explicitPortableRoot) {
+  if (explicitPortableRoot) {
     return explicitPortableRoot
   }
 
@@ -464,11 +472,18 @@ function getPortableRootDir() {
 }
 
 function getPortableDataRootDir() {
-  const rootDir = app.isPackaged
+  if (portableDataRootDirectory) {
+    return portableDataRootDirectory
+  }
+
+  const rootDir = app.isPackaged || process.env.MEDIA_DOCK_PORTABLE_ROOT?.trim()
     ? getPortableRootDir()
     : getDevRootDir()
 
-  return ensureDirectory(join(rootDir, `${APP_DISPLAY_NAME} Data`))
+  portableDataRootDirectory = ensureWritablePortableDataDirectory(
+    getPortableDataDirectory(rootDir, APP_DISPLAY_NAME),
+  )
+  return portableDataRootDirectory
 }
 
 function initializePortableUserDataPath() {
@@ -823,7 +838,12 @@ function getUpdateDownloadDir() {
   return app.isPackaged ? join(getPortableDataRootDir(), 'updates') : join(getDevRootDir(), 'updates')
 }
 
-initializePortableUserDataPath()
+let portableStartupError: Error | null = null
+try {
+  initializePortableUserDataPath()
+} catch (error) {
+  portableStartupError = error instanceof Error ? error : new Error(String(error))
+}
 
 function shouldAllowSystemToolFallback() {
   return !app.isPackaged || process.env.MEDIA_DOCK_ALLOW_SYSTEM_TOOLS === '1'
@@ -1608,83 +1628,8 @@ function selectDenoDownloadAsset(assets: NonNullable<GitHubReleasePayload['asset
     ?? null
 }
 
-function quotePowerShellPath(value: string) {
-  return `'${value.replace(/'/g, "''")}'`
-}
-
-function getBandizipPath() {
-  if (!isWindows) {
-    return null
-  }
-
-  const candidatePaths = uniquePaths([
-    process.env.BANDIZIP_BIN,
-    join(windowsProgramFilesDir, 'Bandizip', 'bz.exe'),
-    join(windowsProgramFilesX86Dir, 'Bandizip', 'bz.exe'),
-    findExecutableInPath('bz') ?? undefined,
-  ])
-
-  return candidatePaths.find((candidate) => existsSync(candidate)) ?? null
-}
-
-async function runSimpleProcess(command: string, args: string[], cwd: string) {
-  return await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env: {
-        ...process.env,
-        PATH: buildToolPathEnv(),
-      },
-    })
-
-    let stderr = ''
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8')
-    })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-        return
-      }
-      reject(new Error(stderr.trim() || `${command} exited with code ${code}`))
-    })
-  })
-}
-
 async function extractZip(zipPath: string, outputDir: string) {
-  rmSync(outputDir, { recursive: true, force: true })
-  ensureDirectory(outputDir)
-
-  if (isWindows) {
-    const bandizipPath = getBandizipPath()
-    if (bandizipPath) {
-      await runSimpleProcess(
-        bandizipPath,
-        ['x', '-y', '-aoa', `-o:${outputDir}`, zipPath],
-        dirname(zipPath),
-      )
-      return
-    }
-
-    const powershell = process.env.SystemRoot
-      ? join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-      : 'powershell.exe'
-    await runSimpleProcess(
-      powershell,
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        `Expand-Archive -LiteralPath ${quotePowerShellPath(zipPath)} -DestinationPath ${quotePowerShellPath(outputDir)} -Force`,
-      ],
-      dirname(zipPath),
-    )
-    return
-  }
-
-  await runSimpleProcess('unzip', ['-oq', zipPath, '-d', outputDir], dirname(zipPath))
+  await extractZipArchive(zipPath, outputDir)
 }
 
 function findFileRecursive(rootDir: string, fileName: string): string | null {
@@ -2407,23 +2352,9 @@ function emitLog(line: string, stream: 'stdout' | 'stderr' | 'system', jobId?: s
 }
 
 function terminateProcess(child: ChildProcessWithoutNullStreams | null, label: string) {
-  if (!child || child.killed) {
-    return
-  }
-
-  const pid = child.pid
+  if (!child) return
   try {
-    if (isWindows && pid) {
-      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
-      return
-    }
-
-    child.kill('SIGTERM')
-    setTimeout(() => {
-      if (!child.killed) {
-        child.kill('SIGKILL')
-      }
-    }, 1200)
+    terminateRuntimeProcessTree(child)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     emitLog(`[${label}] failed to terminate process: ${message}`, 'stderr')
@@ -2904,7 +2835,8 @@ async function inspectMedia(inputPath: string): Promise<MediaInspection> {
       '-of',
       'json',
       inputPath,
-    ])
+    ], { detached: process.platform !== 'win32' })
+    activeMediaProcess = child
 
     let stdout = ''
     let stderr = ''
@@ -2917,8 +2849,12 @@ async function inspectMedia(inputPath: string): Promise<MediaInspection> {
       stderr += chunk.toString('utf8')
     })
 
-    child.on('error', reject)
+    child.on('error', (error) => {
+      if (activeMediaProcess === child) activeMediaProcess = null
+      reject(error)
+    })
     child.on('close', (code) => {
+      if (activeMediaProcess === child) activeMediaProcess = null
       if (code !== 0) {
         reject(new Error(stderr.trim() || `ffprobe exited with code ${code}`))
         return
@@ -3427,6 +3363,7 @@ async function runLoggedProcess(executable: string, args: string[], cwd: string)
   return await new Promise<void>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         PATH: buildToolPathEnv(),
@@ -3746,6 +3683,7 @@ function startNextJobs() {
       const ytDlpPath = getYtDlpPath()
       const child = spawn(ytDlpPath, args, {
         cwd: activeBatchRequest.outputDir,
+        detached: process.platform !== 'win32',
         env: {
           ...process.env,
           PATH: buildToolPathEnv(),
@@ -4217,6 +4155,34 @@ async function initializeV3TaskEngine() {
 }
 
 app.whenReady().then(async () => {
+  if (portableStartupError) {
+    if (process.env.MEDIA_DOCK_STARTUP_PROBE !== '1') {
+      dialog.showErrorBox('Media Dock cannot start', portableStartupError.message)
+    } else {
+      console.error(portableStartupError.message)
+    }
+    app.exit(1)
+    return
+  }
+
+  if (process.env.MEDIA_DOCK_STARTUP_PROBE === '1') {
+    const dataDirectory = getPortableDataRootDir()
+    writeFileSync(join(dataDirectory, 'startup-probe.json'), `${JSON.stringify({
+      appVersion: app.getVersion(),
+      dataDirectory,
+      platform: process.platform,
+      arch: process.arch,
+    }, null, 2)}\n`, 'utf8')
+    app.exit(0)
+    return
+  }
+
+  if (process.env.MEDIA_DOCK_EXIT_PROBE === '1') {
+    await initializeV3TaskEngine()
+    app.quit()
+    return
+  }
+
   applyDockIcon()
   await initializeV3TaskEngine()
   createWindow()
@@ -4226,14 +4192,64 @@ app.whenReady().then(async () => {
       createWindow()
     }
   })
+}).catch((error) => {
+  const message = error instanceof Error ? error.message : String(error)
+  dialog.showErrorBox('Media Dock cannot start', message)
+  app.exit(1)
 })
 
-app.on('before-quit', () => {
-  unregisterV3Ipc?.()
-  unregisterV3Ipc = null
-  v3TaskEngine?.close()
-  v3TaskEngine = null
-  v3RuntimeRegistry = null
+async function shutdownApplicationWork() {
+  if (applicationShutdownPromise) return await applicationShutdownPromise
+  if (applicationShutdownStarted) return
+  applicationShutdownStarted = true
+
+  applicationShutdownPromise = (async () => {
+    batchCancelled = true
+    mediaCancelled = true
+    subtitleCleanupCancelled = true
+    activeBatchRequest = null
+    pendingJobs = []
+    downloadSchedulerQueued = false
+
+    for (const [, job] of activeJobs) {
+      terminateProcess(job.process, `job ${job.jobId}`)
+    }
+    activeJobs.clear()
+    terminateProcess(activeMediaProcess, 'media')
+    activeMediaProcess = null
+    activeSubtitleCleanupAbort?.abort()
+    activeSubtitleCleanupAbort = null
+
+    unregisterV3Ipc?.()
+    unregisterV3Ipc = null
+    await v3TaskEngine?.shutdown()
+    v3TaskEngine = null
+    v3RuntimeRegistry = null
+
+    if (process.env.MEDIA_DOCK_EXIT_PROBE === '1') {
+      writeFileSync(join(getPortableDataRootDir(), 'exit-probe.json'), `${JSON.stringify({
+        activeJobs: activeJobs.size,
+        activeMediaProcess: activeMediaProcess !== null,
+        subtitleCleanupActive: activeSubtitleCleanupAbort !== null,
+        taskEngineClosed: v3TaskEngine === null,
+        ipcUnregistered: unregisterV3Ipc === null,
+      }, null, 2)}\n`, 'utf8')
+    }
+  })()
+  return await applicationShutdownPromise
+}
+
+app.on('before-quit', (event) => {
+  if (applicationShutdownCompleted) return
+  event.preventDefault()
+  void shutdownApplicationWork()
+    .catch((error) => {
+      console.error('Media Dock shutdown failed:', error)
+    })
+    .finally(() => {
+      applicationShutdownCompleted = true
+      app.quit()
+    })
 })
 
 app.on('window-all-closed', () => {

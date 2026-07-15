@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { dirname, isAbsolute } from 'node:path'
 
@@ -19,19 +19,52 @@ export function resolveRuntimeProcessWorkingDirectory(command: string, fallbackD
   return dirname(process.execPath)
 }
 
+export function terminateRuntimeProcessTree(child: ChildProcess) {
+  const pid = child.pid
+  if (!pid || child.exitCode !== null || child.signalCode !== null) return
+
+  if (process.platform === 'win32') {
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+      timeout: 10_000,
+    })
+    return
+  }
+
+  try {
+    process.kill(-pid, 'SIGTERM')
+  } catch {
+    try {
+      child.kill('SIGTERM')
+    } catch {
+      // The process may already have exited between the state check and signal.
+    }
+  }
+}
+
 export async function runRuntimeProcessCollectOutput(options: {
   command: string
   args: string[]
   timeoutMs: number
   workingDirectory: string
   env: NodeJS.ProcessEnv
+  signal?: AbortSignal
   onOutputLine?: (line: string, stream: 'stdout' | 'stderr') => void
 }) {
   const workingDirectory = resolveRuntimeProcessWorkingDirectory(options.command, options.workingDirectory)
   return await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    if (options.signal?.aborted) {
+      const error = new Error('Runtime process was cancelled before launch.')
+      error.name = 'AbortError'
+      reject(error)
+      return
+    }
+
     const child = spawn(options.command, options.args, {
       cwd: workingDirectory,
       env: options.env,
+      detached: process.platform !== 'win32',
     })
 
     let stdout = ''
@@ -64,10 +97,25 @@ export async function runRuntimeProcessCollectOutput(options: {
       if (stream === 'stdout') stdoutLineBuffer = ''
       else stderrLineBuffer = ''
     }
+    let settled = false
+    const settle = (action: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      options.signal?.removeEventListener('abort', abortProcess)
+      action()
+    }
+    const abortProcess = () => {
+      terminateRuntimeProcessTree(child)
+      const error = new Error('Runtime process was cancelled because Media Dock is shutting down.')
+      error.name = 'AbortError'
+      settle(() => reject(error))
+    }
     const timeout = setTimeout(() => {
-      child.kill('SIGTERM')
-      reject(new Error(`${options.command} timed out after ${Math.round(options.timeoutMs / 1000)} seconds.`))
+      terminateRuntimeProcessTree(child)
+      settle(() => reject(new Error(`${options.command} timed out after ${Math.round(options.timeoutMs / 1000)} seconds.`)))
     }, options.timeoutMs)
+    options.signal?.addEventListener('abort', abortProcess, { once: true })
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString('utf8')
@@ -80,18 +128,16 @@ export async function runRuntimeProcessCollectOutput(options: {
       emitCompleteLines(text, 'stderr')
     })
     child.on('error', (error) => {
-      clearTimeout(timeout)
-      reject(new Error(`Could not start runtime process from ${workingDirectory}: ${error.message}`, { cause: error }))
+      settle(() => reject(new Error(`Could not start runtime process from ${workingDirectory}: ${error.message}`, { cause: error })))
     })
     child.on('close', (code) => {
-      clearTimeout(timeout)
       emitRemainder('stdout')
       emitRemainder('stderr')
       if (code === 0) {
-        resolve({ stdout, stderr })
+        settle(() => resolve({ stdout, stderr }))
         return
       }
-      reject(new Error(stderr.trim() || `${options.command} exited with code ${code}`))
+      settle(() => reject(new Error(stderr.trim() || `${options.command} exited with code ${code}`)))
     })
   })
 }

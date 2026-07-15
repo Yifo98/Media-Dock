@@ -47,6 +47,7 @@ function writeRuntimeFixtures(runtimeDir, ytDlp = ytDlpPayload) {
   writeFileSync(join(runtimeDir, 'deno.exe'), 'deno fixture')
   writeFileSync(join(runtimeDir, 'ffmpeg.exe'), 'ffmpeg fixture')
   writeFileSync(join(runtimeDir, 'ffprobe.exe'), 'ffprobe fixture')
+  writeFileSync(join(runtimeDir, 'avcodec-fixture.dll'), 'ffmpeg dll fixture')
 }
 
 test('resolves latest metadata to a concrete official yt-dlp asset', async () => {
@@ -104,8 +105,8 @@ test('verifies all packaged runtime files and the embedded yt-dlp hash', () => {
     const result = verifyWindowsRuntimeDirectory(sandbox.runtimeDir, recordedManifest)
 
     assert.equal(result.ytDlp.sha256, sandbox.manifest.sha256)
-    assert.deepEqual(Object.keys(result.tools).sort(), ['deno.exe', 'ffmpeg.exe', 'ffprobe.exe', 'yt-dlp.exe'])
-    assert.deepEqual(Object.keys(recordedManifest.tools).sort(), ['deno.exe', 'ffmpeg.exe', 'ffprobe.exe', 'yt-dlp.exe'])
+    assert.deepEqual(Object.keys(result.tools).sort(), ['avcodec-fixture.dll', 'deno.exe', 'ffmpeg.exe', 'ffprobe.exe', 'yt-dlp.exe'])
+    assert.deepEqual(Object.keys(recordedManifest.tools).sort(), ['avcodec-fixture.dll', 'deno.exe', 'ffmpeg.exe', 'ffprobe.exe', 'yt-dlp.exe'])
 
     writeFileSync(join(sandbox.runtimeDir, 'ffmpeg.exe'), 'ffmpeg changed')
     assert.throws(
@@ -114,6 +115,12 @@ test('verifies all packaged runtime files and the embedded yt-dlp hash', () => {
     )
 
     writeFileSync(join(sandbox.runtimeDir, 'ffmpeg.exe'), 'ffmpeg fixture')
+    writeFileSync(join(sandbox.runtimeDir, 'unexpected.dll'), 'unexpected runtime')
+    assert.throws(
+      () => verifyWindowsRuntimeDirectory(sandbox.runtimeDir, recordedManifest),
+      /inventory mismatch/i,
+    )
+    rmSync(join(sandbox.runtimeDir, 'unexpected.dll'))
     rmSync(join(sandbox.runtimeDir, 'deno.exe'))
     assert.throws(
       () => verifyWindowsRuntimeDirectory(sandbox.runtimeDir, recordedManifest),
@@ -126,7 +133,7 @@ test('verifies all packaged runtime files and the embedded yt-dlp hash', () => {
 
 test('records and verifies runtime directories through the production CLI', () => {
   const sandbox = createSandbox()
-  const manifestPath = join(sandbox.rootDir, 'YT-DLP-WINDOWS.json')
+  const manifestPath = join(sandbox.rootDir, 'WINDOWS-RUNTIMES.json')
   try {
     writeRuntimeFixtures(sandbox.runtimeDir)
     writeFileSync(manifestPath, `${JSON.stringify(sandbox.manifest, null, 2)}\n`)
@@ -138,7 +145,7 @@ test('records and verifies runtime directories through the production CLI', () =
       '--runtime-dir', sandbox.runtimeDir,
     ], { encoding: 'utf8' })
     assert.equal(recordResult.status, 0, `${recordResult.stdout}${recordResult.stderr}`)
-    assert.equal(Object.keys(JSON.parse(readFileSync(manifestPath, 'utf8')).tools).length, 4)
+    assert.equal(Object.keys(JSON.parse(readFileSync(manifestPath, 'utf8')).tools).length, 5)
 
     const verifyResult = spawnSync(process.execPath, [
       runtimeVerifierPath,
@@ -179,7 +186,8 @@ test('production PowerShell gate removes stale checksums before a failed verific
   const sandbox = createSandbox()
   const sourceDir = join(sandbox.rootDir, 'zip-source')
   const packagePath = join(sandbox.rootDir, 'broken package.zip')
-  const manifestPath = join(sandbox.rootDir, 'YT-DLP-WINDOWS.json')
+  const manifestPath = join(sandbox.rootDir, 'WINDOWS-RUNTIMES.json')
+  const signatureReportPath = join(sandbox.rootDir, 'WINDOWS-SIGNATURES.json')
   const checksumsPath = join(sandbox.rootDir, 'SHA256SUMS.txt')
   try {
     mkdirSync(sourceDir)
@@ -206,10 +214,11 @@ test('production PowerShell gate removes stale checksums before a failed verific
 
     const result = spawnSync('powershell.exe', [
       '-NoProfile',
-      '-ExecutionPolicy', 'Bypass',
       '-File', powershellVerifierPath,
       '-PackagePath', packagePath,
-      '-YtDlpManifestPath', manifestPath,
+      '-RuntimeManifestPath', manifestPath,
+      '-SignatureReportPath', signatureReportPath,
+      '-ExpectedVersion', '3.0.0-alpha.2',
       '-ChecksumPath', checksumsPath,
       '-WriteChecksum',
     ], { encoding: 'utf8', timeout: 60000 })

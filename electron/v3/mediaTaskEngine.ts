@@ -241,6 +241,7 @@ export type MediaTaskEngine = Readonly<{
   clearTaskHistory(): Promise<WorkspaceSnapshot>
   subscribeWorkspace(listener: (snapshot: WorkspaceSnapshot) => void): () => void
   getWorkspaceSnapshot(): WorkspaceSnapshot
+  shutdown(): Promise<void>
   close(): void
 }>
 
@@ -708,6 +709,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   recoverAbandonedTasks(database, () => (options.now?.() ?? new Date()).toISOString())
 
   let isClosed = false
+  let isShuttingDown = false
+  let shutdownPromise: Promise<void> | null = null
+  const shutdownController = new AbortController()
+  const runningTasks = new Set<Promise<WorkspaceSnapshot>>()
   const workspaceListeners = new Set<(snapshot: WorkspaceSnapshot) => void>()
   const taskProgresses = new Map<string, MediaTaskProgress>()
   const taskProgressFormatIds = new Map<string, string>()
@@ -869,7 +874,11 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       }
 
       if (input.kind === 'local-file') {
-        return await inspectLocalMediaSource(input.path, options.managedRuntimes?.ffprobe?.command ?? 'ffprobe')
+        return await inspectLocalMediaSource(
+          input.path,
+          options.managedRuntimes?.ffprobe?.command ?? 'ffprobe',
+          shutdownController.signal,
+        )
       }
 
       if (options.resolveCollection) {
@@ -889,6 +898,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       return await inspectNetworkMediaSource(input.url, ytDlp, {
         authenticationCookiePath,
         deno: options.managedRuntimes?.deno,
+        signal: shutdownController.signal,
       })
     },
 
@@ -903,6 +913,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const qualityOptions = await inspectNetworkVideoQualities(source.locator, ytDlp, {
         authenticationCookiePath,
         deno: options.managedRuntimes?.deno,
+        signal: shutdownController.signal,
       })
       return Object.freeze({
         availableHeights: Object.freeze(qualityOptions.map((option) => option.height)),
@@ -1134,10 +1145,11 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       return publishWorkspace()
     },
 
-    async runTask(taskId: string): Promise<WorkspaceSnapshot> {
-      if (isClosed) {
-        throw new Error('Media Task Engine is closed.')
-      }
+    runTask(taskId: string): Promise<WorkspaceSnapshot> {
+      const operation = (async () => {
+        if (isClosed || isShuttingDown) {
+          throw new Error('Media Task Engine is closed.')
+        }
 
       let task = findTask(database, taskId)
       const isQueued = task.state === 'queued'
@@ -1257,6 +1269,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
             timeoutMs: 30 * 60_000,
             workingDirectory: taskStagingDirectory,
             env: process.env,
+            signal: shutdownController.signal,
             onOutputLine: (line) => {
               const parsed = parseYtDlpProgressLine(line)
               if (!parsed) return
@@ -1287,6 +1300,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
             timeoutMs: 30 * 60_000,
             workingDirectory: taskStagingDirectory,
             env: process.env,
+            signal: shutdownController.signal,
           })
         } else {
           await runRuntimeProcessCollectOutput({
@@ -1310,6 +1324,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
             timeoutMs: 120_000,
             workingDirectory: taskStagingDirectory,
             env: process.env,
+            signal: shutdownController.signal,
           })
         }
 
@@ -1362,6 +1377,9 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         await rmdir(stagingRoot).catch(() => undefined)
         return publishWorkspace()
       } catch (error) {
+        if (isShuttingDown || isClosed) {
+          throw error
+        }
         const isNetworkTask = task.plan.source.kind === 'network-url'
         const problem = Object.freeze({
           code: isNetworkTask ? 'network.acquisition.failed' : 'media.processing.failed',
@@ -1384,6 +1402,11 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         publishWorkspace()
         throw error
       }
+      })()
+
+      runningTasks.add(operation)
+      void operation.finally(() => runningTasks.delete(operation)).catch(() => undefined)
+      return operation
     },
 
     async runTaskBatch(batchId: string): Promise<WorkspaceSnapshot> {
@@ -1425,9 +1448,31 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       return readWorkspaceSnapshot(database, taskProgresses)
     },
 
+    async shutdown(): Promise<void> {
+      if (shutdownPromise) return await shutdownPromise
+      if (isClosed) return
+
+      isShuttingDown = true
+      shutdownController.abort()
+      shutdownPromise = (async () => {
+        await Promise.allSettled([...runningTasks])
+        database.close()
+        workspaceListeners.clear()
+        taskProgresses.clear()
+        taskProgressFormatIds.clear()
+        taskProgressPublishedAt.clear()
+        isClosed = true
+      })()
+      return await shutdownPromise
+    },
+
     close(): void {
       if (isClosed) {
         return
+      }
+
+      if (runningTasks.size > 0) {
+        throw new Error('Media Task Engine has active work; call shutdown() and await it before closing.')
       }
 
       database.close()

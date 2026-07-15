@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "macOS packages must be built on a native macOS runner or Mac."
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RELEASE_DIR="$PROJECT_ROOT/release"
@@ -10,21 +15,22 @@ TOOLS_BIN_DIR="$TOOLS_DIR/bin"
 TOOLS_LIB_DIR="$TOOLS_DIR/lib"
 APP_VERSION="$(node -p "require('$PROJECT_ROOT/package.json').version")"
 VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
-README_PATH="$VERSION_DIR/README-mac.txt"
-DEFAULT_ENV_ROOT="$HOME/.conda/envs/yt-dlp"
-ENV_ROOT="${YTDLP_ENV_ROOT:-$DEFAULT_ENV_ROOT}"
+ENV_ROOT="${YTDLP_ENV_ROOT:-$HOME/.conda/envs/yt-dlp}"
 ARCH_NAME="$(uname -m)"
-YTDLP_CHANNEL="${YTDLP_CHANNEL:-stable}"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
 DENO_VERSION="${DENO_VERSION:-2.9.2}"
+FFMPEG_SOURCE="${FFMPEG_SOURCE:-native macOS FFmpeg runtime supplied by the build environment}"
+
 case "$ARCH_NAME" in
   arm64)
     DENO_ARCHIVE_NAME="deno-aarch64-apple-darwin.zip"
     BUILDER_ARCH_FLAG="--arm64"
+    BUILDER_ARTIFACT_ARCH="arm64"
     ;;
   x86_64)
     DENO_ARCHIVE_NAME="deno-x86_64-apple-darwin.zip"
     BUILDER_ARCH_FLAG="--x64"
+    BUILDER_ARTIFACT_ARCH="x64"
     ;;
   *)
     echo "Unsupported macOS architecture: $ARCH_NAME"
@@ -32,234 +38,44 @@ case "$ARCH_NAME" in
     ;;
 esac
 
-DENO_URL="${DENO_URL:-https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${DENO_ARCHIVE_NAME}}"
-ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|electron-user-data|subtitle-cleanup-config|api[_-]?key'
-
-download_file() {
-  local url="$1"
-  local output="$2"
-  curl --fail --location --retry 4 --retry-delay 2 --retry-all-errors \
-    --connect-timeout 20 --speed-time 60 --speed-limit 1024 --max-time 900 \
-    "$url" -o "$output"
-}
-
 if [[ -z "${YTDLP_URL:-}" ]]; then
-  if [[ "$YTDLP_CHANNEL" == "nightly" ]]; then
-    YTDLP_URL="https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp"
-  elif [[ -n "$YTDLP_VERSION" ]]; then
-    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp"
+  if [[ -n "$YTDLP_VERSION" ]]; then
+    YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/download/$YTDLP_VERSION/yt-dlp"
   else
     YTDLP_URL="https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
   fi
 fi
+DENO_URL="${DENO_URL:-https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/${DENO_ARCHIVE_NAME}}"
+ZIP_PRIVACY_PATTERN='(^|/)(cookies?|Media Dock Data|app-cache)(/|$)|\.cookies\.txt|cookies\.txt|history|config\.json|user[- ]data|electron-session|subtitle-cleanup-config|api[_-]?key'
 
-cleanup_tools() {
-  rm -rf "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
+download_file() {
+  curl --fail --location --retry 4 --retry-delay 2 --retry-all-errors \
+    --connect-timeout 20 --speed-time 60 --speed-limit 1024 --max-time 900 \
+    "$1" -o "$2"
 }
 
-prepare_release_dir() {
-  mkdir -p "$RELEASE_DIR" "$VERSION_DIR"
-  rm -rf "$RELEASE_DIR"/win-unpacked "$RELEASE_DIR"/mac-unpacked "$RELEASE_DIR"/mac-arm64
-  rm -rf "$RELEASE_DIR"/extensions
-  rm -f "$RELEASE_DIR"/.DS_Store(N) "$VERSION_DIR"/.DS_Store(N)
-  rm -f "$RELEASE_DIR"/*mac*.zip(N) "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/*.txt(N) "$RELEASE_DIR"/latest-mac.yml(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
-  rm -f "$VERSION_DIR"/*mac*.zip(N) "$README_PATH" "$VERSION_DIR"/latest-mac.yml(N)
+cleanup() {
+  rm -rf "$TOOLS_DIR"
 }
-
-repack_macos_launcher_zip() {
-  local archive="$1"
-  local unpack_dir
-  local package_parent
-  local package_name
-  local package_dir
-  local app_path
-  unpack_dir="$(mktemp -d)"
-  package_parent="$(mktemp -d)"
-  package_name="$(basename "$archive" .zip)"
-  package_dir="$package_parent/$package_name"
-  mkdir -p "$package_dir/core"
-  unzip -q "$archive" -d "$unpack_dir"
-  app_path="$(find "$unpack_dir" -maxdepth 2 -name 'Media Dock.app' -type d | head -n 1)"
-  if [[ -z "$app_path" ]]; then
-    echo "Media Dock.app was not found inside macOS zip artifact."
-    exit 1
-  fi
-  mv "$app_path" "$package_dir/core/Media Dock.app"
-  cp "$README_PATH" "$package_dir/README-mac.txt"
-  cat > "$package_dir/Launch Media Dock.command" <<'EOF'
-#!/bin/zsh
-
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_PATH="$SCRIPT_DIR/core/Media Dock.app"
-EXECUTABLE="$APP_PATH/Contents/MacOS/Media Dock"
-
-if [[ ! -x "$EXECUTABLE" ]]; then
-  echo "Media Dock runtime was not found:"
-  echo "$EXECUTABLE"
-  echo
-  echo "Keep this launcher next to the core folder after unzipping."
-  read -r "?Press Enter to close..."
-  exit 1
-fi
-
-open -n --env "MEDIA_DOCK_PORTABLE_ROOT=$SCRIPT_DIR" "$APP_PATH"
-EOF
-  chmod +x "$package_dir/Launch Media Dock.command"
-  rm -f "$archive"
-  (cd "$package_parent" && COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$package_name" "$archive")
-  rm -rf "$unpack_dir" "$package_parent"
-}
-
-write_release_notes() {
-  local curated_notes="$PROJECT_ROOT/docs/release/$APP_VERSION.md"
-  if [[ -f "$curated_notes" ]]; then
-    cp "$curated_notes" "$VERSION_DIR/RELEASE-NOTES.md"
-    return
-  fi
-  cat > "$VERSION_DIR/RELEASE-NOTES.md" <<EOF
-# Media Dock $APP_VERSION
-
-## 中文说明
-
-本次发布主要刷新了桌面分享包，重点补强了本地媒体合并、主界面交互、自动更新和隐私打包边界。
-
-## 包含内容
-
-- \`Media Dock-$APP_VERSION-arm64-mac.zip\`
-- \`Media Dock-$APP_VERSION-win.zip\`
-- \`Launch Media Dock.bat\` Windows ZIP 根目录启动脚本
-- \`README-windows.txt\`
-- \`Launch Media Dock.command\` macOS ZIP 根目录启动脚本
-- \`README-mac.txt\`
-- MediaCookies 浏览器插件请从 Google 应用商店安装，或从 GitHub 下载
-
-## 主要更新
-
-- 分享包已内置最新稳定下载内核：\`yt-dlp ${YTDLP_VERSION:-stable}\`、\`Deno $DENO_VERSION\`、\`ffmpeg\`、\`ffprobe\`，用户解压后可直接使用；以后需要更新内核时，在软件内点击“检查更新”即可。
-- 下载面板重新整理为“顶部开始/清空/停止/打开目录 + Cookie 推荐 + 来源输入区”，常用操作不再埋在下方。
-- 新增“链接下载 / 剧集批量解析”模式切换，两个模式只显示当前需要的输入区，避免重复链接列表。
-- 链接列表改为更轻的输入区样式，弱化突兀外框。
-- 剧集批量解析的主链接增加“清空”按钮，可快速清掉主链接、解析结果和选集状态。
-- 启动自检只保留一个“检查更新”，聚焦 \`yt-dlp\` 和 \`Deno\` 这类核心工具，并在安装/更新时显示阶段和进度。
-- 推荐安装 MediaCookies 浏览器插件，可导出并导入 Media Dock 可读取的站点 Cookie ZIP
-- MediaCookies 预览逻辑改为先扫描浏览器 Cookie，再按 yt-dlp 官方 supported sites 自动生成可导出来源
-- MediaCookies 默认只导出匹配 yt-dlp 官方支持站点的 Cookie，同时提供“全部 Cookie”高级模式
-- MediaCookies 支持预览后再执行全选 常用 清空，最后按当前选择导出 ZIP
-- MediaCookies 内置常用默认改为更稳的 B 站和 YouTube；抖音/TikTok 仍可手动选择，但不会默认加入常用
-- MediaCookies 支持把当前选择保存为常用配置，并可导入/导出只包含来源 ID 的 JSON 配置文件
-- 下载面板新增抖音/TikTok 链接检查，粘贴后会提前提示具体视频页、可转换入口或不适合下载的推荐流入口
-- 媒体工具改为主窗口内部工作区，不再从主界面弹出额外窗口
-- 新增本地音视频单个配对合并和批量文件夹自动配对合并
-- 多文件合并优先按照媒体流类型和时长配对，不再依赖文件名相似度
-- 修复 B 站 / IDM 分离文件中 \`_2.m4s\` 这类尾号文件无法稳定识别配对的问题
-- 合并页选择待识别文件后会立即刷新流信息，直接显示音频流或视频流
-- 合并输出支持自定义文件名，批量任务会自动追加 01 02 序号避免覆盖
-- Cookie 选择会提示过期和临期状态，减少误选失效登录态
-- 默认下载、cookies、缓存、更新包和 Deno 自动安装都保存在同级 \`Media Dock Data\` 目录
-- 刷新桌面应用图标、favicon 和 GitHub README 顶部展示图，统一为新的媒体环形品牌标识
-- 压缩主界面实时信息区域，让日志和最近任务更靠上
-- 修复长路径在顶部卡片和启动自检区域溢出重叠的问题
-- 增加启动自动检查更新，发现旧版本时可直接下载最新 ZIP
-- 增加 Deno 缺失时的一键自动下载和同级目录安装
-- Windows 端检测到 Bandizip 的 \`bz.exe\` 时，会优先用于 zip 解压；未安装时自动回退 PowerShell
-- Windows ZIP 根目录内置 \`Launch Media Dock.bat\`，核心运行文件放在 \`core\` 目录
-- macOS ZIP 根目录内置 \`Launch Media Dock.command\`，核心运行文件放在 \`core\` 目录
-- 标准分享包继续内置 \`yt-dlp\` \`ffmpeg\` \`ffprobe\` 和 \`deno\`
-
-## 打包与隐私
-
-- 分享包目标仍然是解压即用
-- 打包脚本只清理当前目标版本的旧产物，并保留已有历史版本目录
-- 打包脚本会校验压缩包中不包含 cookies 历史记录 本地会话 字幕清理配置 API Key 等隐私文件
-- 目前 macOS 与 Windows 版本都还是未签名状态，首次运行可能会看到系统安全提示
-
-## English
-
-## Summary
-
-This release refreshes the shared desktop package with local media merge support, smoother in-window navigation, update checks, and stricter privacy packaging boundaries.
-
-## Included artifacts
-
-- \`Media Dock-$APP_VERSION-arm64-mac.zip\`
-- \`Media Dock-$APP_VERSION-win.zip\`
-- \`Launch Media Dock.bat\` at the Windows zip root
-- \`README-windows.txt\`
-- \`Launch Media Dock.command\` at the macOS zip root
-- \`README-mac.txt\`
-- Install MediaCookies from the Chrome Web Store or download it from GitHub
-
-## Highlights
-
-- The shared packages now bundle the latest stable download core: \`yt-dlp ${YTDLP_VERSION:-stable}\`, \`Deno $DENO_VERSION\`, \`ffmpeg\`, and \`ffprobe\`, so users can unpack and run immediately. Future core updates can be installed from the in-app Check updates button.
-- Reworked the download panel into a top preparation area with Start / Clear / Stop / Open folder, Cookie suggestion, and then the source input area.
-- Added the Link download / Collection picker mode switch, with only the relevant input area visible in each mode.
-- Restyled the URL list as a lighter input area instead of a heavy framed block.
-- Added a Clear button for the collection source URL, clearing the source link, resolved collection, and current episode selection.
-- Kept a single Check updates button in startup checks, focused on \`yt-dlp\` and \`Deno\`, with visible install/update stages and progress.
-- Recommended the MediaCookies browser extension for exporting and importing Media Dock compatible cookie ZIPs
-- MediaCookies now scans browser cookies first, then generates exportable sources from the official yt-dlp supported sites list
-- MediaCookies defaults to cookies matching yt-dlp supported sites, with an explicit advanced all-cookie mode
-- MediaCookies now supports preview first, then Select All, Common, Clear, and export ZIP from the current selection
-- MediaCookies built-in Common now stays conservative with Bilibili and YouTube; Douyin/TikTok remain manually selectable but are not selected by Common unless saved by the user
-- MediaCookies can save the current selection as a Common profile and import/export a source-ID-only JSON profile
-- The download panel now checks Douyin/TikTok URLs as soon as they are pasted, flagging direct video links, convertible entries, and unsupported feed pages early
-- Moved Media Tools into an in-window workspace instead of opening an extra window from the main UI
-- Added single-pair and batch-folder local audio/video merge workflows
-- Multi-file merge now pairs by stream type and duration instead of filename similarity
-- Fixed unstable pairing for Bilibili / IDM separated files such as \`_2.m4s\`
-- Refresh stream inspection immediately after choosing a merge input so audio/video detection is visible
-- Merge output supports a custom base name, with 01 02 suffixes added automatically for batch jobs
-- Cookie selection now warns about expired and soon-to-expire files to reduce bad login-state choices
-- Default downloads, cookies, cache, update zips, and auto-installed Deno stay in the sibling \`Media Dock Data\` folder
-- Refreshed the desktop app icon, favicon, and GitHub README hero with the new media-loop brand mark
-- Tightened the main telemetry rail so logs and recent jobs stay higher on screen
-- Fixed long runtime paths overflowing the hero status cards and startup self-check area
-- Added startup update checks and direct latest zip download support
-- Added one-click local Deno download and sibling-folder install when Deno is missing
-- Windows uses Bandizip \`bz.exe\` for zip extraction when detected, falling back to PowerShell when it is not installed
-- Added \`Launch Media Dock.bat\` at the Windows zip root, with runtime files kept in \`core\`
-- Added \`Launch Media Dock.command\` at the macOS zip root, with runtime files kept in \`core\`
-- Added \`README-mac.txt\` inside the macOS zip with first-run guidance
-- Kept bundled \`yt-dlp\`, \`ffmpeg\`, \`ffprobe\`, and \`deno\` inside the standard shared builds
-
-## Packaging and privacy
-
-- Shared builds are intended to be unpack-and-run
-- Packaging scripts clean only stale artifacts for the target version and preserve existing historical release folders
-- Packaging scripts verify that cookies, history, local session files, subtitle cleanup configs, API keys, and similar private files are not included in release archives
-- macOS and Windows builds are currently unsigned, so first-run security prompts are expected
-EOF
-}
-
-trap cleanup_tools EXIT
-
-mkdir -p "$TOOLS_DIR"
-cleanup_tools
-mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR"
-prepare_release_dir
-
-cd "$PROJECT_ROOT"
-
-if [[ ! -d "$ENV_ROOT" ]]; then
-  echo "Missing yt-dlp Conda environment: $ENV_ROOT"
-  exit 1
-fi
+trap cleanup EXIT
 
 if [[ ! -x "$ENV_ROOT/bin/ffmpeg" || ! -x "$ENV_ROOT/bin/ffprobe" ]]; then
-  echo "Missing ffmpeg/ffprobe in $ENV_ROOT/bin"
+  echo "Missing native ffmpeg/ffprobe in $ENV_ROOT/bin. Set YTDLP_ENV_ROOT to a native macOS runtime prefix."
   exit 1
 fi
+
+rm -rf "$TOOLS_DIR" "$RELEASE_DIR/mac" "$RELEASE_DIR/mac-arm64" "$RELEASE_DIR/mac-universal"
+mkdir -p "$TOOLS_BIN_DIR" "$TOOLS_LIB_DIR" "$VERSION_DIR"
+rm -f "$RELEASE_DIR"/Media-Dock-"$APP_VERSION"*-mac.zip(N)
+rm -f "$VERSION_DIR"/Media-Dock-"$APP_VERSION"*-mac.zip(N) "$VERSION_DIR/MACOS-RUNTIMES.json" "$VERSION_DIR/SHA256SUMS-mac.txt"
 
 download_file "$YTDLP_URL" "$TOOLS_BIN_DIR/yt-dlp"
 chmod +x "$TOOLS_BIN_DIR/yt-dlp"
 
 TMP_DENO_DIR="$(mktemp -d)"
 download_file "$DENO_URL" "$TMP_DENO_DIR/$DENO_ARCHIVE_NAME"
-unzip -q "$TMP_DENO_DIR/$DENO_ARCHIVE_NAME" -d "$TMP_DENO_DIR"
-mv "$TMP_DENO_DIR/deno" "$TOOLS_BIN_DIR/deno"
+ditto -x -k "$TMP_DENO_DIR/$DENO_ARCHIVE_NAME" "$TMP_DENO_DIR/unpacked"
+mv "$TMP_DENO_DIR/unpacked/deno" "$TOOLS_BIN_DIR/deno"
 chmod +x "$TOOLS_BIN_DIR/deno"
 rm -rf "$TMP_DENO_DIR"
 
@@ -276,105 +92,102 @@ from pathlib import Path
 env_root = Path(sys.argv[1])
 lib_dir = Path(sys.argv[2])
 targets = [Path(arg) for arg in sys.argv[3:]]
-search_dirs = [
-    env_root / "lib",
-    Path("/opt/homebrew/lib"),
-    Path("/usr/local/lib"),
-]
-
-copied: set[Path] = set()
+search_dirs = [env_root / "lib", Path("/opt/homebrew/lib"), Path("/usr/local/lib")]
+copied: dict[Path, Path] = {}
 queue = list(targets)
 
-def deps_for(path: Path) -> list[str]:
+def dependencies(path: Path) -> list[str]:
     output = subprocess.check_output(["otool", "-L", str(path)], text=True)
-    deps = []
-    for line in output.splitlines()[1:]:
-        line = line.strip()
-        if not line:
-            continue
-        deps.append(line.split(" (compatibility version", 1)[0])
-    return deps
+    return [line.strip().split(" (compatibility version", 1)[0] for line in output.splitlines()[1:] if line.strip()]
 
-def resolve_dep(dep: str) -> Path | None:
-    if dep.startswith("/System/") or dep.startswith("/usr/lib/"):
-      return None
-    if dep.startswith("@rpath/"):
-      base = dep.split("/", 1)[1]
-      for search_dir in search_dirs:
-        candidate = search_dir / base
-        if candidate.exists():
-          return candidate
-      return None
-    candidate = Path(dep)
+def resolve_dependency(value: str) -> Path | None:
+    if value.startswith("/System/") or value.startswith("/usr/lib/"):
+        return None
+    if value.startswith("@rpath/"):
+        name = value.split("/", 1)[1]
+        return next((directory / name for directory in search_dirs if (directory / name).exists()), None)
+    candidate = Path(value)
     return candidate if candidate.exists() else None
 
 while queue:
     current = queue.pop(0)
-    for dep in deps_for(current):
-        resolved = resolve_dep(dep)
+    for dependency in dependencies(current):
+        resolved = resolve_dependency(dependency)
         if resolved is None or resolved in copied:
             continue
         destination = lib_dir / resolved.name
+        if destination.exists() and destination.stat().st_size != resolved.stat().st_size:
+            raise RuntimeError(f"Conflicting dylib basename while staging: {resolved.name}")
         if not destination.exists():
-            shutil.copy2(resolved, destination)
-        copied.add(resolved)
+            shutil.copy2(resolved, destination, follow_symlinks=True)
+        copied[resolved] = destination
         queue.append(destination)
+
+all_targets = targets + list(copied.values())
+for target in all_targets:
+    for dependency in dependencies(target):
+        resolved = resolve_dependency(dependency)
+        if resolved is None:
+            continue
+        destination = copied.get(resolved)
+        if destination is None:
+            destination = next((value for source, value in copied.items() if source.name == resolved.name), None)
+        if destination is not None:
+            subprocess.run(["install_name_tool", "-change", dependency, f"@rpath/{destination.name}", str(target)], check=True)
+    if target.parent == lib_dir:
+        subprocess.run(["install_name_tool", "-id", f"@rpath/{target.name}", str(target)], check=True)
+    subprocess.run(["install_name_tool", "-add_rpath", "@loader_path/../lib" if target.parent.name == "bin" else "@loader_path", str(target)], check=False)
 PY
 
-for executable in "$TOOLS_BIN_DIR/ffmpeg" "$TOOLS_BIN_DIR/ffprobe"; do
-  install_name_tool -add_rpath "@executable_path/../lib" "$executable" 2>/dev/null || true
-done
-
-for dylib in "$TOOLS_LIB_DIR"/*.dylib(N); do
-  install_name_tool -add_rpath "@loader_path" "$dylib" 2>/dev/null || true
-done
-
-npm run build
-npx electron-builder --mac zip "$BUILDER_ARCH_FLAG"
-
-MAC_ZIP="$(find "$RELEASE_DIR" -maxdepth 1 -type f -name '*mac.zip' | head -n 1)"
-if [[ -z "$MAC_ZIP" ]]; then
-  echo "macOS zip artifact was not created as expected."
-  exit 1
+# Relocation edits invalidate the original ad-hoc signatures on the staged
+# FFmpeg binaries. A formal build is signed later by electron-builder with the
+# Developer ID identity; an unsigned arm64 preview still needs valid ad-hoc
+# signatures so macOS can execute the relocated code.
+if [[ "${MEDIA_DOCK_SIGNED_RELEASE:-0}" != "1" ]]; then
+  for binary in "$TOOLS_LIB_DIR"/*.dylib(N) "$TOOLS_BIN_DIR/ffmpeg" "$TOOLS_BIN_DIR/ffprobe"; do
+    codesign --force --sign - --timestamp=none "$binary"
+  done
 fi
 
-cat > "$README_PATH" <<'EOF'
-Media Dock for macOS
+cd "$PROJECT_ROOT"
+npm run build
+npx electron-builder --config electron-builder.config.cjs --mac zip "$BUILDER_ARCH_FLAG" --publish never
 
-This build is a script-launched portable folder packaged as a zip.
-Double-click "Launch Media Dock.command" from the unzipped folder.
-The actual runtime files are kept inside the "core" folder.
-yt-dlp, ffmpeg, ffprobe, and deno are bundled with the program.
-Install MediaCookies from the Chrome Web Store or download it from GitHub
-when cookies are needed.
-Runtime data stays next to this launcher in "Media Dock Data".
-That folder contains downloads, cookies, cache, update zips, and any
-auto-installed Deno runtime files.
-
-Before first use on another Mac:
-1. Unzip the archive.
-2. Double-click "Launch Media Dock.command".
-
-If Gatekeeper blocks the first launch, right-click "Launch Media Dock.command"
-and choose "Open", or allow it from System Settings.
-EOF
-
-repack_macos_launcher_zip "$MAC_ZIP"
+MAC_ARTIFACTS=("$RELEASE_DIR"/Media-Dock-"$APP_VERSION"*-"$BUILDER_ARTIFACT_ARCH"-mac.zip(N))
+if (( ${#MAC_ARTIFACTS[@]} != 1 )); then
+  echo "Expected exactly one native macOS ZIP; found ${#MAC_ARTIFACTS[@]}."
+  exit 1
+fi
+MAC_ZIP="${MAC_ARTIFACTS[1]}"
 
 if unzip -l "$MAC_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
-  echo "Sensitive files were detected inside the macOS zip artifact."
+  echo "Sensitive files were detected inside the macOS ZIP artifact."
   exit 1
 fi
 
 mv "$MAC_ZIP" "$VERSION_DIR/"
-rm -f "$RELEASE_DIR"/*mac*.zip.blockmap(N) "$RELEASE_DIR"/latest-mac.yml(N) "$RELEASE_DIR"/builder-debug.yml(N) "$RELEASE_DIR"/builder-effective-config.yaml(N)
-rm -rf "$RELEASE_DIR"/mac-arm64
-if [[ ! -f "$VERSION_DIR/RELEASE-NOTES.md" ]]; then
-  write_release_notes
+FINAL_MAC_ZIP="$VERSION_DIR/$(basename "$MAC_ZIP")"
+MANIFEST_INSPECT_DIR="$(mktemp -d)"
+ditto -x -k "$FINAL_MAC_ZIP" "$MANIFEST_INSPECT_DIR"
+PACKAGED_APP="$(find "$MANIFEST_INSPECT_DIR" -maxdepth 2 -name 'Media Dock.app' -type d | head -n 1)"
+if [[ -z "$PACKAGED_APP" ]]; then
+  echo "Media Dock.app was not found in the final ZIP."
+  exit 1
 fi
+node "$SCRIPT_DIR/record-runtime-manifest.mjs" \
+  --platform macos \
+  --runtime-dir "$PACKAGED_APP/Contents/Resources/tools" \
+  --output "$VERSION_DIR/MACOS-RUNTIMES.json" \
+  --source "yt-dlp=$YTDLP_URL" \
+  --source "deno=$DENO_URL" \
+  --source "ffmpeg=$FFMPEG_SOURCE"
+rm -rf "$MANIFEST_INSPECT_DIR"
 
-echo "macOS zip artifact:"
-echo "$VERSION_DIR/$(basename "$MAC_ZIP")"
-echo
-echo "Share notes:"
-echo "$README_PATH"
+if [[ -f "$PROJECT_ROOT/docs/release/$APP_VERSION.md" ]]; then
+  cp "$PROJECT_ROOT/docs/release/$APP_VERSION.md" "$VERSION_DIR/RELEASE-NOTES.md"
+fi
+rm -rf "$RELEASE_DIR/mac" "$RELEASE_DIR/mac-arm64" "$RELEASE_DIR/mac-universal"
+rm -f "$RELEASE_DIR"/Media-Dock-"$APP_VERSION"*-mac.zip.blockmap(N) \
+  "$RELEASE_DIR/latest-mac.yml" "$RELEASE_DIR/builder-debug.yml" "$RELEASE_DIR/builder-effective-config.yaml"
+
+echo "Native macOS package candidate: $VERSION_DIR/$(basename "$MAC_ZIP")"

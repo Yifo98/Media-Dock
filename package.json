@@ -1,11 +1,13 @@
 {
   "name": "media-dock",
   "private": true,
-  "version": "3.0.0-alpha.1",
+  "version": "3.0.0-alpha.2",
   "type": "module",
   "main": "dist-electron/main.js",
   "description": "A compact local media download and processing desktop app.",
-  "author": "Dyifo",
+  "author": {
+    "name": "Yifo"
+  },
   "scripts": {
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
@@ -26,12 +28,12 @@
     "start": "electron .",
     "launch:mac": "zsh scripts/launch-mac.sh",
     "launch:mac:v3": "zsh scripts/launch-mac-v3-preview.sh",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs",
     "dist:mac": "zsh scripts/build-mac-share.sh",
-    "dist:win": "zsh scripts/build-win-share.sh",
-    "dist:share": "powershell -ExecutionPolicy Bypass -File scripts/build-shareable-package.ps1"
+    "dist:win": "node scripts/build-windows-native.mjs"
   },
   "dependencies": {
+    "extract-zip": "^2.0.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -56,46 +58,5 @@
   },
   "overrides": {
     "tmp": "^0.2.6"
-  },
-  "build": {
-    "appId": "com.codex.ytdlpstudio",
-    "productName": "Media Dock",
-    "directories": {
-      "output": "release",
-      "buildResources": "build"
-    },
-    "files": [
-      "dist/**",
-      "dist-electron/**",
-      "electron/preload.cjs",
-      "electron/v3/preloadApi.cjs",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "tools",
-        "to": "tools",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "build/icon.png",
-        "to": "icon.png"
-      }
-    ],
-    "win": {
-      "icon": "build/icon.ico",
-      "signAndEditExecutable": false,
-      "target": "portable"
-    },
-    "mac": {
-      "icon": "build/icon.icns",
-      "category": "public.app-category.video",
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    }
   }
 }

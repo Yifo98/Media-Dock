@@ -9,12 +9,12 @@
 - `release/win-unpacked/Media Dock.exe`
   - The real built Windows desktop app. Do not move this exe by itself out of `win-unpacked/`.
 
-## Share With Others
+## Internal Package Testing
 
-- `release/<version>/Media Dock-<version>-win.zip`
-  - Share this file with friends.
-- `release/share/`
-  - Expanded share package output.
+- `release/<version>/Media-Dock-<version>-Unsigned-Developer-Preview-x64-win.zip`
+  - 只用于受控的 Windows 内部测试；未签名包可能在应用启动前被 Smart App Control 拦截，不能作为公开分享版。
+- `release/<version>/Media-Dock-<version>-Unsigned-Developer-Preview-<arch>-mac.zip`
+  - 只用于受控的 macOS 内部测试；未签名、未公证的包不能作为公开分享版。
 
 ## Private / Do Not Share
 
@@ -41,8 +41,8 @@
 These can be recreated by building again, so they do not need special backup:
 
 - `release/win-unpacked/`
-- `release/share/`
-- `release/<version>/Media Dock-<version>-win.zip`
+- `release/<version>/Media-Dock-<version>-Unsigned-Developer-Preview-x64-win.zip`
+- `release/<version>/Media-Dock-<version>-Unsigned-Developer-Preview-<arch>-mac.zip`
 
 ## Already Cleaned Up
 

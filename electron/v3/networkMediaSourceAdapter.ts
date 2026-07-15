@@ -36,6 +36,7 @@ export type NetworkVideoQualityOption = Readonly<{
 export type NetworkVideoQualityOptions = Readonly<{
   authenticationCookiePath?: string | null
   deno?: ManagedRuntimeReference | null
+  signal?: AbortSignal
 }>
 
 const NETWORK_VIDEO_RECIPE = Object.freeze({
@@ -104,6 +105,7 @@ export async function inspectNetworkMediaSource(
       timeoutMs: 45_000,
       workingDirectory: path.dirname(ytDlp.command),
       env: process.env,
+      signal: options.signal,
     })
   } catch {
     return networkSourceProblem(
@@ -173,6 +175,7 @@ export async function inspectNetworkVideoQualities(
     timeoutMs: 60_000,
     workingDirectory: path.dirname(ytDlp.command),
     env: process.env,
+    signal: options.signal,
   })
   const metadata = JSON.parse(result.stdout.trim()) as YtDlpMetadata
   const formats = metadata.formats ?? []
