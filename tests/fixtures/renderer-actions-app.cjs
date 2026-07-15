@@ -41,6 +41,7 @@ app.whenReady().then(async () => {
     show: Boolean(screenshotPath),
     width: screenshotPath ? screenshotWidth : 1500,
     height: screenshotPath ? screenshotHeight : 1000,
+    useContentSize: Boolean(screenshotPath),
     webPreferences: {
       preload: action === 'v3ProductionPreload'
         ? path.resolve(__dirname, '../../electron/preload.cjs')
@@ -443,6 +444,11 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(`document.querySelector('.md3-primary-action').click()`, true)
       const preflightReady = await waitFor(win, `document.body.innerText.includes('Cookie 检测通过') && document.body.innerText.includes('最高 1080p')`)
       if (!preflightReady) throw new Error('Selected 1080p ceiling was not confirmed by the pre-download check')
+      if (screenshotPath) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+        fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
+      }
       console.log('[GREEN] Media Dock 3 detects authenticated qualities, plans, and preflights the selected video ceiling.')
       app.exit(0)
       return
@@ -454,6 +460,11 @@ app.whenReady().then(async () => {
         `Boolean(document.querySelector('.md3-task-download-progress')) && document.body.innerText.includes('视频流') && document.body.innerText.includes('42.5%') && document.body.innerText.includes('4.2MiB/s') && document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes('1080p')`,
       )
       if (!visible) throw new Error('Task progress, authentication profile, or quality ceiling was not visible')
+      if (screenshotPath) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+        fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
+      }
       console.log('[GREEN] Media Dock 3 shows exact download progress, authentication use, and quality ceiling.')
       app.exit(0)
       return
@@ -517,6 +528,8 @@ app.whenReady().then(async () => {
       const exported = await waitFor(win, `document.querySelector('.md3-support-diagnostics')?.innerText.includes('支持日志已保存')`)
       if (!exported) throw new Error('Support diagnostics export did not confirm the saved file')
       if (screenshotPath) {
+        await win.webContents.executeJavaScript(`document.querySelector('.md3-qidu-about')?.scrollIntoView({ block: 'end' })`, true)
+        await new Promise((resolve) => setTimeout(resolve, 250))
         fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
         fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
       }

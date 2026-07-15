@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="400" viewBox="0 0 1400 400">
+  <rect width="1400" height="400" fill="#F6F3ED"/>
+  <path d="M0 0h1400v400H0z" fill="url(#wash)"/>
+  <g transform="translate(92 44) scale(.305)">
+    <path fill="#2B98A6" d="M150 308 248 222v326l105 93h318l105-93V222l98 86v300L724 758H300L150 608V308Z"/>
+    <path fill="#8ED7DD" d="m150 308 98-86v112l-98 86V308Zm626-86 98 86v112l-98-86V222Z"/>
+    <path fill="#CBECEF" d="m248 548 105 93h318l105-93v35l-91 81H339l-91-81v-35Z" opacity=".72"/>
+    <rect x="322" y="190" width="380" height="364" rx="34" fill="#30353A"/>
+    <path fill="#64C1CA" d="M475 324c0-14 16-22 27-14l92 63c10 7 10 22 0 29l-92 63c-11 8-27 0-27-14V324Z"/>
+    <g fill="#F8F5EF"><rect x="354" y="220" width="42" height="28" rx="7"/><rect x="421" y="220" width="42" height="28" rx="7"/><rect x="488" y="220" width="42" height="28" rx="7"/><rect x="555" y="220" width="42" height="28" rx="7"/><rect x="622" y="220" width="42" height="28" rx="7"/><rect x="354" y="496" width="42" height="28" rx="7"/><rect x="421" y="496" width="42" height="28" rx="7"/><rect x="488" y="496" width="42" height="28" rx="7"/><rect x="555" y="496" width="42" height="28" rx="7"/><rect x="622" y="496" width="42" height="28" rx="7"/></g>
+    <path fill="#4FB0BA" d="M244 802c92-10 189-15 289-15 99 0 181 5 247 15-83 12-170 18-261 18-98 0-190-6-275-18Z" opacity=".7"/>
+  </g>
+  <text x="430" y="152" fill="#242A31" font-family="SF Pro Display, Segoe UI, sans-serif" font-size="82" font-weight="650" letter-spacing="-2">Media Dock · 泊</text>
+  <text x="434" y="218" fill="#616A73" font-family="SF Pro Text, Segoe UI, sans-serif" font-size="30">泊其所获，交其所成。</text>
+  <text x="434" y="270" fill="#616A73" font-family="SF Pro Text, Segoe UI, sans-serif" font-size="24">Dock what is gathered, deliver what is made.</text>
+  <text x="434" y="326" fill="#2B98A6" font-family="SF Pro Text, Segoe UI, sans-serif" font-size="18" font-weight="700" letter-spacing="5">A QIDU UTILITY</text>
+  <defs><linearGradient id="wash" x1="0" y1="0" x2="1400" y2="400"><stop stop-color="#FFFFFF" stop-opacity=".68"/><stop offset=".7" stop-color="#9F8BD0" stop-opacity=".035"/><stop offset="1" stop-color="#78CDDB" stop-opacity=".07"/></linearGradient></defs>
+</svg>

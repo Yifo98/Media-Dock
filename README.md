@@ -2,9 +2,11 @@
   <img src="build/icon.png" width="144" alt="Media Dock icon">
 </p>
 
-<h1 align="center">Media Dock</h1>
+<h1 align="center">Media Dock · 泊</h1>
 
-<p align="center">本地优先的媒体获取、音画合并与交付工作台。</p>
+<p align="center"><strong>泊其所获，交其所成。</strong></p>
+<p align="center">Dock what is gathered, deliver what is made.</p>
+<p align="center"><sub>A QIDU Utility</sub></p>
 
 <p align="center">
   <a href="https://github.com/Yifo98/Media-Dock/releases/latest"><img alt="Stable release" src="https://img.shields.io/github/v/release/Yifo98/Media-Dock?display_name=tag&label=stable&sort=semver"></a>
@@ -13,7 +15,7 @@
   <img alt="Local first" src="https://img.shields.io/badge/privacy-local--first-24313b">
 </p>
 
-Media Dock 把公开链接、B 站剧集、YouTube 合集、登录画质检测、批量任务、独立音画合并和问题诊断收进一个可恢复的桌面流程。应用在本机使用 `yt-dlp`、FFmpeg、Deno 与 MediaCookies；Cookie 值不会进入界面、任务数据库或导出的支持日志。
+Media Dock · 泊是器度 QIDU 旗下的本地优先媒体获取、音画合并与交付工作台。它把公开链接、B 站剧集、YouTube 合集、登录画质检测、批量任务、独立音画合并和问题诊断收进一个可恢复的桌面流程。应用在本机使用 `yt-dlp`、FFmpeg、Deno 与 MediaCookies；Cookie 值不会进入界面、任务数据库或导出的支持日志。
 
 ## 版本状态
 
@@ -109,7 +111,9 @@ git diff --check
 
 ## English
 
-Media Dock is a local-first desktop workspace for acquiring public media, resolving authenticated quality, grouping collections, merging separate audio/video tracks, tracking deliverables, and exporting privacy-safe diagnostics.
+Media Dock · 泊 is a QIDU local-first desktop workspace for acquiring public media, resolving authenticated quality, grouping collections, merging separate audio/video tracks, tracking deliverables, and exporting privacy-safe diagnostics.
+
+**Dock what is gathered, deliver what is made.** · A QIDU Utility
 
 ### Release channels
 

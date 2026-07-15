@@ -81,16 +81,16 @@
 }
 
 .md3-mark {
-  width: 42px;
-  height: 42px;
+  width: 46px;
+  height: 46px;
   object-fit: contain;
   flex: 0 0 auto;
   filter: drop-shadow(0 7px 12px rgba(61, 56, 49, 0.12));
 }
 
 .md3-brand div { display: grid; min-width: 0; gap: 1px; }
-.md3-brand strong { font-size: 15px; letter-spacing: -0.02em; }
-.md3-brand span { overflow: hidden; color: var(--md3-ink-faint); font-size: 10px; letter-spacing: 0.04em; text-overflow: ellipsis; white-space: nowrap; }
+.md3-brand strong { overflow: hidden; font-size: 13px; letter-spacing: -0.015em; text-overflow: ellipsis; white-space: nowrap; }
+.md3-brand span { overflow: hidden; color: var(--md3-cyan-strong); font-size: 8px; font-weight: 720; letter-spacing: 0.12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 
 .md3-rail nav { display: grid; gap: 5px; }
 .md3-rail nav button,
@@ -124,6 +124,9 @@
 .md3-workspace-shell { width: min(1160px, calc(100% - 64px)); margin: 0 auto; }
 .md3-workbench,
 .md3-space-page { width: 100%; margin: 0; padding: 0 0 52px; }
+.md3-brand-footer { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 72px; margin-top: 8px; padding: 18px 2px 28px; border-top: 1px solid var(--md3-line); color: var(--md3-ink-soft); }
+.md3-brand-footer > span { font-size: 12px; letter-spacing: 0.02em; }
+.md3-qidu-signature { color: var(--md3-cyan-strong); font-size: 9px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; }
 
 .md3-workspace-header { position: sticky; top: 0; z-index: 3; display: grid; grid-template-columns: minmax(230px, 0.72fr) minmax(620px, 1.75fr); align-items: end; gap: 30px; padding: 24px 0 16px; border-bottom: 1px solid color-mix(in srgb, var(--md3-line) 78%, transparent); background: var(--md3-canvas); box-shadow: 32px 0 0 var(--md3-canvas), -32px 0 0 var(--md3-canvas); }
 .md3-workspace-heading { min-width: 0; }
@@ -404,6 +407,12 @@
 .md3-diagnostics-disclosure > span { color: var(--md3-ink-soft); font-size: 10px; line-height: 1.5; }
 .md3-diagnostics-disclosure > span:last-of-type { color: #4d8c7d; }
 .md3-diagnostics-disclosure > b { margin-top: 3px; color: var(--md3-cyan-strong); font-size: 10px; font-weight: 750; }
+.md3-system-list article.md3-qidu-about { align-items: start; padding: 24px 0; }
+.md3-qidu-about > div > small { overflow: visible; text-overflow: initial; white-space: normal; }
+.md3-qidu-about > em { align-self: center; color: var(--md3-cyan-strong); font-size: 9px; font-style: normal; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
+.md3-qidu-motto { display: grid !important; gap: 3px !important; margin-top: 8px; }
+.md3-qidu-motto > b { color: var(--md3-ink); font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: 0.01em; }
+.md3-qidu-motto > span { color: var(--md3-ink-faint); font-size: 10px; line-height: 1.5; }
 .md3-authentication-success { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 16px; margin-top: 24px; padding: 18px 20px; border: 1px solid color-mix(in srgb, #56a985 42%, var(--md3-line)); border-radius: 18px; background: color-mix(in srgb, #6eaf91 13%, var(--md3-surface)); box-shadow: 0 14px 34px color-mix(in srgb, #4d8c7d 10%, transparent); }
 .md3-authentication-success > i { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; color: #f6fffb; background: #559f80; font-size: 16px; font-style: normal; font-weight: 850; }
 .md3-authentication-success > div { display: grid; gap: 4px; }
@@ -475,6 +484,7 @@ label:has(input:focus-visible) { outline: 2px solid var(--md3-cyan-strong); outl
 @media (max-width: 720px) {
   .md3-space-map { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .md3-collection-list { grid-template-columns: 1fr; }
+  .md3-brand-footer { align-items: flex-start; flex-direction: column; gap: 8px; }
 }
 
 @media (max-height: 650px) {

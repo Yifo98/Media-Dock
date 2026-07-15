@@ -108,12 +108,26 @@ test('the macOS icon artwork stays inside a balanced visual safe zone', () => {
   assert.ok(icon.height - 1 - bounds.bottom >= 96, `bottom inset ${icon.height - 1 - bounds.bottom}px is too small`)
 })
 
-test('the official icon is derived from the selected third 3D master', () => {
+test('the official icon is derived from the QIDU open-berth production master', () => {
+  assert.equal(existsSync('docs/design/assets/media-dock-qidu-berth.svg'), true)
   assert.equal(existsSync('public/brand-icon.png'), true)
+  const master = readFileSync('docs/design/assets/media-dock-qidu-berth.svg', 'utf8')
   const pipeline = readFileSync('scripts/build-media-dock-3-icon.swift', 'utf8')
-  assert.match(pipeline, /media-dock-3-icon-selected\.png/u)
+  assert.match(master, /data-mark="media-dock-qidu-berth"/u)
+  assert.doesNotMatch(master, /<text\b/u)
+  assert.match(pipeline, /media-dock-qidu-berth\.svg/u)
   const digest = (path) => createHash('sha256').update(readFileSync(path)).digest('hex')
   assert.equal(digest('public/brand-icon.png'), digest('build/icon.png'))
+})
+
+test('the v3 shell exposes the bilingual Media Dock chapter and QIDU signature', () => {
+  const messages = readFileSync('src/v3/messages.ts', 'utf8')
+  const appSource = readFileSync('src/v3/MediaDockV3App.tsx', 'utf8')
+  assert.match(messages, /brandName:\s*'Media Dock · 泊'/u)
+  assert.match(messages, /brandMotto:\s*'泊其所获，交其所成。'/u)
+  assert.match(messages, /brandMotto:\s*'Dock what is gathered, deliver what is made\.'/u)
+  assert.match(messages, /brandSignature:\s*'A QIDU Utility'/u)
+  assert.match(appSource, /md3-qidu-signature/u)
 })
 
 test('collection group controls stay pinned inside the episode scroller', () => {

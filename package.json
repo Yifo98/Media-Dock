@@ -18,6 +18,7 @@
     "build:web": "tsc -b && vite build --base ./",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build": "npm run build:web && npm run build:electron",
+    "brand:build": "zsh scripts/build-media-dock-qidu-assets.sh",
     "test": "npm run build && node --test --test-concurrency=1",
     "test:local-path": "npm run build:electron && node --test tests/local-path.test.mjs",
     "test:runtime-executable": "npm run build:electron && node --test tests/runtime-executable.test.mjs",

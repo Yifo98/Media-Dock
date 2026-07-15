@@ -1171,6 +1171,7 @@ export default function MediaDockV3App() {
           <article><span>03</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled} → {runtimeUpdates.ytDlp.latestVersion ?? copy.unknownVersion}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span></div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.checkingUpdates : copy.checkUpdates}</button></article>
           <article id="md3-authentication-settings" className="md3-authentication-guide"><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
           <article className="md3-support-diagnostics"><span>05</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
+          <article className="md3-qidu-about"><span>06</span><div><strong>{copy.aboutTitle}</strong><small>{copy.aboutValue}</small><div className="md3-qidu-motto"><b>{copy.brandMotto}</b><span>{copy.brandMottoSecondary}</span></div></div><em>{copy.brandSignature}</em></article>
         </div>
         {authenticationImportResult && <section className="md3-authentication-success" role="status"><i aria-hidden="true">✓</i><div><strong>{copy.authenticationImportSuccess}</strong><span>{authenticationImportResult.displayName}</span><b>{copy.authenticationSummary(authenticationImportResult.services.length, authenticationImportResult.cookieCount)}</b><small>{authenticationImportResult.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</small></div><button type="button" onClick={returnToWorkbench}>{copy.returnToWorkbench}<span aria-hidden="true">→</span></button></section>}
         {workspace.authenticationProfiles.length === 0
@@ -1190,7 +1191,7 @@ export default function MediaDockV3App() {
   return (
     <div className="md3-shell">
       <aside className="md3-rail">
-        <div className="md3-brand"><DockMark /><div><strong>Media Dock</strong><span>{copy.brandLine}</span></div></div>
+        <div className="md3-brand"><DockMark /><div><strong>{copy.brandName}</strong><span>{copy.brandLine}</span></div></div>
         <nav aria-label={copy.productSpaces}>
           {(Object.keys(copy.spaces) as ProductSpace[]).map((space) => (
             <button key={space} className={activeSpace === space ? 'is-active' : ''} onClick={() => setActiveSpace(space)}><SpaceGlyph space={space} /><span>{copy.spaces[space]}</span></button>
@@ -1226,6 +1227,7 @@ export default function MediaDockV3App() {
             </nav>
           </header>
           {renderSpace()}
+          <footer className="md3-brand-footer"><span>{copy.brandMotto}</span><small className="md3-qidu-signature">{copy.brandSignature}</small></footer>
         </div>
       </main>
 
