@@ -109,7 +109,7 @@ _Avoid_：输出模板、保存名称、文件标题
 _Avoid_：媒体副本、内部文件、缓存记录
 
 **旧版导入（Legacy Import）**：
-把 2.1 系列中可识别的偏好、Cookie 包和有效历史记录复制为 3.0 数据的可选过程；旧版导入从不修改、移动或删除原数据。
+由用户明确触发，把 2.1 系列中可识别的非敏感偏好或有效历史记录复制为 3.0 数据的可选过程；3.0 启动时不自动读取或创建旧版 Cookie 目录，网站登录资料只通过 MediaCookies ZIP 进入认证配置。
 _Avoid_：数据迁移、原地升级、同步
 
 **托管运行工具（Managed Runtime）**：
@@ -117,7 +117,7 @@ Media Dock 为执行媒体任务而维护的 yt-dlp、Deno、FFmpeg 等版本化
 _Avoid_：内核文件、依赖程序、工具副本
 
 **认证配置（Authentication Profile）**：
-由用户导入并由 Media Dock 按来源匹配的一组本地认证材料。配置具有站点、名称和健康状态，但 Cookie 等敏感值不进入任务数据库、日志或界面快照。
+由用户导入并由 Media Dock 按来源匹配的一组本地认证材料，唯一存放在 `Media Dock Data/v3/authentication-profiles/`。配置具有站点、名称、健康状态和不含敏感值的 Cookie 条目计数；Cookie 值不进入任务数据库、日志或界面快照。重复导入会生成新的当前配置，旧配置只为已创建任务保留可复现性。
 _Avoid_：Cookie 文件、登录账号、认证目录
 
 **登录准备（Authentication Readiness）**：

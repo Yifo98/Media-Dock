@@ -25,11 +25,12 @@ trap cleanup EXIT
 
 rm -f "$CHECKSUM_PATH"
 ditto -x -k "$PACKAGE_PATH" "$INSPECT_DIR"
-APP_PATH="$(find "$INSPECT_DIR" -maxdepth 2 -name 'Media Dock.app' -type d | head -n 1)"
-if [[ -z "$APP_PATH" ]]; then
-  echo "Expected exactly one Media Dock.app in the final ZIP."
-  exit 1
-fi
+LAUNCHER_PATH="$INSPECT_DIR/Launch Media Dock.command"
+APP_PATH="$INSPECT_DIR/core/Media Dock.app"
+[[ -x "$LAUNCHER_PATH" ]] || { echo "Expected executable Launch Media Dock.command at the ZIP root."; exit 1; }
+[[ -d "$APP_PATH" ]] || { echo "Expected the internal runtime at core/Media Dock.app."; exit 1; }
+[[ ! -d "$INSPECT_DIR/Media Dock.app" ]] || { echo "Media Dock.app must not be exposed as a second root launcher."; exit 1; }
+echo "[OK] single macOS launcher with internal app runtime"
 
 PLIST="$APP_PATH/Contents/Info.plist"
 IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
@@ -86,12 +87,13 @@ echo "[OK] yt-dlp, Deno, ffmpeg, and ffprobe version probes"
 
 WRITABLE_ROOT="$INSPECT_DIR/便携 数据 测试"
 mkdir -p "$WRITABLE_ROOT"
-MEDIA_DOCK_PORTABLE_ROOT="$WRITABLE_ROOT" MEDIA_DOCK_STARTUP_PROBE=1 "$APP_PATH/Contents/MacOS/Media Dock"
+MEDIA_DOCK_PORTABLE_ROOT="$WRITABLE_ROOT" MEDIA_DOCK_STARTUP_PROBE=1 "$LAUNCHER_PATH"
 [[ -f "$WRITABLE_ROOT/Media Dock Data/startup-probe.json" ]] || { echo "Portable startup probe was not written."; exit 1; }
+[[ ! -e "$WRITABLE_ROOT/Media Dock Data/cookies" ]] || { echo "Media Dock 3 startup created the legacy cookies directory."; exit 1; }
 
 EXIT_ROOT="$INSPECT_DIR/退出 清理 测试"
 mkdir -p "$EXIT_ROOT"
-MEDIA_DOCK_PORTABLE_ROOT="$EXIT_ROOT" MEDIA_DOCK_EXIT_PROBE=1 "$APP_PATH/Contents/MacOS/Media Dock"
+MEDIA_DOCK_PORTABLE_ROOT="$EXIT_ROOT" MEDIA_DOCK_EXIT_PROBE=1 "$LAUNCHER_PATH"
 [[ -f "$EXIT_ROOT/Media Dock Data/exit-probe.json" ]] || { echo "Exit cleanup probe was not written."; exit 1; }
 grep -q '"taskEngineClosed": true' "$EXIT_ROOT/Media Dock Data/exit-probe.json" || { echo "Task engine did not close during exit probe."; exit 1; }
 grep -q '"ipcUnregistered": true' "$EXIT_ROOT/Media Dock Data/exit-probe.json" || { echo "IPC did not unregister during exit probe."; exit 1; }
@@ -100,7 +102,7 @@ BLOCKED_ROOT="$INSPECT_DIR/只读 数据 测试"
 mkdir -p "$BLOCKED_ROOT"
 chmod 500 "$BLOCKED_ROOT"
 set +e
-MEDIA_DOCK_PORTABLE_ROOT="$BLOCKED_ROOT" MEDIA_DOCK_STARTUP_PROBE=1 "$APP_PATH/Contents/MacOS/Media Dock"
+MEDIA_DOCK_PORTABLE_ROOT="$BLOCKED_ROOT" MEDIA_DOCK_STARTUP_PROBE=1 "$LAUNCHER_PATH"
 BLOCKED_EXIT=$?
 set -e
 chmod 700 "$BLOCKED_ROOT"

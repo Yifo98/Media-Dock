@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #f4f1eb; }
+      body { color: #22262c; font-family: "Noto Sans JP", sans-serif; }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #f4f1eb; }
+      .scene { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; background-color: #f4f1eb; }
+      #scene-2, #scene-3, #scene-4, #scene-5 { opacity: 0; }
+      .scene-shell { position: relative; width: 100%; height: 100%; padding: 86px 112px; overflow: hidden; }
+      .ghost { position: absolute; color: #656b73; font-family: "Montserrat", sans-serif; font-size: 240px; font-weight: 900; letter-spacing: -0.075em; line-height: .8; white-space: nowrap; }
+      .stage { color: #22262c; font-family: "Space Mono", monospace; font-size: 24px; font-weight: 700; letter-spacing: .16em; }
+      .meta { color: #656b73; font-family: "Space Mono", monospace; font-size: 24px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+      .rule { height: 4px; border-radius: 99px; background: #389eb2; transform-origin: left center; }
+      .registration { position: absolute; width: 30px; height: 30px; border: 3px solid #92979e; opacity: .68; }
+      .registration::after { content: ""; position: absolute; left: 50%; top: -12px; width: 3px; height: 48px; background: #92979e; transform: translateX(-50%); }
+      .registration::before { content: ""; position: absolute; left: -12px; top: 50%; width: 48px; height: 3px; background: #92979e; transform: translateY(-50%); }
+      .cyan-block, .lilac-block { position: absolute; border-radius: 36px; opacity: .7; }
+      .cyan-block { background: #78cddb; }
+      .lilac-block { background: #9f8bd0; }
+      .product-frame { position: absolute; overflow: hidden; border: 3px solid rgba(34, 38, 44, .14); border-radius: 28px; background: #fbfaf7; box-shadow: 0 42px 100px rgba(53, 49, 43, .18); }
+      .product-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      .tag { display: inline-flex; align-items: center; min-height: 48px; padding: 0 22px; border: 3px solid rgba(34, 38, 44, .14); border-radius: 999px; color: #22262c; background: #fbfaf7; font-family: "Space Mono", monospace; font-size: 21px; font-weight: 700; letter-spacing: .04em; }
+      .headline { margin: 0; font-family: "Montserrat", "Noto Sans JP", sans-serif; font-size: 96px; font-weight: 900; letter-spacing: -.055em; line-height: .98; }
+      .cn-headline { font-family: "Noto Sans JP", sans-serif; font-size: 82px; font-weight: 700; letter-spacing: -.05em; }
+      .body-copy { color: #656b73; font-size: 34px; line-height: 1.5; }
+
+      #scene-1 .ghost { left: 74px; bottom: 62px; }
+      #scene-1 .cyan-block { right: 210px; top: 118px; width: 390px; height: 240px; transform: rotate(-5deg); }
+      #scene-1 .lilac-block { right: 90px; bottom: 92px; width: 260px; height: 410px; transform: rotate(8deg); }
+      #scene-1 .registration.a { right: 126px; top: 104px; }
+      #scene-1 .registration.b { left: 104px; bottom: 98px; }
+      .brand-lockup { position: absolute; left: 116px; top: 150px; display: grid; grid-template-columns: 250px 1fr; align-items: center; gap: 58px; width: 1360px; }
+      .brand-lockup img { width: 250px; height: 250px; object-fit: contain; filter: drop-shadow(0 24px 38px rgba(53, 49, 43, .18)); }
+      .brand-copy { display: grid; gap: 24px; }
+      .brand-copy .headline { max-width: 1040px; }
+      .journey { position: absolute; left: 424px; top: 646px; width: 1020px; }
+      .journey-labels { display: flex; justify-content: space-between; margin-bottom: 18px; }
+      .journey .rule { background: linear-gradient(90deg, #389eb2, #9f8bd0); }
+      .scene-footer { position: absolute; left: 112px; right: 112px; bottom: 70px; display: flex; justify-content: space-between; align-items: center; }
+
+      .editorial-label { position: absolute; left: 112px; top: 92px; display: grid; gap: 18px; width: 570px; z-index: 4; }
+      .editorial-label h2 { margin: 0; font-family: "Noto Sans JP", sans-serif; font-size: 64px; font-weight: 700; letter-spacing: -.045em; line-height: 1.12; }
+      .editorial-label p { margin: 0; color: #656b73; font-size: 31px; line-height: 1.45; }
+      #scene-2 .ghost { left: 84px; bottom: 14px; }
+      #scene-2 .product-frame { left: 620px; top: 120px; width: 1180px; height: 708px; }
+      #scene-2 .product-frame img { object-position: center top; }
+      #scene-2 .stage-line { position: absolute; left: 112px; top: 522px; width: 440px; }
+      #scene-2 .locator { position: absolute; left: 534px; top: 506px; width: 28px; height: 28px; border: 7px solid #f4f1eb; border-radius: 50%; background: #389eb2; box-shadow: 0 0 0 5px #78cddb; }
+      #scene-2 .tag-row { position: absolute; left: 112px; top: 584px; display: grid; gap: 14px; }
+
+      #scene-3 .ghost { right: -20px; top: 42px; }
+      #scene-3 .sheet-left { left: 94px; top: 138px; width: 1020px; height: 612px; transform: rotate(-2deg); }
+      #scene-3 .sheet-right { right: 92px; bottom: 96px; width: 960px; height: 576px; transform: rotate(2.2deg); }
+      #scene-3 .sheet-left img, #scene-3 .sheet-right img { object-position: center top; }
+      #scene-3 .label-left { position: absolute; left: 128px; bottom: 94px; z-index: 5; }
+      #scene-3 .label-right { position: absolute; right: 124px; top: 92px; z-index: 5; }
+      #scene-3 .bridge { position: absolute; left: 650px; top: 788px; width: 650px; height: 7px; background: linear-gradient(90deg, #389eb2, #9f8bd0); }
+      #scene-3 .corner-meta { position: absolute; right: 112px; bottom: 54px; }
+
+      #scene-4 .ghost { left: 78px; top: 40px; color: #656b73; }
+      #scene-4 .success-plane { position: absolute; inset: 52px 70px; border: 4px solid rgba(110, 175, 145, .46); border-radius: 44px; background: rgba(110, 175, 145, .1); }
+      #scene-4 .cn-shot { left: 86px; top: 188px; width: 1040px; height: 624px; transform: rotate(-1.6deg); }
+      #scene-4 .en-shot { right: 86px; bottom: 72px; width: 980px; height: 588px; transform: rotate(1.8deg); }
+      #scene-4 .cn-shot img, #scene-4 .en-shot img { object-position: center bottom; }
+      #scene-4 .success-seal { position: absolute; right: 142px; top: 84px; z-index: 6; display: grid; width: 188px; height: 188px; place-items: center; border: 5px solid #6eaf91; border-radius: 50%; color: #22262c; background: #6eaf91; box-shadow: 0 25px 65px rgba(57, 116, 89, .28); font-family: "Montserrat", sans-serif; font-size: 96px; font-weight: 900; }
+      #scene-4 .stats { position: absolute; left: 118px; top: 84px; z-index: 7; display: flex; gap: 18px; }
+      #scene-4 .privacy { position: absolute; right: 360px; top: 118px; z-index: 7; }
+
+      #scene-5 .ghost { right: -28px; bottom: -20px; color: #656b73; font-size: 310px; }
+      #scene-5 .cyan-block { left: 70px; top: 80px; width: 530px; height: 860px; border-radius: 265px; opacity: .36; }
+      #scene-5 .lilac-block { left: 260px; top: 180px; width: 410px; height: 680px; border-radius: 205px; opacity: .38; }
+      .outro-lockup { position: absolute; left: 150px; top: 160px; display: grid; grid-template-columns: 360px 1fr; align-items: center; gap: 86px; width: 1510px; }
+      .outro-lockup img { width: 360px; height: 360px; object-fit: contain; filter: drop-shadow(0 30px 50px rgba(53, 49, 43, .2)); }
+      .outro-copy { display: grid; gap: 26px; }
+      .outro-copy .headline { font-size: 102px; }
+      .outro-copy .cn { margin: 0; font-family: "Noto Sans JP", sans-serif; font-size: 44px; font-weight: 700; }
+      .outro-copy .en { margin: 0; color: #656b73; font-family: "Montserrat", sans-serif; font-size: 34px; font-weight: 700; }
+      #scene-5 .outro-rule { position: absolute; left: 596px; top: 696px; width: 1040px; }
+      #scene-5 .outro-meta { position: absolute; left: 596px; top: 744px; display: flex; justify-content: space-between; width: 1040px; }
+
+      .fade-layer { position: absolute; inset: 0; z-index: 30; pointer-events: none; background: #f4f1eb; opacity: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="16" data-width="1920" data-height="1080">
+      <section class="scene" id="scene-1">
+        <div class="scene-shell">
+          <div class="ghost" aria-hidden="true" data-layout-ignore>LOCAL MEDIA</div>
+          <div class="cyan-block" data-layout-ignore></div><div class="lilac-block" data-layout-ignore></div>
+          <div class="registration a" data-layout-ignore></div><div class="registration b" data-layout-ignore></div>
+          <div class="brand-lockup">
+            <img src="assets/media-dock-icon-outro.png" alt="Media Dock icon" />
+            <div class="brand-copy">
+              <span class="stage">01 / THE LOCAL DOCK</span>
+              <h1 class="headline">MEDIA DOCK 3.0</h1>
+              <div class="body-copy">本地优先的媒体获取、合并与交付工作台</div>
+            </div>
+          </div>
+          <div class="journey">
+            <div class="journey-labels meta"><span>SOURCE</span><span>TASK</span><span>DELIVERABLE</span></div>
+            <div class="rule"></div>
+          </div>
+          <div class="scene-footer meta"><span>LOCAL FIRST</span><span>MACOS + WINDOWS</span></div>
+        </div>
+      </section>
+
+      <section class="scene" id="scene-2">
+        <div class="scene-shell">
+          <div class="ghost" aria-hidden="true" data-layout-ignore>SOURCE</div>
+          <div class="editorial-label">
+            <span class="stage">02 / WORKBENCH</span>
+            <h2>先识别，<br />再创建任务</h2>
+            <p>登录状态、链接与合集结构，在下载前就看清。</p>
+          </div>
+          <div class="stage-line rule"></div><div class="locator"></div>
+          <div class="tag-row"><span class="tag">LINK · SERIES · PLAYLIST</span><span class="tag">MEDIA DOCK 3.0</span></div>
+          <figure class="product-frame"><img src="assets/01-workbench-zh.png" alt="Media Dock Chinese Workbench" /></figure>
+          <div class="scene-footer meta"><span>REAL ELECTRON UI</span><span>1280 × 768</span></div>
+        </div>
+      </section>
+
+      <section class="scene" id="scene-3">
+        <div class="scene-shell">
+          <div class="ghost" aria-hidden="true" data-layout-ignore>TASK</div>
+          <figure class="product-frame sheet-left"><img src="assets/02-collection-zh.png" alt="Grouped collection" /></figure>
+          <figure class="product-frame sheet-right"><img src="assets/03-merge-zh.png" alt="Audio and video merge" /></figure>
+          <span class="tag label-left">剧集自动分组</span>
+          <span class="tag label-right">按时长与时间轴匹配</span>
+          <div class="bridge"></div>
+          <div class="stage" style="position:absolute;left:112px;top:82px;z-index:7">03 / ORGANIZE + MERGE</div>
+          <div class="corner-meta meta">1 · 2 · 3 CONCURRENCY</div>
+        </div>
+      </section>
+
+      <section class="scene" id="scene-4" data-layout-allow-overflow>
+        <div class="scene-shell">
+          <div class="success-plane" data-layout-ignore></div><div class="ghost" aria-hidden="true" data-layout-ignore>READY</div>
+          <div class="stats"><span class="tag">4 SITES</span><span class="tag">43 COOKIE ENTRIES</span></div>
+          <span class="tag privacy">VALUES NEVER SHOWN</span>
+          <figure class="product-frame cn-shot"><img src="assets/05-cookies-zh.png" alt="Chinese Cookie import result" /></figure>
+          <figure class="product-frame en-shot"><img src="assets/07-cookies-en.png" alt="English Cookie import result" /></figure>
+          <div class="success-seal">✓</div>
+          <div class="scene-footer meta"><span>04 / LOCAL SIGN-IN DATA</span><span>ZH + EN</span></div>
+        </div>
+      </section>
+
+      <section class="scene" id="scene-5" data-layout-allow-overflow>
+        <div class="scene-shell">
+          <div class="ghost" aria-hidden="true" data-layout-ignore>3.0.0</div><div class="cyan-block" data-layout-ignore></div><div class="lilac-block" data-layout-ignore></div>
+          <div class="outro-lockup">
+            <img src="assets/media-dock-icon.png" alt="Media Dock icon" />
+            <div class="outro-copy">
+              <span class="stage">05 / RELEASE</span>
+              <h2 class="headline">MEDIA DOCK 3.0.0</h2>
+              <p class="cn">来源进坞，任务成形，成品抵达。</p>
+              <p class="en">From source to task to deliverable.</p>
+            </div>
+          </div>
+          <div class="outro-rule rule"></div>
+          <div class="outro-meta meta"><span>SOURCE → TASK → DELIVERABLE</span><span>GITHUB.COM/YIFO98/MEDIA-DOCK</span></div>
+        </div>
+      </section>
+      <div class="fade-layer"></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      tl.fromTo("#scene-1 .brand-lockup img", { scale: .72, rotation: -7, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: .78, ease: "back.out(1.45)" }, .18);
+      tl.fromTo("#scene-1 .stage", { x: -70, opacity: 0 }, { x: 0, opacity: 1, duration: .46, ease: "power3.out" }, .32);
+      tl.fromTo("#scene-1 .headline", { y: 70, opacity: 0 }, { y: 0, opacity: 1, duration: .72, ease: "expo.out" }, .5);
+      tl.fromTo("#scene-1 .body-copy", { filter: "blur(16px)", opacity: 0 }, { filter: "blur(0px)", opacity: 1, duration: .64, ease: "sine.out" }, .78);
+      tl.fromTo("#scene-1 .journey .rule", { scaleX: 0 }, { scaleX: 1, duration: .88, ease: "power2.inOut" }, .84);
+      tl.fromTo("#scene-1 .journey-labels span", { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: .42, stagger: .1, ease: "power2.out" }, 1.02);
+      tl.fromTo("#scene-1 .scene-footer", { opacity: 0 }, { opacity: 1, duration: .52, ease: "power1.out" }, 1.15);
+      tl.fromTo("#scene-1 .cyan-block", { x: 50, rotation: -1 }, { x: 0, rotation: -5, duration: 1.25, ease: "sine.inOut" }, .45);
+      tl.fromTo("#scene-1 .lilac-block", { y: 45, rotation: 13 }, { y: 0, rotation: 8, duration: 1.55, ease: "power1.out" }, .52);
+
+      const t2 = 2.5;
+      tl.to("#scene-1", { filter: "blur(12px)", scale: 1.025, opacity: 0, duration: .55, ease: "power2.inOut" }, t2);
+      tl.fromTo("#scene-2", { filter: "blur(12px)", scale: .98, opacity: 0 }, { filter: "blur(0px)", scale: 1, opacity: 1, duration: .55, ease: "power2.inOut" }, t2 + .08);
+      tl.fromTo("#scene-2 .editorial-label", { x: -90, opacity: 0 }, { x: 0, opacity: 1, duration: .68, ease: "power3.out" }, t2 + .26);
+      tl.fromTo("#scene-2 .product-frame", { y: 90, filter: "blur(14px)", opacity: 0 }, { y: 0, filter: "blur(0px)", opacity: 1, duration: .82, ease: "expo.out" }, t2 + .38);
+      tl.fromTo("#scene-2 .stage-line", { scaleX: 0 }, { scaleX: 1, duration: .72, ease: "power2.inOut" }, t2 + .55);
+      tl.fromTo("#scene-2 .locator", { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: .48, ease: "back.out(1.8)" }, t2 + .92);
+      tl.fromTo("#scene-2 .tag", { x: -28, opacity: 0 }, { x: 0, opacity: 1, duration: .42, stagger: .12, ease: "power2.out" }, t2 + .96);
+      tl.to("#scene-2 .product-frame", { scale: 1.018, duration: 1.5, ease: "sine.inOut" }, t2 + 1.0);
+
+      const t3 = 5.6;
+      tl.to("#scene-2", { filter: "blur(12px)", scale: 1.025, opacity: 0, duration: .55, ease: "power2.inOut" }, t3);
+      tl.fromTo("#scene-3", { filter: "blur(12px)", scale: .98, opacity: 0 }, { filter: "blur(0px)", scale: 1, opacity: 1, duration: .55, ease: "power2.inOut" }, t3 + .08);
+      tl.fromTo("#scene-3 .sheet-left", { x: -180, rotation: -7, opacity: 0 }, { x: 0, rotation: -2, opacity: 1, duration: .78, ease: "power3.out" }, t3 + .24);
+      tl.fromTo("#scene-3 .sheet-right", { x: 180, y: 30, rotation: 8, opacity: 0 }, { x: 0, y: 0, rotation: 2.2, opacity: 1, duration: .88, ease: "back.out(1.25)" }, t3 + .43);
+      tl.fromTo("#scene-3 .bridge", { scaleX: 0, transformOrigin: "left center" }, { scaleX: 1, duration: .78, ease: "power2.inOut" }, t3 + .78);
+      tl.fromTo("#scene-3 .tag", { scale: .86, opacity: 0 }, { scale: 1, opacity: 1, duration: .45, stagger: .16, ease: "back.out(1.55)" }, t3 + .87);
+      tl.fromTo("#scene-3 .corner-meta", { opacity: 0 }, { opacity: 1, duration: .5, ease: "sine.out" }, t3 + 1.12);
+
+      const t4 = 8.9;
+      tl.to("#scene-3", { filter: "blur(12px)", scale: 1.025, opacity: 0, duration: .55, ease: "power2.inOut" }, t4);
+      tl.fromTo("#scene-4", { filter: "blur(12px)", scale: .98, opacity: 0 }, { filter: "blur(0px)", scale: 1, opacity: 1, duration: .55, ease: "power2.inOut" }, t4 + .08);
+      tl.fromTo("#scene-4 .success-plane", { scale: .94, opacity: 0 }, { scale: 1, opacity: 1, duration: .72, ease: "power2.out" }, t4 + .2);
+      tl.fromTo("#scene-4 .cn-shot", { x: -160, rotation: -6, opacity: 0 }, { x: 0, rotation: -1.6, opacity: 1, duration: .82, ease: "power3.out" }, t4 + .35);
+      tl.fromTo("#scene-4 .en-shot", { x: 160, rotation: 6, opacity: 0 }, { x: 0, rotation: 1.8, opacity: 1, duration: .9, ease: "expo.out" }, t4 + .48);
+      tl.fromTo("#scene-4 .success-seal", { scale: 0, rotation: -20, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: .62, ease: "back.out(1.8)" }, t4 + .76);
+      tl.fromTo("#scene-4 .stats .tag", { y: -32, opacity: 0 }, { y: 0, opacity: 1, duration: .42, stagger: .11, ease: "power2.out" }, t4 + .66);
+      tl.fromTo("#scene-4 .privacy", { filter: "blur(10px)", opacity: 0 }, { filter: "blur(0px)", opacity: 1, duration: .5, ease: "sine.out" }, t4 + 1.08);
+
+      const t5 = 12.4;
+      tl.to("#scene-4", { yPercent: -100, filter: "blur(8px)", duration: .5, ease: "power3.in" }, t5);
+      tl.fromTo("#scene-5", { yPercent: 100, opacity: 1 }, { yPercent: 0, duration: .5, ease: "power3.out" }, t5);
+      tl.fromTo("#scene-5 .outro-lockup img", { scale: .7, rotation: 8, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: .75, ease: "back.out(1.5)" }, t5 + .22);
+      tl.fromTo("#scene-5 .stage", { x: 60, opacity: 0 }, { x: 0, opacity: 1, duration: .42, ease: "power2.out" }, t5 + .3);
+      tl.fromTo("#scene-5 .headline", { y: 64, opacity: 0 }, { y: 0, opacity: 1, duration: .72, ease: "expo.out" }, t5 + .42);
+      tl.fromTo("#scene-5 .cn", { filter: "blur(14px)", opacity: 0 }, { filter: "blur(0px)", opacity: 1, duration: .58, ease: "sine.out" }, t5 + .72);
+      tl.fromTo("#scene-5 .en", { y: 30, opacity: 0 }, { y: 0, opacity: 1, duration: .5, ease: "power2.out" }, t5 + .94);
+      tl.fromTo("#scene-5 .outro-rule", { scaleX: 0 }, { scaleX: 1, duration: .82, ease: "power2.inOut" }, t5 + 1.02);
+      tl.fromTo("#scene-5 .outro-meta", { opacity: 0 }, { opacity: 1, duration: .5, ease: "power1.out" }, t5 + 1.24);
+      tl.fromTo("#scene-5 .cyan-block", { x: -80 }, { x: 0, duration: 1.6, ease: "sine.inOut" }, t5 + .1);
+      tl.fromTo("#scene-5 .lilac-block", { y: 80 }, { y: 0, duration: 1.8, ease: "power1.out" }, t5 + .18);
+      tl.to(".fade-layer", { opacity: 1, duration: .45, ease: "power1.in" }, 15.55);
+
+      window.__timelines.main = tl;
+    </script>
+  </body>
+</html>

@@ -194,7 +194,16 @@ let v3Workspace = {
     },
   }] : [],
   deliverables: action === 'v3DeliverableReveal' || action === 'v3ClearHistory' ? [{ id: 'deliverable-visible', taskId: 'task-visible', path: 'I:\\成品\\山海.mp4', deliveryName: '山海.mp4', createdAt: '2026-07-13T10:00:00.000Z' }] : [],
-  authenticationProfiles: action === 'v3TaskVisibility' || action === 'v3ClearHistory' ? [{ id: 'auth-profile-fixture', displayName: 'My MediaCookies', services: ['fixturetv'], health: 'ready', createdAt: '2026-07-13T09:00:00.000Z' }] : [],
+  authenticationProfiles: action === 'v3TaskVisibility' || action === 'v3ClearHistory'
+    ? [{ id: 'auth-profile-fixture', displayName: 'My MediaCookies', services: ['fixturetv'], serviceCookieCounts: [{ service: 'fixturetv', cookieCount: 8 }], cookieCount: 8, health: 'ready', createdAt: '2026-07-13T09:00:00.000Z' }]
+    : action === 'v3EnglishWorkbench'
+      ? [
+          { id: 'auth-profile-youtube', displayName: 'YouTube login', services: ['youtube'], serviceCookieCounts: [{ service: 'youtube', cookieCount: 12 }], cookieCount: 12, health: 'ready', createdAt: '2026-07-11T08:00:00.000Z' },
+          { id: 'auth-profile-bilibili', displayName: 'Bilibili login', services: ['bilibili-b-site'], serviceCookieCounts: [{ service: 'bilibili-b-site', cookieCount: 11 }], cookieCount: 11, health: 'ready', createdAt: '2026-07-12T08:00:00.000Z' },
+        ]
+    : action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile'
+      ? [{ id: 'auth-profile-existing', displayName: 'Bilibili login', services: ['bilibili-b-site'], serviceCookieCounts: [{ service: 'bilibili-b-site', cookieCount: 11 }], cookieCount: 11, health: 'ready', createdAt: '2026-07-12T08:00:00.000Z' }]
+      : [],
   systemOperations: [],
 }
 let v3WorkspaceListener = null
@@ -217,20 +226,30 @@ const mediaDockApi = {
     : [],
   pickOutputDirectory: async () => action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3NetworkFlow' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' ? 'I:\\成品' : null,
   importAuthenticationProfile: async () => {
-    if (action !== 'v3AuthProfile') return null
+    if (action !== 'v3AuthProfile' && action !== 'v3EnglishAuthProfile') return null
     v3Workspace = {
       ...v3Workspace,
       revision: v3Workspace.revision + 1,
-      authenticationProfiles: [{
+      authenticationProfiles: [...v3Workspace.authenticationProfiles, {
         id: 'auth-profile-fixture',
         displayName: 'My MediaCookies',
-        services: ['youtube'],
+        services: ['bilibili-b-site', 'douyin', 'tiktok', 'youtube'],
+        serviceCookieCounts: [
+          { service: 'bilibili-b-site', cookieCount: 11 },
+          { service: 'douyin', cookieCount: 10 },
+          { service: 'tiktok', cookieCount: 6 },
+          { service: 'youtube', cookieCount: 16 },
+        ],
+        cookieCount: 43,
         health: 'ready',
         createdAt: '2026-07-13T08:00:00.000Z',
       }],
     }
     v3WorkspaceListener?.(v3Workspace)
     return v3Workspace
+  },
+  openAuthenticationProfilesDirectory: async () => {
+    openedExternalUrls.push('file:///Media Dock Data/v3/authentication-profiles')
   },
   openMediaCookiesResource: async (resource) => {
     const urls = {

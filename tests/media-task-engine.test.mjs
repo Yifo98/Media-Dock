@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
 
 import { createMediaTaskEngine } from '../dist-electron/v3/mediaTaskEngine.js'
@@ -376,6 +377,58 @@ test('creating work rejects a renderer-tampered Task Plan before it reaches SQLi
       assert.equal(engine.getWorkspaceSnapshot().revision, 0)
       assert.deepEqual(engine.getWorkspaceSnapshot().tasks, [])
       assert.deepEqual(engine.getWorkspaceSnapshot().taskBatches, [])
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('a Task Batch creates one Media Task for repeated identical Task Plans', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const outputDirectory = path.join(rootDirectory, 'output')
+    const alternateOutputDirectory = path.join(rootDirectory, 'alternate-output')
+    mkdirSync(outputDirectory)
+    mkdirSync(alternateOutputDirectory)
+    let batchNumber = 0
+    let taskNumber = 0
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      idFactory: (kind) => kind === 'task-batch' ? `batch-${++batchNumber}` : kind === 'task' ? `task-${++taskNumber}` : 'unused-id',
+      managedRuntimes: {
+        ffmpeg: { command: 'ffmpeg', version: '7.1-test' },
+      },
+    })
+
+    try {
+      const plan = await engine.planTask({
+        source: {
+          kind: 'local-file',
+          locator: path.join(rootDirectory, 'source.wav'),
+          displayName: 'source.wav',
+          mediaKind: 'audio',
+          durationSeconds: 1,
+          formatName: 'wav',
+        },
+        recipeId: 'audio-compatible',
+        outputDirectory,
+        language: 'en',
+      })
+
+      const created = engine.createTaskBatch([plan, plan, plan], 'fast')
+
+      assert.deepEqual(created.taskBatches[0]?.taskIds, ['task-1'])
+      assert.deepEqual(created.tasks.map((task) => task.id), ['task-1'])
+
+      const alternatePlan = await engine.planTask({
+        source: plan.source,
+        recipeId: plan.recipe.id,
+        outputDirectory: alternateOutputDirectory,
+        language: 'en',
+      })
+      const distinctCreated = engine.createTaskBatch([plan, alternatePlan], 'fast')
+
+      assert.deepEqual(distinctCreated.taskBatches.at(-1)?.taskIds, ['task-2', 'task-3'])
+      assert.deepEqual(distinctCreated.tasks.map((task) => task.id), ['task-1', 'task-2', 'task-3'])
     } finally {
       engine.close()
     }
@@ -1072,6 +1125,8 @@ test('an imported MediaCookies package stays secret while its profile is pinned 
         id: 'auth-profile-001',
         displayName: 'My MediaCookies',
         services: ['youtube'],
+        serviceCookieCounts: [{ service: 'youtube', cookieCount: 1 }],
+        cookieCount: 1,
         health: 'ready',
         createdAt: '2026-07-13T08:00:00.000Z',
       }])
@@ -1116,6 +1171,48 @@ test('an imported MediaCookies package stays secret while its profile is pinned 
       assert.equal(completed.tasks[0].state, 'completed')
       assert.equal(existsSync(path.join(outputDirectory, 'Private Episode - Video.mp4')), true)
       assert.equal(JSON.stringify(completed).includes(cookieSecret), false)
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('an alpha.3 Authentication Profile is upgraded in place with real Cookie counts', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const dataDirectory = path.join(rootDirectory, 'data')
+    const profileDirectory = path.join(dataDirectory, 'authentication-profiles', 'legacy-profile', 'by-service')
+    mkdirSync(profileDirectory, { recursive: true })
+    writeFileSync(
+      path.join(profileDirectory, 'bilibili-b-site.cookies.txt'),
+      '# Netscape HTTP Cookie File\n.bilibili.com\tTRUE\t/\tTRUE\t2147483647\tSESSDATA\tone\n#HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t2147483647\tbili_jct\ttwo\n',
+    )
+    const database = new DatabaseSync(path.join(dataDirectory, 'media-dock-v3.sqlite'))
+    database.exec(`
+      CREATE TABLE authentication_profiles (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        services_json TEXT NOT NULL,
+        directory_name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      ) STRICT;
+    `)
+    database.prepare(`
+      INSERT INTO authentication_profiles (id, display_name, services_json, directory_name, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run('legacy-profile', 'Existing MediaCookies', '["bilibili-b-site"]', 'legacy-profile', '2026-07-15T00:00:00.000Z')
+    database.close()
+
+    const engine = createMediaTaskEngine({ dataDirectory })
+    try {
+      assert.deepEqual(engine.getWorkspaceSnapshot().authenticationProfiles, [{
+        id: 'legacy-profile',
+        displayName: 'Existing MediaCookies',
+        services: ['bilibili-b-site'],
+        serviceCookieCounts: [{ service: 'bilibili-b-site', cookieCount: 2 }],
+        cookieCount: 2,
+        health: 'ready',
+        createdAt: '2026-07-15T00:00:00.000Z',
+      }])
     } finally {
       engine.close()
     }

@@ -171,6 +171,8 @@ export type AuthenticationProfileSnapshot = Readonly<{
   id: string
   displayName: string
   services: readonly string[]
+  serviceCookieCounts: readonly Readonly<{ service: string; cookieCount: number }>[]
+  cookieCount: number
   health: 'ready'
   createdAt: string
 }>
@@ -200,6 +202,7 @@ export type MediaDockV3Api = Readonly<{
   pickLocalSources(currentPath?: string): Promise<readonly string[]>
   pickOutputDirectory(currentPath?: string): Promise<string | null>
   importAuthenticationProfile(): Promise<WorkspaceSnapshot | null>
+  openAuthenticationProfilesDirectory(): Promise<void>
   openMediaCookiesResource(resource: MediaCookiesResource): Promise<void>
   inspectSource(input: Readonly<{ kind: 'local-file'; path: string }> | Readonly<{ kind: 'network-url'; url: string }>): Promise<SourceInspection>
   inspectVideoQualities(source: InspectedNetworkSource): Promise<VideoQualityInspection>

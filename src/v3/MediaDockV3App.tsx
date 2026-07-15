@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   getMediaDockV3Api,
+  type AuthenticationProfileSnapshot,
   type InspectedLocalAvPairSource,
   type InspectedLocalSource,
   type InspectedNetworkCollectionSource,
@@ -117,6 +118,7 @@ export default function MediaDockV3App() {
   const [selectedEntryIds, setSelectedEntryIds] = useState<ReadonlySet<string>>(() => new Set())
   const [expandedCollectionGroupIds, setExpandedCollectionGroupIds] = useState<ReadonlySet<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
+  const [authenticationImportResult, setAuthenticationImportResult] = useState<AuthenticationProfileSnapshot | null>(null)
   const [revealingDeliverableId, setRevealingDeliverableId] = useState<string | null>(null)
   const [revealedDeliverableId, setRevealedDeliverableId] = useState<string | null>(null)
   const [runtimeChecking, setRuntimeChecking] = useState(false)
@@ -460,12 +462,31 @@ export default function MediaDockV3App() {
     setErrorMessage(null)
     try {
       const snapshot = await api.importAuthenticationProfile()
-      if (snapshot) setWorkspace(snapshot)
+      if (snapshot) {
+        setWorkspace(snapshot)
+        setAuthenticationImportResult(snapshot.authenticationProfiles.at(-1) ?? null)
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setBusy(false)
     }
+  }
+
+  async function openAuthenticationProfilesDirectory() {
+    setErrorMessage(null)
+    try {
+      await api.openAuthenticationProfilesDirectory()
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  function returnToWorkbench() {
+    setActiveSpace('workbench')
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('.md3-main')?.scrollTo({ top: 0, behavior: 'smooth' })
+    })
   }
 
   async function openMediaCookiesPage(resource: 'chrome-store' | 'github') {
@@ -782,19 +803,20 @@ export default function MediaDockV3App() {
     || (Boolean(readyInspection && outputDirectory) && plans.length === 0 && !workCompleted)
 
   function renderWorkbench() {
-    const authenticationProfile = workspace.authenticationProfiles[0] ?? null
+    const authenticationProfileCount = workspace.authenticationProfiles.length
+    const hasAuthenticationProfiles = authenticationProfileCount > 0
     return (
       <div className="md3-workbench">
-        <section className={`md3-auth-readiness${authenticationProfile ? ' is-ready' : ' is-missing'}`} aria-labelledby="md3-auth-readiness-title">
+        <section className={`md3-auth-readiness${hasAuthenticationProfiles ? ' is-ready' : ' is-missing'}`} aria-labelledby="md3-auth-readiness-title">
           <div className="md3-subheading">
             <span>01</span>
             <div>
               <h3 id="md3-auth-readiness-title">{copy.authenticationReadiness}</h3>
-              <p>{authenticationProfile ? copy.authenticationReadyHint(authenticationProfile.displayName) : copy.authenticationMissingHint}</p>
+              <p>{hasAuthenticationProfiles ? copy.authenticationReadyHint(authenticationProfileCount) : copy.authenticationMissingHint}</p>
             </div>
           </div>
-          <div className="md3-auth-readiness-state"><i aria-hidden="true" /><strong>{authenticationProfile ? copy.authenticationReady : copy.authenticationMissing}</strong></div>
-          {!authenticationProfile && <button type="button" onClick={showAuthenticationSettings}>{copy.authenticationSettings}</button>}
+          <div className="md3-auth-readiness-state"><i aria-hidden="true" /><strong>{hasAuthenticationProfiles ? copy.authenticationReady : copy.authenticationMissing}</strong></div>
+          {!hasAuthenticationProfiles && <button type="button" onClick={showAuthenticationSettings}>{copy.authenticationSettings}</button>}
         </section>
 
         <section className="md3-source-dock" aria-labelledby="md3-source-title">
@@ -1147,12 +1169,13 @@ export default function MediaDockV3App() {
           <article><span>01</span><div><strong>{copy.engine}</strong><small>{copy.engineValue}</small></div><b>{copy.revision} {workspace.revision}</b></article>
           <article><span>02</span><div><strong>{copy.dataBoundary}</strong><small>{copy.dataBoundaryValue}</small></div><b>{copy.localBadge.toUpperCase()}</b></article>
           <article><span>03</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled} → {runtimeUpdates.ytDlp.latestVersion ?? copy.unknownVersion}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span></div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.checkingUpdates : copy.checkUpdates}</button></article>
-          <article id="md3-authentication-settings" className="md3-authentication-guide"><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{copy.importAuthentication}</button></article>
+          <article id="md3-authentication-settings" className="md3-authentication-guide"><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
           <article className="md3-support-diagnostics"><span>05</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
         </div>
+        {authenticationImportResult && <section className="md3-authentication-success" role="status"><i aria-hidden="true">✓</i><div><strong>{copy.authenticationImportSuccess}</strong><span>{authenticationImportResult.displayName}</span><b>{copy.authenticationSummary(authenticationImportResult.services.length, authenticationImportResult.cookieCount)}</b><small>{authenticationImportResult.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</small></div><button type="button" onClick={returnToWorkbench}>{copy.returnToWorkbench}<span aria-hidden="true">→</span></button></section>}
         {workspace.authenticationProfiles.length === 0
           ? <p className="md3-empty-line">{copy.noAuthentication}</p>
-          : <div className="md3-profile-list">{workspace.authenticationProfiles.map((profile) => <article key={profile.id}><i /><div><strong>{profile.displayName}</strong><small>{profile.services.join(' · ')}</small></div><b>{profile.health.toUpperCase()}</b></article>)}</div>}
+          : <div className="md3-profile-list">{workspace.authenticationProfiles.map((profile, index) => <article key={profile.id}><i /><div><strong>{profile.displayName}</strong><small>{copy.authenticationSummary(profile.services.length, profile.cookieCount)}</small><em>{profile.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</em></div><b>{index === workspace.authenticationProfiles.length - 1 ? copy.latestAuthenticationProfile : copy.availableAuthenticationProfile}</b></article>)}</div>}
       </SpacePage>
     )
   }

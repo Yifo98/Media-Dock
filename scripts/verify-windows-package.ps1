@@ -183,6 +183,9 @@ try {
     if (-not [System.StringComparer]::OrdinalIgnoreCase.Equals($mainExecutable.DirectoryName, $inspectDir)) {
         throw "Media Dock.exe must be directly runnable from the extracted ZIP root."
     }
+    if (Test-Path -LiteralPath (Join-Path $inspectDir "Launch Media Dock.bat")) {
+        throw "Launch Media Dock.bat must not be present; Media Dock.exe is the single Windows launcher."
+    }
 
     $versionInfo = $mainExecutable.VersionInfo
     $metadataChecks = [ordered]@{
@@ -272,6 +275,9 @@ try {
 
     $writableRoot = Join-Path $inspectDir "便携 数据 测试"
     Invoke-ApplicationProbe -Executable $mainExecutable -PortableRoot $writableRoot -ExpectedExitCode 0 -ExpectProbeFile
+    if (Test-Path -LiteralPath (Join-Path $writableRoot "Media Dock Data\cookies")) {
+        throw "Media Dock 3 startup created the legacy cookies directory."
+    }
     $exitRoot = Join-Path $inspectDir "退出 清理 测试"
     Invoke-ApplicationProbe -Executable $mainExecutable -PortableRoot $exitRoot -ExpectedExitCode 0 -ProbeMode "exit" -ExpectProbeFile
     Write-Host "[OK] Startup, portable write, and exit cleanup probes"

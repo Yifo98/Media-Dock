@@ -1,10 +1,12 @@
 import { chmod, copyFile, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 export type AuthenticationPackageFile = Readonly<{
   service: string
   sourcePath: string
   fileName: string
+  cookieCount: number
 }>
 
 const NETSCAPE_COOKIE_HEADER = '# Netscape HTTP Cookie File'
@@ -16,6 +18,35 @@ function normalizeServiceId(value: string): string {
     throw new Error(`Authentication package contains an unsupported service id: ${value}`)
   }
   return normalized
+}
+
+export function countNetscapeCookieEntries(content: string): number {
+  return content.split(/\r?\n/gu).reduce((count, line) => {
+    const trimmed = line.trim()
+    if (!trimmed || (trimmed.startsWith('#') && !trimmed.startsWith('#HttpOnly_'))) return count
+    return trimmed.split('\t').length >= 7 ? count + 1 : count
+  }, 0)
+}
+
+export function readStoredAuthenticationCookieCounts(
+  authenticationProfilesRoot: string,
+  directoryName: string,
+  services: readonly string[],
+): Readonly<Record<string, number>> {
+  if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(directoryName) || directoryName.includes('..')) {
+    return Object.freeze(Object.fromEntries(services.map((service) => [service, 0])))
+  }
+
+  const counts = services.map((service) => {
+    try {
+      const normalizedService = normalizeServiceId(service)
+      const cookiePath = path.join(authenticationProfilesRoot, directoryName, 'by-service', `${normalizedService}.cookies.txt`)
+      return [service, countNetscapeCookieEntries(readFileSync(cookiePath, 'utf8'))] as const
+    } catch {
+      return [service, 0] as const
+    }
+  })
+  return Object.freeze(Object.fromEntries(counts))
 }
 
 export async function inspectAuthenticationPackage(sourceDirectory: string): Promise<readonly AuthenticationPackageFile[]> {
@@ -39,11 +70,16 @@ export async function inspectAuthenticationPackage(sourceDirectory: string): Pro
     if (!fileStat.isFile() || fileStat.size === 0 || fileStat.size > MAX_COOKIE_FILE_BYTES) {
       throw new Error(`Authentication Cookie file is empty or too large: ${entry.name}`)
     }
-    const header = (await readFile(sourcePath, { encoding: 'utf8' })).slice(0, 256)
-    if (!header.startsWith(NETSCAPE_COOKIE_HEADER)) {
+    const content = await readFile(sourcePath, { encoding: 'utf8' })
+    if (!content.slice(0, 256).startsWith(NETSCAPE_COOKIE_HEADER)) {
       throw new Error(`Authentication Cookie file is not Netscape format: ${entry.name}`)
     }
-    files.push(Object.freeze({ service, sourcePath, fileName: `${service}.cookies.txt` }))
+    files.push(Object.freeze({
+      service,
+      sourcePath,
+      fileName: `${service}.cookies.txt`,
+      cookieCount: countNetscapeCookieEntries(content),
+    }))
   }
 
   files.sort((left, right) => left.service.localeCompare(right.service))

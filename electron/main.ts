@@ -30,7 +30,6 @@ import {
 import { runRuntimeProcessCollectOutput, terminateRuntimeProcessTree } from './core/runtimeProcess.js'
 import { extractZipArchive } from './core/zipArchive.js'
 import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
-import { importLatestLegacyAuthenticationPackage } from './v3/legacyAuthenticationImport.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
 import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
 import { buildSanitizedSupportDiagnostics } from './v3/supportDiagnostics.js'
@@ -4047,7 +4046,6 @@ async function initializeV3TaskEngine() {
       ...(activeDeno ? { deno: activeDeno } : {}),
     },
   })
-  await importLatestLegacyAuthenticationPackage(v3TaskEngine, getCookiesDir())
   unregisterV3Ipc = registerMediaDockV3Ipc(
     ipcMain,
     v3TaskEngine,
@@ -4107,6 +4105,11 @@ async function initializeV3TaskEngine() {
         } finally {
           rmSync(extractDirectory, { recursive: true, force: true })
         }
+      },
+      async openAuthenticationProfilesDirectory() {
+        const authenticationDirectory = ensureDirectory(join(v3DataDirectory, 'authentication-profiles'))
+        const openError = await shell.openPath(authenticationDirectory)
+        if (openError) throw new Error(openError)
       },
       async openMediaCookiesResource(resource) {
         await shell.openExternal(MEDIA_COOKIES_RESOURCE_URLS[resource])

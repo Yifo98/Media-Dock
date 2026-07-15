@@ -35,6 +35,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     'inspectSource',
     'inspectVideoQualities',
     'onWorkspaceChanged',
+    'openAuthenticationProfilesDirectory',
     'openMediaCookiesResource',
     'pickLocalSource',
     'pickLocalSources',
@@ -51,6 +52,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
   await api.pickLocalSources('/media')
   await api.pickOutputDirectory('/deliverables')
   await api.importAuthenticationProfile()
+  await api.openAuthenticationProfilesDirectory()
   await api.openMediaCookiesResource('chrome-store')
   await api.inspectSource({ kind: 'local-file', path: '/media/input.wav' })
   await api.inspectVideoQualities({ kind: 'network-url', locator: 'https://media.example/watch?v=42' })
@@ -71,6 +73,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     { channel: 'media-dock:v3:pick-local-sources', payload: '/media' },
     { channel: 'media-dock:v3:pick-output-directory', payload: '/deliverables' },
     { channel: 'media-dock:v3:import-authentication-profile', payload: undefined },
+    { channel: 'media-dock:v3:open-authentication-profiles-directory', payload: undefined },
     { channel: 'media-dock:v3:open-mediacookies-resource', payload: 'chrome-store' },
     { channel: 'media-dock:v3:inspect-source', payload: { kind: 'local-file', path: '/media/input.wav' } },
     { channel: 'media-dock:v3:inspect-video-qualities', payload: { kind: 'network-url', locator: 'https://media.example/watch?v=42' } },

@@ -1,0 +1,31 @@
+# Media Dock 3.0.0
+
+Media Dock 3 is the new default product generation: a local-first workspace for inspecting network sources, selecting authenticated quality, organizing collections, scheduling downloads, merging separate audio and video tracks, and managing deliverables.
+
+## Highlights
+
+- Inspect Bilibili series, YouTube playlists, and multiple independent links before creating tasks.
+- Detect the actual qualities available with the newest matching MediaCookies profile and estimate download size before starting.
+- Group main episodes, extras, previews, courses, and playlists with independent collapse and selection controls.
+- Run one, two, or three bounded concurrent tasks with visible acquisition and processing progress.
+- Pair local video and audio using stream metadata, duration, and timeline evidence rather than filename similarity.
+- Open completed deliverables from Task Center and clear history or managed cache without deleting delivered media.
+- Export a privacy-safe support report for cross-platform diagnosis.
+
+## MediaCookies in 3.0
+
+- Website sign-in data is stored only under `Media Dock Data/v3/authentication-profiles/`.
+- Importing another MediaCookies ZIP adds a newer profile for matching sites while retaining older profiles already pinned by tasks.
+- The success view reports recognized site count, total Cookie entries, and per-site counts without exposing Cookie names, values, domains, or source paths.
+- Settings provides both “Update Cookies” and “Open Cookies folder”, followed by a clear return to the processing workspace.
+- Starting Media Dock 3 no longer creates or automatically imports the 2.1-era `Media Dock Data/cookies/` directory.
+
+## Portable packages
+
+- Windows exposes one root launcher: `Media Dock.exe`.
+- macOS exposes one root launcher: `Launch Media Dock.command`; the required Electron runtime is stored internally under `core/Media Dock.app`.
+- Task data and authentication profiles remain portable beside the launcher in `Media Dock Data/`.
+
+## Trust limitation
+
+The repository currently has no Windows Authenticode / Microsoft Trusted Signing credential and no Apple Developer ID / notarization credential. Therefore generated public test assets contain `Unsigned` in the filename and are presented as **Unsigned Developer Preview** packages. Windows Smart App Control or enterprise policy may block the executable before launch, and macOS Gatekeeper may require manual approval. The source release is stable, but these unsigned binaries must not be represented as universally trusted platform packages.

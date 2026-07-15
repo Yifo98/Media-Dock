@@ -18,6 +18,11 @@ const windowsBuildScript = readFileSync(
   new URL('../scripts/build-windows-native.mjs', import.meta.url),
   'utf8',
 )
+const afterPackScript = readFileSync(new URL('../scripts/after-pack.cjs', import.meta.url), 'utf8')
+const macBuildScript = readFileSync(new URL('../scripts/build-mac-share.sh', import.meta.url), 'utf8')
+const macVerifyScript = readFileSync(new URL('../scripts/verify-macos-package.sh', import.meta.url), 'utf8')
+const windowsVerifyScript = readFileSync(new URL('../scripts/verify-windows-package.ps1', import.meta.url), 'utf8')
+const electronMainSource = readFileSync(new URL('../electron/main.ts', import.meta.url), 'utf8')
 
 test('electron-builder owns the Windows executable identity and ZIP target', () => {
   assert.equal(build.appId, 'com.yifo.mediadock')
@@ -58,4 +63,18 @@ test('the Windows candidate is built and verified on a native Windows runner', (
   assert.match(windowsWorkflow, /MEDIA_DOCK_FFMPEG_WINDOWS_URL/)
   assert.doesNotMatch(windowsBuildScript, /run\(['"](?:npm|npx)\.cmd['"]/u)
   assert.match(windowsBuildScript, /run\(process\.execPath/u)
+})
+
+test('3.0 packages expose exactly one platform-appropriate launcher', () => {
+  assert.doesNotMatch(afterPackScript, /Launch Media Dock\.bat/u)
+  assert.match(windowsVerifyScript, /Launch Media Dock\.bat/u)
+  assert.match(windowsVerifyScript, /must not be present/u)
+  assert.match(macBuildScript, /Launch Media Dock\.command/u)
+  assert.match(macBuildScript, /core\/Media Dock\.app/u)
+  assert.match(macVerifyScript, /Launch Media Dock\.command/u)
+  assert.match(macVerifyScript, /core\/Media Dock\.app/u)
+})
+
+test('3.0 startup uses only the v3 Authentication Profile store', () => {
+  assert.doesNotMatch(electronMainSource, /importLatestLegacyAuthenticationPackage\(v3TaskEngine, getCookiesDir\(\)\)/u)
 })
