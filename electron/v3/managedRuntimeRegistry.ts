@@ -269,7 +269,10 @@ export function createManagedRuntimeRegistry(options: CreateManagedRuntimeRegist
       if (normalizeVersion(probedVersion) !== normalizeVersion(input.version)) {
         throw new Error(`Runtime version validation failed: expected ${input.version}, received ${probedVersion}.`)
       }
-      const candidateDescriptor = openSync(candidatePath, 'r')
+      // Windows FlushFileBuffers (used by fsync) requires a writable handle.
+      // The candidate was just written and is still private to staging, so
+      // reopening it as r+ preserves the durability check on every platform.
+      const candidateDescriptor = openSync(candidatePath, 'r+')
       try {
         fsyncSync(candidateDescriptor)
       } finally {
