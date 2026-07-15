@@ -1,11 +1,15 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, net, shell } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, release as osRelease } from 'node:os'
 import { delimiter, dirname, extname, isAbsolute, join, parse, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 import { assertSafeLocalPath } from './core/localPath.js'
+import {
+  ensureWritablePortableDataDirectory,
+  getPortableDataDirectory,
+} from './core/portableData.js'
 import {
   getRuntimeUpdateAvailability,
   inspectRuntimeExecutable,
@@ -23,7 +27,13 @@ import {
   RuntimeOperationCoordinator,
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
-import { runRuntimeProcessCollectOutput } from './core/runtimeProcess.js'
+import { runRuntimeProcessCollectOutput, terminateRuntimeProcessTree } from './core/runtimeProcess.js'
+import { extractZipArchive } from './core/zipArchive.js'
+import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
+import { importLatestLegacyAuthenticationPackage } from './v3/legacyAuthenticationImport.js'
+import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
+import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
+import { buildSanitizedSupportDiagnostics } from './v3/supportDiagnostics.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -37,6 +47,10 @@ type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
 const electronRuntimeFetch: RuntimeFetch = async (input, init) => await net.fetch(input, init)
+const MEDIA_COOKIES_RESOURCE_URLS = Object.freeze({
+  'chrome-store': 'https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek',
+  github: 'https://github.com/Yifo98/MediaCookies',
+})
 
 type DownloadRequest = {
   urls: string[]
@@ -343,10 +357,10 @@ type JobContext = {
 
 const isWindows = process.platform === 'win32'
 const APP_DISPLAY_NAME = 'Media Dock'
+const WINDOW_DISPLAY_NAME = process.env.MEDIA_DOCK_V3_PREVIEW === '1' ? 'Media Dock 3 Preview' : APP_DISPLAY_NAME
 const windowsHomeDir = process.env.USERPROFILE ?? homedir()
 const windowsLocalAppDataDir = process.env.LOCALAPPDATA ?? join(windowsHomeDir, 'AppData', 'Local')
 const windowsProgramFilesDir = process.env.ProgramFiles ?? 'C:\\Program Files'
-const windowsProgramFilesX86Dir = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)'
 const envRoot = process.env.YTDLP_ENV_ROOT
   ?? (
     isWindows
@@ -374,6 +388,10 @@ const preloadPath = join(__dirname, '..', 'electron', 'preload.cjs')
 
 let mainWindow: BrowserWindow | null = null
 let mediaToolsWindow: BrowserWindow | null = null
+let v3TaskEngine: MediaTaskEngine | null = null
+let v3RuntimeRegistry: ManagedRuntimeRegistry | null = null
+let unregisterV3Ipc: (() => void) | null = null
+let portableDataRootDirectory: string | null = null
 let activeBatchRequest: DownloadRequest | null = null
 let pendingJobs: Array<{ jobId: string; url: string; index: number; totalJobs: number }> = []
 const activeJobs = new Map<string, JobContext>()
@@ -394,6 +412,9 @@ let activeSubtitleCleanupAbort: AbortController | null = null
 let subtitleCleanupCancelled = false
 let ytDlpInspectionCache: { key: string; promise: Promise<RuntimeExecutableInspection> } | null = null
 const runtimeOperations = new RuntimeOperationCoordinator()
+let applicationShutdownStarted = false
+let applicationShutdownCompleted = false
+let applicationShutdownPromise: Promise<void> | null = null
 
 const DEFAULT_SUBTITLE_CLEANUP_PROMPT = [
   '请帮我优化以下这份视频字幕文档。这份文档是通过 OCR 自动生成的，包含大量冗余和识别错误，同时含有时间戳和序号，需要请按以下规则进行清理和修复文字，最终形成一整份纯文本。',
@@ -438,7 +459,7 @@ function getBundledToolsDir() {
 
 function getPortableRootDir() {
   const explicitPortableRoot = process.env.MEDIA_DOCK_PORTABLE_ROOT?.trim()
-  if (app.isPackaged && explicitPortableRoot) {
+  if (explicitPortableRoot) {
     return explicitPortableRoot
   }
 
@@ -451,11 +472,18 @@ function getPortableRootDir() {
 }
 
 function getPortableDataRootDir() {
-  const rootDir = app.isPackaged
+  if (portableDataRootDirectory) {
+    return portableDataRootDirectory
+  }
+
+  const rootDir = app.isPackaged || process.env.MEDIA_DOCK_PORTABLE_ROOT?.trim()
     ? getPortableRootDir()
     : getDevRootDir()
 
-  return ensureDirectory(join(rootDir, `${APP_DISPLAY_NAME} Data`))
+  portableDataRootDirectory = ensureWritablePortableDataDirectory(
+    getPortableDataDirectory(rootDir, APP_DISPLAY_NAME),
+  )
+  return portableDataRootDirectory
 }
 
 function initializePortableUserDataPath() {
@@ -810,7 +838,12 @@ function getUpdateDownloadDir() {
   return app.isPackaged ? join(getPortableDataRootDir(), 'updates') : join(getDevRootDir(), 'updates')
 }
 
-initializePortableUserDataPath()
+let portableStartupError: Error | null = null
+try {
+  initializePortableUserDataPath()
+} catch (error) {
+  portableStartupError = error instanceof Error ? error : new Error(String(error))
+}
 
 function shouldAllowSystemToolFallback() {
   return !app.isPackaged || process.env.MEDIA_DOCK_ALLOW_SYSTEM_TOOLS === '1'
@@ -1016,7 +1049,9 @@ function normalizeBilibiliEpisode(episode: BilibiliApiEpisode, fallbackIndex: nu
   const title = scalarToString(episode.title) || String(fallbackIndex + 1)
   const longTitle = scalarToString(episode.long_title)
   const badge = episodeBadgeText(episode)
-  const duration = typeof episode.duration === 'number' && Number.isFinite(episode.duration) ? episode.duration : null
+  const duration = typeof episode.duration === 'number' && Number.isFinite(episode.duration)
+    ? episode.duration / 1_000
+    : null
 
   return {
     id,
@@ -1593,83 +1628,8 @@ function selectDenoDownloadAsset(assets: NonNullable<GitHubReleasePayload['asset
     ?? null
 }
 
-function quotePowerShellPath(value: string) {
-  return `'${value.replace(/'/g, "''")}'`
-}
-
-function getBandizipPath() {
-  if (!isWindows) {
-    return null
-  }
-
-  const candidatePaths = uniquePaths([
-    process.env.BANDIZIP_BIN,
-    join(windowsProgramFilesDir, 'Bandizip', 'bz.exe'),
-    join(windowsProgramFilesX86Dir, 'Bandizip', 'bz.exe'),
-    findExecutableInPath('bz') ?? undefined,
-  ])
-
-  return candidatePaths.find((candidate) => existsSync(candidate)) ?? null
-}
-
-async function runSimpleProcess(command: string, args: string[], cwd: string) {
-  return await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      cwd,
-      env: {
-        ...process.env,
-        PATH: buildToolPathEnv(),
-      },
-    })
-
-    let stderr = ''
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf8')
-    })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve()
-        return
-      }
-      reject(new Error(stderr.trim() || `${command} exited with code ${code}`))
-    })
-  })
-}
-
 async function extractZip(zipPath: string, outputDir: string) {
-  rmSync(outputDir, { recursive: true, force: true })
-  ensureDirectory(outputDir)
-
-  if (isWindows) {
-    const bandizipPath = getBandizipPath()
-    if (bandizipPath) {
-      await runSimpleProcess(
-        bandizipPath,
-        ['x', '-y', '-aoa', `-o:${outputDir}`, zipPath],
-        dirname(zipPath),
-      )
-      return
-    }
-
-    const powershell = process.env.SystemRoot
-      ? join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-      : 'powershell.exe'
-    await runSimpleProcess(
-      powershell,
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-Command',
-        `Expand-Archive -LiteralPath ${quotePowerShellPath(zipPath)} -DestinationPath ${quotePowerShellPath(outputDir)} -Force`,
-      ],
-      dirname(zipPath),
-    )
-    return
-  }
-
-  await runSimpleProcess('unzip', ['-oq', zipPath, '-d', outputDir], dirname(zipPath))
+  await extractZipArchive(zipPath, outputDir)
 }
 
 function findFileRecursive(rootDir: string, fileName: string): string | null {
@@ -2392,23 +2352,9 @@ function emitLog(line: string, stream: 'stdout' | 'stderr' | 'system', jobId?: s
 }
 
 function terminateProcess(child: ChildProcessWithoutNullStreams | null, label: string) {
-  if (!child || child.killed) {
-    return
-  }
-
-  const pid = child.pid
+  if (!child) return
   try {
-    if (isWindows && pid) {
-      spawn('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true })
-      return
-    }
-
-    child.kill('SIGTERM')
-    setTimeout(() => {
-      if (!child.killed) {
-        child.kill('SIGKILL')
-      }
-    }, 1200)
+    terminateRuntimeProcessTree(child)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     emitLog(`[${label}] failed to terminate process: ${message}`, 'stderr')
@@ -2889,7 +2835,8 @@ async function inspectMedia(inputPath: string): Promise<MediaInspection> {
       '-of',
       'json',
       inputPath,
-    ])
+    ], { detached: process.platform !== 'win32' })
+    activeMediaProcess = child
 
     let stdout = ''
     let stderr = ''
@@ -2902,8 +2849,12 @@ async function inspectMedia(inputPath: string): Promise<MediaInspection> {
       stderr += chunk.toString('utf8')
     })
 
-    child.on('error', reject)
+    child.on('error', (error) => {
+      if (activeMediaProcess === child) activeMediaProcess = null
+      reject(error)
+    })
     child.on('close', (code) => {
+      if (activeMediaProcess === child) activeMediaProcess = null
       if (code !== 0) {
         reject(new Error(stderr.trim() || `ffprobe exited with code ${code}`))
         return
@@ -3412,6 +3363,7 @@ async function runLoggedProcess(executable: string, args: string[], cwd: string)
   return await new Promise<void>((resolve, reject) => {
     const child = spawn(executable, args, {
       cwd,
+      detached: process.platform !== 'win32',
       env: {
         ...process.env,
         PATH: buildToolPathEnv(),
@@ -3731,6 +3683,7 @@ function startNextJobs() {
       const ytDlpPath = getYtDlpPath()
       const child = spawn(ytDlpPath, args, {
         cwd: activeBatchRequest.outputDir,
+        detached: process.platform !== 'win32',
         env: {
           ...process.env,
           PATH: buildToolPathEnv(),
@@ -3935,13 +3888,14 @@ function startNextJobs() {
 
 function createAppWindow(hash = '') {
   const windowIconPath = getWindowIconPath()
+  const isV3Window = hash === '#v3'
   const win = new BrowserWindow({
-    width: 1500,
-    height: 1000,
-    minWidth: 1280,
-    minHeight: 840,
-    backgroundColor: '#09111f',
-    title: APP_DISPLAY_NAME,
+    width: isV3Window ? 1280 : 1500,
+    height: isV3Window ? 800 : 1000,
+    minWidth: isV3Window ? 760 : 1280,
+    minHeight: isV3Window ? 520 : 840,
+    backgroundColor: isV3Window ? '#f4f1eb' : '#09111f',
+    title: WINDOW_DISPLAY_NAME,
     ...(windowIconPath ? { icon: windowIconPath } : {}),
     autoHideMenuBar: true,
     webPreferences: {
@@ -3951,6 +3905,13 @@ function createAppWindow(hash = '') {
       sandbox: true,
     },
   })
+
+  if (isV3Window) {
+    win.on('page-title-updated', (event) => {
+      event.preventDefault()
+      win.setTitle(WINDOW_DISPLAY_NAME)
+    })
+  }
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -4012,7 +3973,7 @@ function createAppWindow(hash = '') {
 }
 
 function createWindow() {
-  mainWindow = createAppWindow()
+  mainWindow = createAppWindow('#v3')
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -4025,7 +3986,7 @@ function createMediaToolsWindow() {
   }
 
   mediaToolsWindow = createAppWindow('#media-tools')
-  mediaToolsWindow.setTitle(`${APP_DISPLAY_NAME} - Tools`)
+  mediaToolsWindow.setTitle(`${WINDOW_DISPLAY_NAME} - Tools`)
   mediaToolsWindow.setMinimumSize(1100, 760)
   mediaToolsWindow.on('closed', () => {
     mediaToolsWindow = null
@@ -4034,8 +3995,196 @@ function createMediaToolsWindow() {
   return mediaToolsWindow
 }
 
-app.whenReady().then(() => {
+async function probeMediaRuntimeVersion(command: string, args = ['-version']) {
+  try {
+    const result = await runRuntimeProcessCollectOutput({
+      command,
+      args,
+      timeoutMs: 10_000,
+      workingDirectory: getDevRootDir(),
+      env: process.env,
+    })
+    return result.stdout.split(/\r?\n/u).find((line) => line.trim().length > 0)?.trim() ?? 'unavailable'
+  } catch {
+    return 'unavailable'
+  }
+}
+
+async function initializeV3TaskEngine() {
+  const ffmpegCommand = getFfmpegPath()
+  const ffprobeCommand = getFfprobePath()
+  const ytDlpCommand = getYtDlpPath()
+  const denoCommand = getDenoPath()
+  const [ffmpegVersion, ffprobeVersion, ytDlpVersion, denoVersion] = await Promise.all([
+    probeMediaRuntimeVersion(ffmpegCommand),
+    probeMediaRuntimeVersion(ffprobeCommand),
+    probeMediaRuntimeVersion(ytDlpCommand, ['--version']),
+    denoCommand ? getCurrentDenoVersion() : Promise.resolve(null),
+  ])
+
+  const v3DataDirectory = ensureDirectory(join(getPortableDataRootDir(), 'v3'))
+  v3RuntimeRegistry = createManagedRuntimeRegistry({
+    rootDirectory: join(v3DataDirectory, 'tools'),
+    baselines: {
+      ffmpeg: { command: ffmpegCommand, version: ffmpegVersion },
+      ffprobe: { command: ffprobeCommand, version: ffprobeVersion },
+      'yt-dlp': { command: ytDlpCommand, version: ytDlpVersion },
+      ...(denoCommand && denoVersion ? { deno: { command: denoCommand, version: denoVersion } } : {}),
+    },
+  })
+  const activeFfmpeg = v3RuntimeRegistry.getActive('ffmpeg')!
+  const activeFfprobe = v3RuntimeRegistry.getActive('ffprobe')!
+  const activeYtDlp = v3RuntimeRegistry.getActive('yt-dlp')!
+  const activeDeno = v3RuntimeRegistry.getActive('deno')
+
+  v3TaskEngine = createMediaTaskEngine({
+    dataDirectory: v3DataDirectory,
+    resolveCollection: resolveMediaCollection,
+    managedRuntimes: {
+      ffmpeg: activeFfmpeg,
+      ffprobe: activeFfprobe,
+      ytDlp: activeYtDlp,
+      ...(activeDeno ? { deno: activeDeno } : {}),
+    },
+  })
+  await importLatestLegacyAuthenticationPackage(v3TaskEngine, getCookiesDir())
+  unregisterV3Ipc = registerMediaDockV3Ipc(
+    ipcMain,
+    v3TaskEngine,
+    () => BrowserWindow.getAllWindows()
+      .filter((window) => !window.isDestroyed())
+      .map((window) => window.webContents),
+    {
+      async pickLocalSource(currentPath) {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          properties: ['openFile'],
+          filters: [
+            { name: 'Media', extensions: ['mp4', 'mkv', 'mov', 'webm', 'mp3', 'm4a', 'wav', 'flac', 'aac', 'opus'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      },
+      async pickLocalSources(currentPath) {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          properties: ['openFile', 'multiSelections'],
+          filters: [
+            { name: 'Media', extensions: ['mp4', 'mkv', 'mov', 'webm', 'mp3', 'm4a', 'wav', 'flac', 'aac', 'opus'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        })
+        return result.canceled ? [] : result.filePaths
+      },
+      async pickOutputDirectory(currentPath) {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          properties: ['openDirectory', 'createDirectory'],
+        })
+        return result.canceled ? null : result.filePaths[0] ?? null
+      },
+      async importAuthenticationProfile() {
+        const result = await dialog.showOpenDialog(mainWindow!, {
+          defaultPath: resolveDefaultDownloads(),
+          properties: ['openFile'],
+          filters: [
+            { name: 'MediaCookies package', extensions: ['zip'] },
+            { name: 'All files', extensions: ['*'] },
+          ],
+        })
+        const zipPath = result.filePaths[0]
+        if (result.canceled || !zipPath) return null
+        const extractDirectory = join(v3DataDirectory, 'authentication-imports', `extract-${Date.now()}`)
+        try {
+          await extractZip(zipPath, extractDirectory)
+          const packageRoot = findCookieExportRoot(extractDirectory)
+          if (!packageRoot) throw new Error('The selected ZIP is not a supported MediaCookies package.')
+          return await v3TaskEngine!.importAuthenticationPackage({
+            sourceDirectory: packageRoot,
+            displayName: parse(zipPath).name,
+          })
+        } finally {
+          rmSync(extractDirectory, { recursive: true, force: true })
+        }
+      },
+      async openMediaCookiesResource(resource) {
+        await shell.openExternal(MEDIA_COOKIES_RESOURCE_URLS[resource])
+      },
+      async revealDeliverable(deliverableId) {
+        const deliverable = v3TaskEngine?.getWorkspaceSnapshot().deliverables.find((candidate) => candidate.id === deliverableId)
+        if (!deliverable) throw new Error(`Deliverable does not exist: ${deliverableId}`)
+        shell.showItemInFolder(deliverable.path)
+      },
+      async checkRuntimeUpdates() {
+        return await checkRuntimeToolUpdates()
+      },
+      async exportSupportDiagnostics(input) {
+        const generatedAt = new Date()
+        const report = buildSanitizedSupportDiagnostics({
+          generatedAt: generatedAt.toISOString(),
+          appVersion: app.getVersion(),
+          uiLanguage: input.language,
+          platform: { name: process.platform, release: osRelease(), arch: process.arch },
+          processVersions: {
+            electron: process.versions.electron ?? 'unknown',
+            chrome: process.versions.chrome ?? 'unknown',
+            node: process.versions.node,
+          },
+          runtimes: {
+            ffmpeg: v3RuntimeRegistry?.getActive('ffmpeg')?.version ?? 'not installed',
+            ffprobe: v3RuntimeRegistry?.getActive('ffprobe')?.version ?? 'not installed',
+            ytDlp: v3RuntimeRegistry?.getActive('yt-dlp')?.version ?? 'not installed',
+            deno: v3RuntimeRegistry?.getActive('deno')?.version ?? null,
+          },
+          homeDirectory: homedir(),
+          ...(input.recentError ? { recentError: input.recentError } : {}),
+          workspace: v3TaskEngine!.getWorkspaceSnapshot(),
+        })
+        const timestamp = generatedAt.toISOString().replace(/[-:]/gu, '').replace(/\.\d{3}Z$/u, 'Z').replace('T', '-')
+        const result = await dialog.showSaveDialog(mainWindow!, {
+          defaultPath: join(resolveDefaultDownloads(), `media-dock-support-${timestamp}.txt`),
+          filters: [{ name: 'Media Dock support log', extensions: ['txt'] }],
+        })
+        if (result.canceled || !result.filePath) return null
+        writeFileSync(result.filePath, report, 'utf8')
+        return result.filePath
+      },
+    },
+  )
+}
+
+app.whenReady().then(async () => {
+  if (portableStartupError) {
+    if (process.env.MEDIA_DOCK_STARTUP_PROBE !== '1') {
+      dialog.showErrorBox('Media Dock cannot start', portableStartupError.message)
+    } else {
+      console.error(portableStartupError.message)
+    }
+    app.exit(1)
+    return
+  }
+
+  if (process.env.MEDIA_DOCK_STARTUP_PROBE === '1') {
+    const dataDirectory = getPortableDataRootDir()
+    writeFileSync(join(dataDirectory, 'startup-probe.json'), `${JSON.stringify({
+      appVersion: app.getVersion(),
+      dataDirectory,
+      platform: process.platform,
+      arch: process.arch,
+    }, null, 2)}\n`, 'utf8')
+    app.exit(0)
+    return
+  }
+
+  if (process.env.MEDIA_DOCK_EXIT_PROBE === '1') {
+    await initializeV3TaskEngine()
+    app.quit()
+    return
+  }
+
   applyDockIcon()
+  await initializeV3TaskEngine()
   createWindow()
 
   app.on('activate', () => {
@@ -4043,6 +4192,64 @@ app.whenReady().then(() => {
       createWindow()
     }
   })
+}).catch((error) => {
+  const message = error instanceof Error ? error.message : String(error)
+  dialog.showErrorBox('Media Dock cannot start', message)
+  app.exit(1)
+})
+
+async function shutdownApplicationWork() {
+  if (applicationShutdownPromise) return await applicationShutdownPromise
+  if (applicationShutdownStarted) return
+  applicationShutdownStarted = true
+
+  applicationShutdownPromise = (async () => {
+    batchCancelled = true
+    mediaCancelled = true
+    subtitleCleanupCancelled = true
+    activeBatchRequest = null
+    pendingJobs = []
+    downloadSchedulerQueued = false
+
+    for (const [, job] of activeJobs) {
+      terminateProcess(job.process, `job ${job.jobId}`)
+    }
+    activeJobs.clear()
+    terminateProcess(activeMediaProcess, 'media')
+    activeMediaProcess = null
+    activeSubtitleCleanupAbort?.abort()
+    activeSubtitleCleanupAbort = null
+
+    unregisterV3Ipc?.()
+    unregisterV3Ipc = null
+    await v3TaskEngine?.shutdown()
+    v3TaskEngine = null
+    v3RuntimeRegistry = null
+
+    if (process.env.MEDIA_DOCK_EXIT_PROBE === '1') {
+      writeFileSync(join(getPortableDataRootDir(), 'exit-probe.json'), `${JSON.stringify({
+        activeJobs: activeJobs.size,
+        activeMediaProcess: activeMediaProcess !== null,
+        subtitleCleanupActive: activeSubtitleCleanupAbort !== null,
+        taskEngineClosed: v3TaskEngine === null,
+        ipcUnregistered: unregisterV3Ipc === null,
+      }, null, 2)}\n`, 'utf8')
+    }
+  })()
+  return await applicationShutdownPromise
+}
+
+app.on('before-quit', (event) => {
+  if (applicationShutdownCompleted) return
+  event.preventDefault()
+  void shutdownApplicationWork()
+    .catch((error) => {
+      console.error('Media Dock shutdown failed:', error)
+    })
+    .finally(() => {
+      applicationShutdownCompleted = true
+      app.quit()
+    })
 })
 
 app.on('window-all-closed', () => {

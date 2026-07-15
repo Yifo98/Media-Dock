@@ -14,11 +14,27 @@ dist-ssr
 build/preview-*.png
 build/theme-previews/
 *.local
+.env
+.env.*
+!.env.example
 release/*
 !release/*/
 release/*/*
 !release/*/RELEASE-NOTES.md
-cookies
+[Cc]ookies
+[Cc]ocos
+*.cookies.txt
+*.cookies.zip
+*.cookie.zip
+*.sqlite
+*.sqlite3
+*.db
+media-dock-support-*.txt
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
 tools
 updates
 browser-extension
@@ -27,6 +43,7 @@ subtitle-cleanup-config.json
 .codex-tmp/
 .playwright-cli/
 output/playwright/
+output/qa/
 Media Dock.lnk
 
 # Editor directories and files

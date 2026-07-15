@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   existsSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -12,6 +13,13 @@ import { fileURLToPath } from 'node:url'
 
 const YT_DLP_RELEASE_API = 'https://api.github.com/repos/yt-dlp/yt-dlp/releases'
 const REQUIRED_WINDOWS_TOOLS = ['yt-dlp.exe', 'deno.exe', 'ffmpeg.exe', 'ffprobe.exe']
+
+function listRuntimeBinaryNames(runtimeDir) {
+  return readdirSync(runtimeDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(?:exe|dll)$/iu.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' }))
+}
 
 function sha256File(filePath) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex')
@@ -107,8 +115,24 @@ export function verifyWindowsRuntimeDirectory(runtimeDir, manifest, { requireRec
   if (requireRecordedFingerprints && (!manifest.tools || typeof manifest.tools !== 'object')) {
     throw new Error('Runtime manifest does not contain recorded tool fingerprints.')
   }
+  const binaryNames = listRuntimeBinaryNames(runtimeDir)
+  for (const requiredName of REQUIRED_WINDOWS_TOOLS) {
+    if (!binaryNames.some((name) => name.toLowerCase() === requiredName.toLowerCase())) {
+      requireRegularFile(join(runtimeDir, requiredName), requiredName)
+    }
+  }
+
+  if (requireRecordedFingerprints) {
+    const recordedNames = Object.keys(manifest.tools).sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' }))
+    if (recordedNames.length !== binaryNames.length || recordedNames.some((name, index) => name !== binaryNames[index])) {
+      throw new Error(
+        `Runtime binary inventory mismatch. Expected [${recordedNames.join(', ')}], received [${binaryNames.join(', ')}].`,
+      )
+    }
+  }
+
   const tools = {}
-  for (const fileName of REQUIRED_WINDOWS_TOOLS) {
+  for (const fileName of binaryNames) {
     const filePath = join(runtimeDir, fileName)
     const stats = requireRegularFile(filePath, fileName)
     tools[fileName] = {

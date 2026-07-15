@@ -1,269 +1,149 @@
-# Media Dock
+<p align="center">
+  <img src="build/icon.png" width="144" alt="Media Dock icon">
+</p>
 
-![Media Dock](build/readme-hero.png)
+<h1 align="center">Media Dock</h1>
 
-Media Dock 是一个本地媒体下载和整理工作台，把链接下载、`cookies.txt` 选择、音视频合并和本地媒体后处理整理到同一个界面里。
+<p align="center">本地优先的媒体获取、音画合并与交付工作台。</p>
 
-## 下载
+<p align="center">
+  <a href="https://github.com/Yifo98/Media-Dock/releases/latest"><img alt="Stable release" src="https://img.shields.io/github/v/release/Yifo98/Media-Dock?display_name=tag&label=stable&sort=semver"></a>
+  <a href="https://github.com/Yifo98/Media-Dock/releases"><img alt="All releases" src="https://img.shields.io/badge/Media%20Dock%203-alpha-c7b9f3"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-73cbd7">
+  <img alt="Local first" src="https://img.shields.io/badge/privacy-local--first-24313b">
+</p>
 
-- [前往 GitHub Releases 下载](https://github.com/Yifo98/Media-Dock/releases/latest)
-- Windows：优先下载 `Media.Dock-2.0.11-win.zip`
-- macOS：优先下载 `Media.Dock-2.0.11-arm64-mac.zip`
+Media Dock 把公开链接、B 站剧集、YouTube 合集、登录画质检测、批量任务、独立音画合并和问题诊断收进一个可恢复的桌面流程。应用在本机使用 `yt-dlp`、FFmpeg、Deno 与 MediaCookies；Cookie 值不会进入界面、任务数据库或导出的支持日志。
 
-当前标准发布包目标就是“解压即用”。
+## 版本状态
 
-标准 ZIP 解压后请从根目录启动脚本进入：
+| 版本线 | 状态 | 适合谁 |
+| --- | --- | --- |
+| [2.1.2](https://github.com/Yifo98/Media-Dock/releases/tag/v2.1.2) | 稳定版 | 需要当前稳定 Windows/macOS 分享包的用户 |
+| 3.0.0 Alpha 2 candidate | 内部开发预览 | 愿意验证全新工作台与原生打包流程的测试者 |
 
-- Windows：双击 `Launch Media Dock.bat`
-- macOS：双击 `Launch Media Dock.command`
+Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2.1.2 数据。Alpha 尚未签名，也不能代替目标 Windows 与 macOS 的正式发布验收。
 
-核心运行文件放在 `core/` 目录里，普通用户不需要直接打开里面的 `.exe` 或 `.app`。
+## Media Dock 3 一览
 
-当前 `macOS` 与 `Windows` 分享包都已经内置：
+| 处理工作台 | 链接识别反馈 |
+| --- | --- |
+| ![Processing workspace](docs/showcase/01-workbench.png) | ![Source inspection feedback](docs/showcase/02-link-inspection.png) |
+| 剧集自动分组 | 登录画质与大小预估 |
+| ![Grouped collection](docs/showcase/03-collection-groups.png) | ![Quality and MediaCookies](docs/showcase/04-quality-and-cookies.png) |
+| 按时长与时间轴匹配音画 | 任务与交付进度 |
+| ![Audio and video merge](docs/showcase/05-audio-video-merge.png) | ![Task progress](docs/showcase/06-task-progress.png) |
 
-- `yt-dlp`
-- `ffmpeg`
-- `ffprobe`
-- `deno`
+更多截图：[诊断与支持](docs/showcase/07-diagnostics.png)。原始展示图均为真实 Electron 界面截图，尺寸为 1280×768 PNG。
 
-只有当某个发布包明确标注为 `Lite`、`tools not bundled` 或 `UI-only` 时，才需要额外准备环境。
+## 主要能力
 
-标准包会把默认下载、Cookies、缓存、更新包和自动安装的 Deno 都放在解压目录同级的 `Media Dock Data/` 里，默认不写入 Windows `AppData` 或 macOS `Library`。
+- **先识别，再创建任务**：在下载前解析来源、集合结构、登录状态和可用画质。
+- **剧集与多单链接**：剧集、PV、花絮和音乐自动分组；也可批量添加互不相关的单条链接。
+- **MediaCookies 本地交接**：导入浏览器扩展生成的 ZIP，用于检测会员或登录画质，不展示 Cookie 内容。
+- **画质与大小预估**：在创建任务前显示当前登录状态可用的画质上限和估算体积。
+- **1 / 2 / 3 并发**：以稳妥、推荐、快速三种调度档位运行独立任务。
+- **音画合并**：一次多选音频与视频，按媒体流、时长和时间轴配对，不依赖相似文件名。
+- **任务中心**：显示获取、处理、交付进度，完成后可直接打开所在位置。
+- **安全清理**：清理任务历史和临时缓存不会删除已经交付到保存位置的媒体。
+- **诊断与支持**：导出经过脱敏的 TXT，保留系统、运行工具和问题证据，但排除 Cookie、凭证、完整链接参数、用户目录和媒体路径。
 
-Windows 端如果检测到 Bandizip 的 `bz.exe`，会优先用它处理运行时 zip 解压；没有安装 Bandizip 时会自动回退到 PowerShell，不影响使用。
+## 下载与运行
 
-## macOS 使用说明
+前往 [GitHub Releases](https://github.com/Yifo98/Media-Dock/releases)：
 
-macOS 标准包优先使用应用包内置工具和同级数据目录里的工具：
+- 普通用户优先选择 **2.1.2 Stable**。
+- 测试 Media Dock 3 时选择标记为 **Pre-release** 的 `3.0.0-alpha` 资产。
+- Windows 解压完整 ZIP 后直接运行 `Media Dock.exe`；`Launch Media Dock.bat` 仅作兼容入口。
+- macOS 解压后直接打开 `Media Dock.app`。
 
-1. `core/` 内置运行组件
-2. 同级 `Media Dock Data/tools/`
+标准分享包由 `electron-builder` 生成，并在可执行程序同级的 `Media Dock Data/` 保存任务数据、工具、缓存和默认下载。带 `Unsigned-Developer-Preview` 的资产只供受控测试：Windows Smart App Control 可能在启动前直接拦截，macOS Gatekeeper 也可能拒绝运行，不能把它当作面向所有用户的正式版。
 
-只有运行开发版或 UI-only 版本时，才推荐额外安装：
+## MediaCookies
 
-```bash
-brew install yt-dlp ffmpeg deno
-```
+需要登录态或会员画质时：
 
-如果你更习惯 Conda，也可以把这些工具放进同一个环境里，应用会自动尝试从该环境的 `bin/` 目录读取。
+1. 从 [Chrome Web Store](https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek) 或 [GitHub](https://github.com/Yifo98/MediaCookies) 安装 MediaCookies。
+2. 在目标网站完成登录。
+3. 从扩展导出本地 ZIP。
+4. 在 Media Dock 的“设置 → 网站登录信息”中导入。
 
-### 本地开发启动器
+MediaCookies 不读取密码，也不会把 Cookie 上传到网络。
 
-仓库根目录已经保留了一个 macOS 启动器：
+## 本地开发
 
-- `Launch Media Dock.command`
-
-它会调用 `scripts/launch-mac.sh`，优先复用现有 Conda 环境；如果本机没有这个环境，就自动回退到应用内置工具或系统 `PATH` 做本地核验。
-
-## Windows 使用说明
-
-Windows 标准包提供脚本启动版：
-
-- `Media.Dock-2.0.11-win.zip`
-
-解压后双击根目录的 `Launch Media Dock.bat`。运行所需工具已经内置，不需要额外安装 Conda、ffmpeg、yt-dlp 或 Deno。
-
-## 功能概览
-
-- 桌面控制台：批量链接下载、格式选择、4K 画质上限、实时进度
-- 媒体工具台：音轨分离、字幕导出、流信息查看、字幕整理、音视频单个或批量合并
-- Cookies 管理：导入本地 `cookies.txt` 处理登录态或会员内容
-
-## 2.0.11 亮点
-
-- MediaCookies 改为通过 Google 应用商店安装，或从独立 GitHub 仓库下载
-- 标准 ZIP 改为脚本启动结构，根目录放启动脚本，核心运行组件放在 `core/`
-- 媒体工具改为主窗口内部工作区，不再弹出额外窗口
-- 新增本地音视频单个配对合并和批量文件夹自动配对合并
-- 多文件合并优先按媒体流类型和时长配对，不再依赖文件名相似度
-- 下载任务支持并发队列、任务编号、任务日志复制和导出
-- 下载任务按“进行中 / 已完成 / 异常”分组，避免状态混在一起
-- 抖音 / TikTok 链接会提前检查，减少把推荐流入口误当成具体视频下载
-- 默认避免展开播放列表，减少误下载整组列表的情况
-- 本地 MOV / DaVinci 输出会显示更明确的合并进度和处理日志
-- 合并输出支持自定义文件名，批量任务会自动追加 `01`、`02` 序号避免覆盖
-- Cookie 选择和导入逻辑会提示过期、临期和来源匹配状态，减少误选失效登录态
-- 默认下载、Cookies、缓存、更新包和 Deno 自动安装都保存在同级 `Media Dock Data/`
-- Windows 端可自动调用 Bandizip `bz.exe` 解压运行时 zip，未安装时回退 PowerShell
-- 自动更新和 Deno 缺失修复会下载到同级数据目录，不写入系统用户目录
-
-## 版本规则
-
-- 小改动或修复 bug：升级 `patch`，例如 `1.0.1 -> 1.0.2`
-- 功能增强但不破坏原有主线：升级 `minor`，例如 `1.0.1 -> 1.1.0`
-- 桌面架构、核心交互或打包形态发生明显代际变化：升级 `major`，例如 `1.0.1 -> 2.0.0`
-
-本项目当前打包产物名称、`release/<version>/` 目录和发布说明都会跟随 `package.json` 里的版本号自动同步。
-
-常用命令：
+要求：Node.js 24、npm，以及项目支持的 Electron 环境。
 
 ```bash
-npm run version:patch
-npm run version:minor
-npm run version:major
+npm install
+npm run launch:mac:v3
 ```
 
-## Cookies 推荐
+项目外层的 `Launch Media Dock 3 Preview.command` 是 macOS 本地预览入口；它调用仓库内的 `scripts/launch-mac-v3-preview.sh`，并使用隔离的 v3 数据目录。仓库同时保留 `scripts/Launch Media Dock 3 Preview.command` 作为不含本机路径的迁移副本。
 
-如果目标站点需要登录态或会员权限，推荐先安装 MediaCookies 浏览器扩展并导出 Cookie ZIP，再在主界面 Cookies 区点击“导入 Cookie ZIP”。手动整理时，也可以把导出的文件夹放进同级 `Media Dock Data/cookies/` 目录。
+## 验证
 
-推荐使用 MediaCookies 插件：
+```bash
+npm test
+npm run lint
+git diff --check
+```
 
-- Google 应用商店安装：[XF MediaCookies](https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek)
-- 其他 Chromium 浏览器也可以直接打开同一个 Google 应用商店链接安装；若浏览器不支持商店安装，则使用 GitHub 下载包
-- GitHub 插件仓库与下载包：[Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
+发布候选还必须完成 [Media Dock 3 release gates](docs/release/3.0-release-gates.md)，特别是实际 Windows/macOS 打包资产、中文与空格路径、目录操作、MediaCookies 导入、运行时更新与诊断导出。
 
-这个插件只导出用户选择的 Cookie，不读取密码，不上传网络。遇到登录态或会员内容时，建议先在同一个浏览器确认账号状态和目标内容可访问，再预览是否缺少关键登录标记。插件默认会先按 [yt-dlp 官方 supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md) 筛出当前浏览器里可能用于下载的 Cookie 来源；用户也可以主动切换到“全部 Cookie”高级模式。官方支持列表代表 extractor 存在，不等于所有链接都稳定可下，仍可能受站点加密、会员权限、验证码和风控影响。
+## OpenAI Build Week
 
-## Windows 首次运行提示
+参赛要求、时间、提交物、资格限制和 Media Dock 准备清单见 [OpenAI Build Week 参赛要求](docs/hackathon/openai-hackathon-requirements.md)。既有项目只评审提交期内的实质扩展；正式提交还需要 Codex `/feedback` Session ID、GPT-5.6 的真实产品集成、三分钟以内公开演示和可直接测试的构建。
 
-当前 Windows 发布包还没有做代码签名，第一次在其他电脑上运行时，可能会看到 SmartScreen 的“Windows 已保护你的电脑”提示。
+## 文档
 
-这时候点击：
-
-1. `更多信息`
-2. `仍要运行`
-
-就可以继续启动。
-
-后续会继续完善签名和发布体验。
-
-## 发布说明
-
-更详细的 Win / Mac 发布文案、下载资产命名和环境兜底说明，请看：
-
-- [发布说明 / Release Guide](docs/RELEASES.md)
-- [2.0.1 发布文案](docs/release-2.0.1.md)
+- [3.0 product brief](docs/design/3.0-product-brief.md)
+- [Implementation sequence](docs/implementation/3.0-sequence.md)
+- [Release guide](docs/RELEASES.md)
+- [Architecture decisions](docs/adr/)
 
 ---
 
 ## English
 
-Media Dock is a local media download and cleanup workspace, combining downloads, `cookies.txt` selection, audio/video merge, and local media post-processing in one interface.
+Media Dock is a local-first desktop workspace for acquiring public media, resolving authenticated quality, grouping collections, merging separate audio/video tracks, tracking deliverables, and exporting privacy-safe diagnostics.
 
-## Download
+### Release channels
 
-- [Download from GitHub Releases](https://github.com/Yifo98/Media-Dock/releases/latest)
-- Windows: prefer `Media.Dock-2.0.11-win.zip`
-- macOS: prefer `Media.Dock-2.0.11-arm64-mac.zip`
+| Channel | Status | Audience |
+| --- | --- | --- |
+| [2.1.2](https://github.com/Yifo98/Media-Dock/releases/tag/v2.1.2) | Stable | Users who need the current stable Windows/macOS package |
+| 3.0.0 Alpha 2 candidate | Internal developer preview | Testers validating the new workspace and native packaging gates |
 
-The standard shared builds are now intended to be plug-and-play.
+Media Dock 3 owns the isolated `Media Dock Data/v3/` namespace and never rewrites 2.1.2 data. Alpha packages are unsigned and do not replace real target-machine release validation.
 
-After unzipping the standard zip, launch from the root script:
+### Highlights
 
-- Windows: double-click `Launch Media Dock.bat`
-- macOS: double-click `Launch Media Dock.command`
+- Inspect sources, authentication state, collection structure, available quality, and estimated size before creating work.
+- Group main episodes, previews, extras, and music with independent selection controls.
+- Batch unrelated links or schedule collection entries with bounded 1 / 2 / 3 task concurrency.
+- Import a local MediaCookies ZIP without exposing Cookie values to the renderer, task database, or support log.
+- Pair separate video and audio by stream type, duration, and timeline rather than filename similarity.
+- Track acquisition, processing, delivery, authentication use, and the selected quality ceiling per task.
+- Clear terminal history and managed staging without deleting delivered media.
+- Export a user-reviewed support TXT that removes credentials, Cookie values, URL queries, home-directory details, task titles, and media paths.
 
-Core runtime files live in `core/`; users do not need to open the internal `.exe` or `.app` directly.
+### Install
 
-Both current `macOS` and `Windows` shared packages already bundle:
+Download an asset from [GitHub Releases](https://github.com/Yifo98/Media-Dock/releases). Choose 2.1.2 for the stable line or a marked 3.0.0 Alpha Pre-release for opt-in testing.
 
-- `yt-dlp`
-- `ffmpeg`
-- `ffprobe`
-- `deno`
+- Windows: extract the complete ZIP and run `Media Dock.exe`; the batch launcher is optional.
+- macOS: extract the ZIP and open `Media Dock.app`.
 
-Only install tools manually when an asset is explicitly labeled as `Lite`, `tools not bundled`, or `UI-only`.
+Packages are produced by `electron-builder`; portable data stays in the sibling `Media Dock Data/` directory. Assets labeled `Unsigned-Developer-Preview` are controlled-test artifacts only. Smart App Control or Gatekeeper may block them before launch, so they are not general-public releases.
 
-Standard builds keep default downloads, cookies, cache, update zips, and auto-installed Deno files in the sibling `Media Dock Data/` folder. They do not write to Windows `AppData` or macOS `Library` by default.
-
-On Windows, if Bandizip's `bz.exe` is detected, runtime zip extraction uses it automatically; otherwise the app falls back to PowerShell.
-
-## macOS Notes
-
-The standard macOS build prefers bundled tools and sibling data-folder tools:
-
-1. Runtime components inside `core/`
-2. The sibling `Media Dock Data/tools/` directory
-
-For local development or a UI-only build on macOS, the recommended extra setup is:
+### Development and checks
 
 ```bash
-brew install yt-dlp ffmpeg deno
+npm install
+npm run launch:mac:v3
+npm test
+npm run lint
 ```
 
-### Local macOS Launcher
-
-The repository root already includes a macOS launcher:
-
-- `Launch Media Dock.command`
-
-It calls `scripts/launch-mac.sh` for local development checks.
-
-## Windows Notes
-
-Windows ships as a script-launched zip:
-
-- `Media.Dock-2.0.11-win.zip`
-
-Unzip it and double-click `Launch Media Dock.bat`. Required runtime tools are bundled, so users do not need to install Conda, ffmpeg, yt-dlp, or Deno separately.
-
-## Highlights
-
-- Desktop control room for link-based downloads, job tracking, and quality caps up to 4K
-- Media tools workspace for audio extraction, subtitle export, stream inspection, subtitle cleanup, and audio/video merge
-- Local `cookies.txt` support for signed-in or member-only content
-
-## 2.0.11 Highlights
-
-- MediaCookies is installed from the Chrome Web Store or downloaded from its separate GitHub repository
-- Standard zips now use root launch scripts, with runtime components kept in `core/`
-- Moved Media Tools into the main window instead of opening a separate window
-- Added single-pair and batch-folder local audio/video merge workflows
-- Multi-file merge now pairs by stream type and duration instead of filename similarity
-- Download tasks now support concurrent queues, task numbers, and per-task log copy/export
-- Download tasks are grouped into Active / Done / Issues views
-- Douyin / TikTok links are checked early to avoid treating feed pages as concrete video URLs
-- Playlist expansion is disabled by default to reduce accidental full-list downloads
-- Local MOV / DaVinci output now reports clearer merge progress and processing logs
-- Merge output supports a custom base name, with `01`, `02` suffixes added automatically for batch jobs
-- Cookie selection and import now warn about expiry, soon-expiry, and source matching state
-- Default downloads, cookies, cache, update zips, and auto-installed Deno stay in sibling `Media Dock Data/`
-- Windows can use Bandizip `bz.exe` for runtime zip extraction, with PowerShell fallback when Bandizip is not installed
-- Update downloads and Deno repair files stay in the sibling data folder instead of system user folders
-
-## Versioning Rules
-
-- Use `patch` for small fixes, for example `1.0.1 -> 1.0.2`
-- Use `minor` for additive feature releases that do not change the main product shape
-- Use `major` for large desktop architecture, packaging, or interaction upgrades, for example `1.0.1 -> 2.0.0`
-
-The package version in `package.json` is the single source of truth. Release asset names, `release/<version>/` folders, and generated release notes all follow it automatically.
-
-Common commands:
-
-```bash
-npm run version:patch
-npm run version:minor
-npm run version:major
-```
-
-## Cookies Recommendation
-
-If a target site requires a signed-in or member session, install the MediaCookies browser extension, export a cookie ZIP there, then import it from the Cookies area in the main UI. Manual imports can still be placed in the sibling `Media Dock Data/cookies/` directory.
-
-Recommended MediaCookies extension:
-
-- Chrome Web Store install: [XF MediaCookies](https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek)
-- Other Chromium-based browsers can open the same Chrome Web Store link when their extension store flow supports Chrome extensions; otherwise use the GitHub package
-- GitHub extension repository and downloads: [Yifo98/MediaCookies](https://github.com/Yifo98/MediaCookies)
-
-The extension exports only user-selected cookies. It does not read passwords or upload data. For signed-in or member-only content, confirm the account state and target content in the same browser profile before previewing key login markers. By default, the extension filters the browser cookie list against the [official yt-dlp supported sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md); users can explicitly switch to an advanced all-cookie mode. yt-dlp listing support does not guarantee every URL will download successfully.
-
-## Windows First-Run Note
-
-The current Windows builds are not code-signed yet, so SmartScreen may show a warning the first time the app is launched on another PC.
-
-If that happens, click:
-
-1. `More info`
-2. `Run anyway`
-
-The app should then start normally.
-
-## Release Guide
-
-For release wording, asset naming, and dependency fallback notes, see:
-
-- [Release Guide](docs/RELEASES.md)
-- [2.0.1 Release Copy](docs/release-2.0.1.md)
+See the [3.0 release gates](docs/release/3.0-release-gates.md), [release guide](docs/RELEASES.md), and [OpenAI Build Week checklist](docs/hackathon/openai-hackathon-requirements.md) for the full verification and submission boundaries.

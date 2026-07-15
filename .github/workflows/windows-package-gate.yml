@@ -1,4 +1,4 @@
-name: Windows package gate
+name: Windows native package gate
 
 on:
   workflow_dispatch:
@@ -7,13 +7,16 @@ on:
         description: Exact yt-dlp release tag to package
         required: true
         default: "2026.07.04"
+      signed_release:
+        description: Require Authenticode or Microsoft Trusted Signing
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   build_candidate:
-    runs-on: macos-latest
-    timeout-minutes: 60
-    outputs:
-      app_version: ${{ steps.app_version.outputs.value }}
+    runs-on: windows-latest
+    timeout-minutes: 75
 
     steps:
       - name: Check out repository
@@ -28,87 +31,66 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Read candidate version
-        id: app_version
-        shell: bash
-        run: |
-          echo "value=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
-
       - name: Run automated checks
         run: npm test
 
-      - name: Build the versioned Windows candidate
-        shell: bash
-        env:
-          YTDLP_VERSION: ${{ inputs.yt_dlp_version }}
-        run: npm run dist:win
-
-      - name: Confirm checksum is still gated
-        shell: bash
-        run: test ! -e "release/${{ steps.app_version.outputs.value }}/SHA256SUMS.txt"
-
-      - name: Upload unverified candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: media-dock-${{ steps.app_version.outputs.value }}-windows-candidate
-          path: |
-            release/${{ steps.app_version.outputs.value }}/Media Dock-${{ steps.app_version.outputs.value }}-win.zip
-            release/${{ steps.app_version.outputs.value }}/YT-DLP-WINDOWS.json
-            release/${{ steps.app_version.outputs.value }}/RELEASE-NOTES.md
-          if-no-files-found: error
-          retention-days: 14
-
-  verify_candidate:
-    needs: build_candidate
-    runs-on: windows-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-
-      - name: Download the exact candidate
-        uses: actions/download-artifact@v4
-        with:
-          name: media-dock-${{ needs.build_candidate.outputs.app_version }}-windows-candidate
-          path: release/${{ needs.build_candidate.outputs.app_version }}
-
-      - name: Run Windows packaging regression tests
-        run: npm run test:windows-package
-
-      - name: Smoke-test the packaged runtime and write checksums
+      - name: Read candidate version
+        id: app_version
         shell: pwsh
         run: |
-          $version = "${{ needs.build_candidate.outputs.app_version }}"
-          $releaseDir = Join-Path (Resolve-Path "release").Path $version
-          $packages = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter "Media Dock-$version-win.zip")
-          if ($packages.Count -ne 1) {
-            throw "Expected exactly one versioned Windows candidate, found $($packages.Count)."
-          }
-          $manifest = Join-Path $releaseDir "YT-DLP-WINDOWS.json"
-          $checksum = Join-Path $releaseDir "SHA256SUMS.txt"
-          & ./scripts/verify-windows-package.ps1 `
-            -PackagePath $packages[0].FullName `
-            -YtDlpManifestPath $manifest `
-            -ChecksumPath $checksum `
-            -WriteChecksum
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $checksum)) {
-            throw "Native Windows runtime verification did not produce SHA256SUMS.txt."
-          }
+          "value=$((Get-Content package.json -Raw | ConvertFrom-Json).version)" >> $env:GITHUB_OUTPUT
 
-      - name: Upload verified Windows candidate
+      - name: Build on native Windows
+        shell: pwsh
+        env:
+          YTDLP_VERSION: ${{ inputs.yt_dlp_version }}
+          MEDIA_DOCK_SIGNED_RELEASE: ${{ inputs.signed_release && '1' || '0' }}
+          WIN_CSC_LINK: ${{ inputs.signed_release && secrets.WIN_CSC_LINK || '' }}
+          CSC_LINK: ${{ inputs.signed_release && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ inputs.signed_release && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          CSC_KEY_PASSWORD: ${{ inputs.signed_release && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          AZURE_TENANT_ID: ${{ inputs.signed_release && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ inputs.signed_release && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ inputs.signed_release && secrets.AZURE_CLIENT_SECRET || '' }}
+          MEDIA_DOCK_AZURE_PUBLISHER_NAME: ${{ inputs.signed_release && vars.MEDIA_DOCK_AZURE_PUBLISHER_NAME || '' }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ inputs.signed_release && vars.AZURE_TRUSTED_SIGNING_ENDPOINT || '' }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ inputs.signed_release && vars.AZURE_TRUSTED_SIGNING_ACCOUNT || '' }}
+          AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE: ${{ inputs.signed_release && vars.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE || '' }}
+          FFMPEG_URL: ${{ inputs.signed_release && vars.MEDIA_DOCK_FFMPEG_WINDOWS_URL || '' }}
+        run: npm run dist:win
+
+      - name: Verify executable identity, signatures, startup, and runtimes
+        shell: pwsh
+        run: |
+          $version = "${{ steps.app_version.outputs.value }}"
+          $releaseDir = (Resolve-Path "release/$version").Path
+          $packages = @(Get-ChildItem -LiteralPath $releaseDir -File -Filter "Media-Dock-$version*-x64-win.zip")
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one Windows ZIP, found $($packages.Count)."
+          }
+          $arguments = @{
+            PackagePath = $packages[0].FullName
+            RuntimeManifestPath = (Join-Path $releaseDir "WINDOWS-RUNTIMES.json")
+            SignatureReportPath = (Join-Path $releaseDir "WINDOWS-SIGNATURES.json")
+            ExpectedVersion = $version
+            ChecksumPath = (Join-Path $releaseDir "SHA256SUMS.txt")
+            WriteChecksum = $true
+          }
+          if ("${{ inputs.signed_release }}" -eq "true") {
+            $arguments.RequireSigned = $true
+          }
+          # The verifier checks ProductName metadata and calls Get-AuthenticodeSignature for every EXE and DLL.
+          & ./scripts/verify-windows-package.ps1 @arguments
+
+      - name: Upload native Windows candidate
         uses: actions/upload-artifact@v4
         with:
-          name: media-dock-${{ needs.build_candidate.outputs.app_version }}-windows-verified
+          name: media-dock-${{ steps.app_version.outputs.value }}-windows-${{ inputs.signed_release && 'signed' || 'unsigned-preview' }}
           path: |
-            release/${{ needs.build_candidate.outputs.app_version }}/Media Dock-${{ needs.build_candidate.outputs.app_version }}-win.zip
-            release/${{ needs.build_candidate.outputs.app_version }}/YT-DLP-WINDOWS.json
-            release/${{ needs.build_candidate.outputs.app_version }}/RELEASE-NOTES.md
-            release/${{ needs.build_candidate.outputs.app_version }}/SHA256SUMS.txt
+            release/${{ steps.app_version.outputs.value }}/Media-Dock-${{ steps.app_version.outputs.value }}*-x64-win.zip
+            release/${{ steps.app_version.outputs.value }}/WINDOWS-RUNTIMES.json
+            release/${{ steps.app_version.outputs.value }}/WINDOWS-SIGNATURES.json
+            release/${{ steps.app_version.outputs.value }}/SHA256SUMS.txt
+            release/${{ steps.app_version.outputs.value }}/RELEASE-NOTES.md
           if-no-files-found: error
           retention-days: 14
