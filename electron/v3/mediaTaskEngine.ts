@@ -9,6 +9,7 @@ import {
   authenticationServiceMatches,
   copyAuthenticationPackage,
   inspectAuthenticationPackage,
+  readStoredAuthenticationCookieCounts,
 } from './authenticationProfiles.js'
 import { sanitizeDeliveryFileName } from './deliveryNaming.js'
 import { getLocalMediaRecipeOptions, inspectLocalMediaSource } from './localMediaSourceAdapter.js'
@@ -34,6 +35,8 @@ export type AuthenticationProfileSnapshot = Readonly<{
   id: string
   displayName: string
   services: readonly string[]
+  serviceCookieCounts: readonly Readonly<{ service: string; cookieCount: number }>[]
+  cookieCount: number
   health: 'ready'
   createdAt: string
 }>
@@ -284,6 +287,7 @@ type AuthenticationProfileRow = Readonly<{
   id: string
   display_name: string
   services_json: string
+  cookie_counts_json: string
   directory_name: string
   created_at: string
 }>
@@ -357,18 +361,30 @@ function readDeliverables(database: DatabaseSync): readonly DeliverableSnapshot[
 
 function readAuthenticationProfiles(database: DatabaseSync): readonly AuthenticationProfileSnapshot[] {
   const rows = database.prepare(`
-    SELECT id, display_name, services_json, directory_name, created_at
+    SELECT id, display_name, services_json, cookie_counts_json, directory_name, created_at
     FROM authentication_profiles
     ORDER BY created_at ASC, id ASC
   `).all() as AuthenticationProfileRow[]
 
-  return Object.freeze(rows.map((row) => Object.freeze({
-    id: row.id,
-    displayName: row.display_name,
-    services: Object.freeze(JSON.parse(row.services_json) as string[]),
-    health: 'ready' as const,
-    createdAt: row.created_at,
-  })))
+  return Object.freeze(rows.map((row) => {
+    const services = JSON.parse(row.services_json) as string[]
+    const rawCounts = JSON.parse(row.cookie_counts_json) as Record<string, unknown>
+    const serviceCookieCounts = services.map((service) => Object.freeze({
+      service,
+      cookieCount: typeof rawCounts[service] === 'number' && Number.isFinite(rawCounts[service])
+        ? Math.max(0, Math.floor(rawCounts[service]))
+        : 0,
+    }))
+    return Object.freeze({
+      id: row.id,
+      displayName: row.display_name,
+      services: Object.freeze(services),
+      serviceCookieCounts: Object.freeze(serviceCookieCounts),
+      cookieCount: serviceCookieCounts.reduce((total, entry) => total + entry.cookieCount, 0),
+      health: 'ready' as const,
+      createdAt: row.created_at,
+    })
+  }))
 }
 
 function readTaskBatches(database: DatabaseSync): readonly TaskBatchSnapshot[] {
@@ -652,6 +668,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   mkdirSync(options.dataDirectory, { recursive: true })
 
   const databasePath = path.join(options.dataDirectory, 'media-dock-v3.sqlite')
+  const authenticationProfilesRoot = path.join(options.dataDirectory, 'authentication-profiles')
   const database = new DatabaseSync(databasePath)
 
   database.exec(`
@@ -689,6 +706,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       id TEXT PRIMARY KEY,
       display_name TEXT NOT NULL,
       services_json TEXT NOT NULL,
+      cookie_counts_json TEXT NOT NULL DEFAULT '{}',
       directory_name TEXT NOT NULL UNIQUE,
       created_at TEXT NOT NULL
     ) STRICT;
@@ -706,6 +724,26 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       PRIMARY KEY (batch_id, position)
     ) STRICT;
   `)
+  const authenticationColumns = database.prepare('PRAGMA table_info(authentication_profiles)').all() as { name: string }[]
+  if (!authenticationColumns.some((column) => column.name === 'cookie_counts_json')) {
+    database.exec("ALTER TABLE authentication_profiles ADD COLUMN cookie_counts_json TEXT NOT NULL DEFAULT '{}'")
+  }
+  const authenticationRows = database.prepare(`
+    SELECT id, display_name, services_json, cookie_counts_json, directory_name, created_at
+    FROM authentication_profiles
+  `).all() as AuthenticationProfileRow[]
+  const updateCookieCounts = database.prepare(`
+    UPDATE authentication_profiles
+    SET cookie_counts_json = ?
+    WHERE id = ?
+  `)
+  for (const row of authenticationRows) {
+    const existingCounts = JSON.parse(row.cookie_counts_json) as Record<string, unknown>
+    if (Object.keys(existingCounts).length > 0) continue
+    const services = JSON.parse(row.services_json) as string[]
+    const counts = readStoredAuthenticationCookieCounts(authenticationProfilesRoot, row.directory_name, services)
+    updateCookieCounts.run(JSON.stringify(counts), row.id)
+  }
   recoverAbandonedTasks(database, () => (options.now?.() ?? new Date()).toISOString())
 
   let isClosed = false
@@ -717,8 +755,6 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   const taskProgresses = new Map<string, MediaTaskProgress>()
   const taskProgressFormatIds = new Map<string, string>()
   const taskProgressPublishedAt = new Map<string, number>()
-  const authenticationProfilesRoot = path.join(options.dataDirectory, 'authentication-profiles')
-
   function publishWorkspace(): WorkspaceSnapshot {
     const snapshot = readWorkspaceSnapshot(database, taskProgresses)
     for (const listener of workspaceListeners) {
@@ -741,7 +777,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
 
   function resolveAuthenticationCookiePath(profileId: string, sourceService: string): string {
     const row = database.prepare(`
-      SELECT id, display_name, services_json, directory_name, created_at
+      SELECT id, display_name, services_json, cookie_counts_json, directory_name, created_at
       FROM authentication_profiles
       WHERE id = ?
     `).get(profileId) as AuthenticationProfileRow | undefined
@@ -992,9 +1028,16 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       database.exec('BEGIN IMMEDIATE')
       try {
         database.prepare(`
-          INSERT INTO authentication_profiles (id, display_name, services_json, directory_name, created_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(id, displayName, JSON.stringify(files.map((file) => file.service)), id, timestamp)
+          INSERT INTO authentication_profiles (id, display_name, services_json, cookie_counts_json, directory_name, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(
+          id,
+          displayName,
+          JSON.stringify(files.map((file) => file.service)),
+          JSON.stringify(Object.fromEntries(files.map((file) => [file.service, file.cookieCount]))),
+          id,
+          timestamp,
+        )
         database.prepare(`
           UPDATE workspace_metadata
           SET revision = revision + 1

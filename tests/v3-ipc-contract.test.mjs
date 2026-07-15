@@ -27,6 +27,7 @@ test('the IPC boundary accepts a complete local audio-video pair and rejects inc
     pickLocalSource: async () => null,
     pickOutputDirectory: async () => null,
     importAuthenticationProfile: async () => null,
+    openAuthenticationProfilesDirectory: async () => {},
     openMediaCookiesResource: async () => {},
     revealDeliverable: async () => {},
     checkRuntimeUpdates: async () => null,
@@ -98,11 +99,13 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
     clearTaskHistory: async () => null,
   }
   let receivedInput = null
+  let authenticationDirectoryOpened = false
   const pickers = {
     pickLocalSource: async () => null,
     pickLocalSources: async () => [],
     pickOutputDirectory: async () => null,
     importAuthenticationProfile: async () => null,
+    openAuthenticationProfilesDirectory: async () => { authenticationDirectoryOpened = true },
     openMediaCookiesResource: async () => {},
     revealDeliverable: async () => {},
     checkRuntimeUpdates: async () => null,
@@ -110,8 +113,12 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
   }
   const unregister = registerMediaDockV3Ipc(ipc, engine, () => [], pickers)
   const exportHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics)
+  const openAuthenticationDirectoryHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.openAuthenticationProfilesDirectory)
 
   assert.equal(typeof exportHandler, 'function')
+  assert.equal(typeof openAuthenticationDirectoryHandler, 'function')
+  await openAuthenticationDirectoryHandler({})
+  assert.equal(authenticationDirectoryOpened, true)
   assert.equal(await exportHandler({}, { language: 'zh-CN', recentError: 'network unavailable' }), 'support-log.txt')
   assert.deepEqual(receivedInput, { language: 'zh-CN', recentError: 'network unavailable' })
   await assert.rejects(async () => exportHandler({}, { language: 'system', recentError: 'x' }), /language/i)

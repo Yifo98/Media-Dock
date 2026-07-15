@@ -54,8 +54,15 @@ download_file() {
     "$1" -o "$2"
 }
 
+TMP_DENO_DIR=""
+PORTABLE_STAGE=""
+BUILDER_STAGE=""
+
 cleanup() {
   rm -rf "$TOOLS_DIR"
+  [[ -z "$TMP_DENO_DIR" ]] || rm -rf "$TMP_DENO_DIR"
+  [[ -z "$PORTABLE_STAGE" ]] || rm -rf "$PORTABLE_STAGE"
+  [[ -z "$BUILDER_STAGE" ]] || rm -rf "$BUILDER_STAGE"
 }
 trap cleanup EXIT
 
@@ -78,6 +85,7 @@ ditto -x -k "$TMP_DENO_DIR/$DENO_ARCHIVE_NAME" "$TMP_DENO_DIR/unpacked"
 mv "$TMP_DENO_DIR/unpacked/deno" "$TOOLS_BIN_DIR/deno"
 chmod +x "$TOOLS_BIN_DIR/deno"
 rm -rf "$TMP_DENO_DIR"
+TMP_DENO_DIR=""
 
 cp "$ENV_ROOT/bin/ffmpeg" "$TOOLS_BIN_DIR/ffmpeg"
 cp "$ENV_ROOT/bin/ffprobe" "$TOOLS_BIN_DIR/ffprobe"
@@ -160,28 +168,60 @@ if (( ${#MAC_ARTIFACTS[@]} != 1 )); then
 fi
 MAC_ZIP="${MAC_ARTIFACTS[1]}"
 
-if unzip -l "$MAC_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
-  echo "Sensitive files were detected inside the macOS ZIP artifact."
+PORTABLE_STAGE="$(mktemp -d)"
+BUILDER_STAGE="$(mktemp -d)"
+ditto -x -k "$MAC_ZIP" "$BUILDER_STAGE"
+PACKAGED_APP="$(find "$BUILDER_STAGE" -maxdepth 2 -name 'Media Dock.app' -type d | head -n 1)"
+if [[ -z "$PACKAGED_APP" ]]; then
+  echo "Media Dock.app was not found in the electron-builder ZIP."
   exit 1
 fi
+mkdir -p "$PORTABLE_STAGE/core"
+ditto "$PACKAGED_APP" "$PORTABLE_STAGE/core/Media Dock.app"
+cat > "$PORTABLE_STAGE/Launch Media Dock.command" <<'COMMAND'
+#!/bin/zsh
+set -euo pipefail
 
-mv "$MAC_ZIP" "$VERSION_DIR/"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_BUNDLE="$ROOT_DIR/core/Media Dock.app"
+if [[ ! -x "$APP_BUNDLE/Contents/MacOS/Media Dock" ]]; then
+  echo "Media Dock runtime is missing from: $APP_BUNDLE"
+  exit 1
+fi
+export MEDIA_DOCK_PORTABLE_ROOT="${MEDIA_DOCK_PORTABLE_ROOT:-$ROOT_DIR}"
+exec "$APP_BUNDLE/Contents/MacOS/Media Dock"
+COMMAND
+chmod +x "$PORTABLE_STAGE/Launch Media Dock.command"
+cat > "$PORTABLE_STAGE/README-macos.txt" <<README
+Media Dock for macOS
+Build type: $([[ "${MEDIA_DOCK_SIGNED_RELEASE:-0}" == "1" ]] && echo "Signed Release" || echo "Unsigned Developer Preview")
+
+Run "Launch Media Dock.command" after extracting the complete ZIP.
+The application runtime is kept inside "core/Media Dock.app".
+Portable data is stored in the sibling "Media Dock Data" directory.
+README
+
 FINAL_MAC_ZIP="$VERSION_DIR/$(basename "$MAC_ZIP")"
-MANIFEST_INSPECT_DIR="$(mktemp -d)"
-ditto -x -k "$FINAL_MAC_ZIP" "$MANIFEST_INSPECT_DIR"
-PACKAGED_APP="$(find "$MANIFEST_INSPECT_DIR" -maxdepth 2 -name 'Media Dock.app' -type d | head -n 1)"
-if [[ -z "$PACKAGED_APP" ]]; then
-  echo "Media Dock.app was not found in the final ZIP."
+rm -f "$FINAL_MAC_ZIP"
+(
+  cd "$PORTABLE_STAGE"
+  COPYFILE_DISABLE=1 zip -qry "$FINAL_MAC_ZIP" .
+)
+
+if unzip -Z1 "$FINAL_MAC_ZIP" | grep -Eiq "$ZIP_PRIVACY_PATTERN"; then
+  echo "Sensitive files were detected inside the macOS ZIP artifact."
   exit 1
 fi
 node "$SCRIPT_DIR/record-runtime-manifest.mjs" \
   --platform macos \
-  --runtime-dir "$PACKAGED_APP/Contents/Resources/tools" \
+  --runtime-dir "$PORTABLE_STAGE/core/Media Dock.app/Contents/Resources/tools" \
   --output "$VERSION_DIR/MACOS-RUNTIMES.json" \
   --source "yt-dlp=$YTDLP_URL" \
   --source "deno=$DENO_URL" \
   --source "ffmpeg=$FFMPEG_SOURCE"
-rm -rf "$MANIFEST_INSPECT_DIR"
+rm -rf "$BUILDER_STAGE" "$PORTABLE_STAGE" "$MAC_ZIP"
+BUILDER_STAGE=""
+PORTABLE_STAGE=""
 
 if [[ -f "$PROJECT_ROOT/docs/release/$APP_VERSION.md" ]]; then
   cp "$PROJECT_ROOT/docs/release/$APP_VERSION.md" "$VERSION_DIR/RELEASE-NOTES.md"
@@ -190,4 +230,4 @@ rm -rf "$RELEASE_DIR/mac" "$RELEASE_DIR/mac-arm64" "$RELEASE_DIR/mac-universal"
 rm -f "$RELEASE_DIR"/Media-Dock-"$APP_VERSION"*-mac.zip.blockmap(N) \
   "$RELEASE_DIR/latest-mac.yml" "$RELEASE_DIR/builder-debug.yml" "$RELEASE_DIR/builder-effective-config.yaml"
 
-echo "Native macOS package candidate: $VERSION_DIR/$(basename "$MAC_ZIP")"
+echo "Native macOS package candidate: $FINAL_MAC_ZIP"

@@ -55,7 +55,7 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3ProductionPreload') {
       const rendered = await waitFor(
@@ -112,6 +112,21 @@ app.whenReady().then(async () => {
         fs.writeFileSync(screenshotPath, screenshot.toPNG())
       }
       console.log('[GREEN] Media Dock 3 Workbench opens with Source Dock and one contextual primary action.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3EnglishWorkbench') {
+      const toggleReady = await waitFor(win, `document.querySelector('.md3-language-toggle')?.textContent.trim() === '中/EN'`)
+      if (!toggleReady) throw new Error('Language toggle did not render for the English showcase')
+      await win.webContents.executeJavaScript(`document.querySelector('.md3-language-toggle').click()`, true)
+      const englishReady = await waitFor(win, `document.querySelector('.md3-workspace-header h1')?.textContent.trim() === 'Processing workspace' && document.body.innerText.includes('Add links') && document.body.innerText.includes('2 sign-in profiles imported; Media Dock matches one to each site during inspection.') && !document.body.innerText.includes('will be used to detect member')`)
+      if (!englishReady) throw new Error('English Workbench did not render for the showcase')
+      if (screenshotPath) {
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+        fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
+      }
+      console.log('[GREEN] Media Dock 3 renders the English processing workspace showcase.')
       app.exit(0)
       return
     }
@@ -695,32 +710,67 @@ app.whenReady().then(async () => {
       app.exit(0)
       return
     }
-    if (action === 'v3AuthProfile') {
+    if (action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile') {
+      const english = action === 'v3EnglishAuthProfile'
+      if (english) {
+        const toggleReady = await waitFor(win, `document.querySelector('.md3-language-toggle')?.textContent.trim() === '中/EN'`)
+        if (!toggleReady) throw new Error('Language toggle did not render for the English Authentication Profile showcase')
+        await win.webContents.executeJavaScript(`document.querySelector('.md3-language-toggle').click()`, true)
+      }
+      const systemLabel = english ? 'Settings' : '设置'
+      const updateLabel = english ? 'Update Cookies' : '更新 Cookies'
+      const folderLabel = english ? 'Open Cookies folder' : '打开 Cookies 文件夹'
+      const returnLabel = english ? 'Return to processing' : '返回处理工作台'
+      const latestLabel = english ? 'LATEST IMPORT' : '最新导入'
+      const availableLabel = english ? 'AVAILABLE BY SITE' : '可按站点匹配'
       const systemReady = await waitFor(
         win,
-        `Array.from(document.querySelectorAll('.md3-rail nav button')).some((button) => button.textContent.trim() === '设置')`,
+        `Array.from(document.querySelectorAll('.md3-rail nav button')).some((button) => button.textContent.trim() === ${JSON.stringify(systemLabel)})`,
       )
       if (!systemReady) throw new Error('System Center navigation did not render')
       await win.webContents.executeJavaScript(`
         Array.from(document.querySelectorAll('.md3-rail nav button'))
-          .find((button) => button.textContent.trim() === '设置')
+          .find((button) => button.textContent.trim() === ${JSON.stringify(systemLabel)})
           .click()
       `, true)
       const importReady = await waitFor(
         win,
-        `Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === '导入 MediaCookies ZIP')`,
+        `Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === ${JSON.stringify(updateLabel)})`,
       )
       if (!importReady) throw new Error('Authentication Profile import action did not render')
       await win.webContents.executeJavaScript(`
         Array.from(document.querySelectorAll('button'))
-          .find((button) => button.textContent.trim() === '导入 MediaCookies ZIP')
+          .find((button) => button.textContent.trim() === ${JSON.stringify(updateLabel)})
           .click()
       `, true)
       const imported = await waitFor(
         win,
-        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes('youtube')`,
+        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes(${JSON.stringify(english ? '4 sites' : '4 个站点')}) && document.body.innerText.includes(${JSON.stringify(english ? '43 Cookie entries' : '43 条 Cookie')}) && document.body.innerText.includes(${JSON.stringify(latestLabel)}) && document.body.innerText.includes(${JSON.stringify(availableLabel)}) && document.querySelector('.md3-authentication-success')`,
       )
       if (!imported) throw new Error('Imported Authentication Profile did not appear in System Center')
+      const updateReady = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === ${JSON.stringify(updateLabel)})`, true)
+      if (!updateReady) throw new Error('Authentication Profile update action did not replace the initial import label')
+      const folderReady = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === ${JSON.stringify(folderLabel)})`, true)
+      if (!folderReady) throw new Error('Authentication Profile folder action did not render')
+      const returnReady = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent.includes(${JSON.stringify(returnLabel)}))`, true)
+      if (!returnReady) throw new Error('Authentication import success did not provide a workbench return action')
+      if (screenshotPath) {
+        await win.webContents.executeJavaScript(`
+          (() => {
+            const main = document.querySelector('.md3-main')
+            const success = document.querySelector('.md3-authentication-success')
+            if (!main || !success) return false
+            main.scrollTop = Math.max(0, success.offsetTop - 520)
+            return true
+          })()
+        `, true)
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+        fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
+      }
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent.includes(${JSON.stringify(returnLabel)})).click()`, true)
+      const returned = await waitFor(win, `document.querySelector('.md3-workspace-header h1')?.textContent.trim() === ${JSON.stringify(english ? 'Processing workspace' : '处理工作台')}`)
+      if (!returned) throw new Error('Authentication import success did not return to the processing workspace')
       console.log('[GREEN] Media Dock 3 imports a secret-free Authentication Profile into System Center.')
       app.exit(0)
       return

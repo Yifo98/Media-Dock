@@ -6,6 +6,7 @@ export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   pickLocalSources: 'media-dock:v3:pick-local-sources',
   pickOutputDirectory: 'media-dock:v3:pick-output-directory',
   importAuthenticationProfile: 'media-dock:v3:import-authentication-profile',
+  openAuthenticationProfilesDirectory: 'media-dock:v3:open-authentication-profiles-directory',
   openMediaCookiesResource: 'media-dock:v3:open-mediacookies-resource',
   inspectSource: 'media-dock:v3:inspect-source',
   inspectVideoQualities: 'media-dock:v3:inspect-video-qualities',
@@ -36,6 +37,7 @@ type MediaDockV3Pickers = Readonly<{
   pickLocalSources(currentPath: string | undefined): Promise<readonly string[]>
   pickOutputDirectory(currentPath: string | undefined): Promise<string | null>
   importAuthenticationProfile(): Promise<ReturnType<MediaTaskEngine['getWorkspaceSnapshot']> | null>
+  openAuthenticationProfilesDirectory(): Promise<void>
   openMediaCookiesResource(resource: 'chrome-store' | 'github'): Promise<void>
   revealDeliverable(deliverableId: string): Promise<void>
   checkRuntimeUpdates(): Promise<unknown>
@@ -267,6 +269,7 @@ export function registerMediaDockV3Ipc(
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickLocalSources, (_event, payload) => pickers.pickLocalSources(optionalString(payload, 'Current source path')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory, (_event, payload) => pickers.pickOutputDirectory(optionalString(payload, 'Current output directory')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.importAuthenticationProfile, () => pickers.importAuthenticationProfile())
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.openAuthenticationProfilesDirectory, () => pickers.openAuthenticationProfilesDirectory())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.openMediaCookiesResource, (_event, payload) => pickers.openMediaCookiesResource(parseMediaCookiesResource(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.inspectSource, (_event, payload) => engine.inspectSource(parseSourceInput(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.inspectVideoQualities, (_event, payload) => {
@@ -301,6 +304,7 @@ export function registerMediaDockV3Ipc(
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickLocalSources)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.importAuthenticationProfile)
+    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.openAuthenticationProfilesDirectory)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.openMediaCookiesResource)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.inspectSource)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.inspectVideoQualities)

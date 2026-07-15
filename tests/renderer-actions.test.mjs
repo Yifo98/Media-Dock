@@ -152,3 +152,8 @@ test('the production preload exposes the Media Dock 3 contract inside the Electr
 test('3.0 System Center imports and presents a secret-free Authentication Profile', () => {
   assertRendererAction('v3AuthProfile')
 })
+
+test('3.0 release showcase renders the English Workbench and Authentication Profile success', () => {
+  assertRendererAction('v3EnglishWorkbench')
+  assertRendererAction('v3EnglishAuthProfile')
+})
