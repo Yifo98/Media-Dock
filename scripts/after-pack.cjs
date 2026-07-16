@@ -26,7 +26,7 @@ module.exports = async function afterPack(context) {
         '- Media Dock has no automatic telemetry and does not upload passwords, Cookie values, task databases, media files, or support logs to the developer.',
         '- During a user-requested authenticated task, yt-dlp sends only the matching Cookie to the corresponding source website.',
         '- Support logs are created only on user request and redact credentials, URL queries, user paths, task titles, and media paths.',
-        '- Download only from https://github.com/Yifo98/Media-Dock/releases and verify SHA256SUMS.txt before running.',
+        '- Download only from https://github.com/Yifo98/Media-Dock/releases and compare the SHA-256 digest shown for the asset before running.',
         '- Keep Microsoft Defender enabled and scan the ZIP or extracted directory.',
         '',
         'If Windows blocks the app:',

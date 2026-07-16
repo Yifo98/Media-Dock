@@ -21,9 +21,14 @@ Media Dock 3.0.0 的 Windows 便携包目前没有 Authenticode 或 Microsoft Tr
 
 1. 只从 [Yifo98/Media-Dock GitHub Releases](https://github.com/Yifo98/Media-Dock/releases) 下载。
 2. 完整解压 ZIP，不要只移动 `Media Dock.exe`。
-3. 使用 Release 同页提供的 `SHA256SUMS.txt` 核对 ZIP 哈希；不一致时不要运行。
+3. 核对 GitHub Release 资产显示的 SHA-256 digest；若某个版本另附 `SHA256SUMS.txt`，也可使用该文件。哈希不一致时不要运行。
 4. 保持 Microsoft Defender 实时保护开启，并可在运行前手动扫描 ZIP 或解压目录。
 5. 如果文件来自其他网站、网盘、聊天转发或来源无法确认，请删除并重新从官方 Release 下载。
+
+Media Dock 3.0.0 当前官方资产：
+
+- Windows ZIP：`a3ae3290d46a95cc034a5f403c29b4d16a65d6204516a2db6eb7a04443880859`
+- macOS ZIP：`ae9c5d42df7b45e7d9aa16388e0be0340d2e6e99cf85cb718ca4bd4152ccad08`
 
 ## 遇到拦截时怎么办
 
@@ -57,7 +62,7 @@ Once Windows permits the app to start, the missing signature does not disable Me
 
 Media Dock keeps tasks, authentication profiles, caches, and indexes in the local `Media Dock Data/v3/` directory. It has no automatic telemetry and does not upload passwords, Cookie values, task databases, media files, or support diagnostics to the Media Dock developer or a private backend. During a user-requested authenticated inspection or download, yt-dlp sends only the matching Cookie to the corresponding source website. Support logs are created only on user request and redact credentials, URL queries, home-directory details, task titles, and media paths.
 
-Download only from the official GitHub Release, verify `SHA256SUMS.txt`, keep Defender enabled, and scan the package. If Protection History reports malware or a potentially unwanted application instead of an unknown-publisher warning, stop and report it. For a SmartScreen reputation warning, use “More info” → “Run anyway” only after verification. Smart App Control has no per-app allow option; keep it enabled and wait for a signed build, use a separate controlled test device, or make your own informed decision about the device-wide setting. Do not use registry or execution-policy bypasses.
+Download only from the official GitHub Release, compare the SHA-256 digest shown for the asset (or `SHA256SUMS.txt` when provided), keep Defender enabled, and scan the package. If Protection History reports malware or a potentially unwanted application instead of an unknown-publisher warning, stop and report it. For a SmartScreen reputation warning, use “More info” → “Run anyway” only after verification. Smart App Control has no per-app allow option; keep it enabled and wait for a signed build, use a separate controlled test device, or make your own informed decision about the device-wide setting. Do not use registry or execution-policy bypasses.
 
 ## Microsoft references
 
