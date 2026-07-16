@@ -14,6 +14,7 @@
 
 - `release/<version>/Media-Dock-<version>-Unsigned-Developer-Preview-x64-win.zip`
   - 只用于受控的 Windows 内部测试；未签名包可能在应用启动前被 Smart App Control 拦截，不能作为公开分享版。
+  - 不要增加 BAT 作为“绕过”入口；BAT 启动的 EXE、DLL 与托管运行工具仍会被 App Control 检查。
 - `release/<version>/Media-Dock-<version>-Unsigned-Developer-Preview-<arch>-mac.zip`
   - 只用于受控的 macOS 内部测试；未签名、未公证的包不能作为公开分享版。
 

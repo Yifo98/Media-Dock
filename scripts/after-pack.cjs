@@ -17,6 +17,7 @@ module.exports = async function afterPack(context) {
       ...(signedRelease ? [] : [
         'This developer preview is not Authenticode signed.',
         'Windows Smart App Control or enterprise policy may block it before launch.',
+        'A batch launcher does not bypass this policy; every child EXE and DLL is still evaluated.',
         'It is intended for controlled internal testing, not general public distribution.',
       ]),
       '',
