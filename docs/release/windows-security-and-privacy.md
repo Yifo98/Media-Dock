@@ -67,6 +67,6 @@ Download only from the official GitHub Release, compare the SHA-256 digest shown
 ## Microsoft references
 
 - [Smart App Control FAQ](https://support.microsoft.com/windows/smart-app-control-frequently-asked-questions-285ea03d-fa88-4d56-882e-6698afdb7003)
-- [App & browser control in Windows Security](https://support.microsoft.com/windows/windows-security-app-browser-control-8f68fb65-ebb4-3cf7-d5c5-7d4da6889d11)
+- [App & browser control in Windows Security](https://support.microsoft.com/en-US/Windows/Security/Windows-Security/app-browser-control-in-the-windows-security-app)
 - [SmartScreen reputation for Windows app developers](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)
 - [Smart App Control signature testing](https://learn.microsoft.com/windows/apps/develop/smart-app-control/test-your-app-with-smart-app-control)
