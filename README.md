@@ -58,6 +58,8 @@ Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2
 
 Windows 包不会附带一个声称能绕过 Smart App Control 的 BAT 启动器。若系统以 `VerifiedAndReputableDesktop` 拦截未签名程序，可靠的公开发布方案仍是 Authenticode 或 Microsoft Trusted Signing，并在启用 Smart App Control 的 Windows 11 环境验证最终 ZIP。
 
+未签名不等于 Windows 已检测到恶意软件；它表示当前版本没有可验证发布者身份的证书。Windows 允许启动后，签名缺失本身不会限制 Media Dock 功能。下载前的官方来源与 SHA-256 核对、隐私边界，以及 SmartScreen / Smart App Control 两类提示的安全处理方法，见 [Windows 安全提示与隐私说明](docs/release/windows-security-and-privacy.md)。
+
 ## MediaCookies
 
 需要登录态或会员画质时：
@@ -143,6 +145,8 @@ Download the 3.0.0 asset for your platform from [GitHub Releases](https://github
 Packages are produced by `electron-builder`; portable data stays in the sibling `Media Dock Data/` directory. Assets labeled `Unsigned` are controlled-test artifacts only. Smart App Control or Gatekeeper may block them before launch, so they are not general-public releases.
 
 The Windows package intentionally has no BAT wrapper that claims to bypass Smart App Control. A publicly trusted build still requires Authenticode or Microsoft Trusted Signing and validation of the extracted ZIP on a Smart App Control-enabled Windows 11 target.
+
+Unsigned does not mean Windows detected malware; it means this build has no certificate that verifies its publisher identity. Once Windows permits startup, the missing signature does not limit Media Dock features. See [Windows security and privacy](docs/release/windows-security-and-privacy.md) for official-source and SHA-256 checks, local privacy boundaries, and safe handling of SmartScreen or Smart App Control prompts.
 
 ### Development and checks
 

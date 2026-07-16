@@ -14,6 +14,8 @@ Unsigned artifacts include `Unsigned-Developer-Preview` in the filename. They ar
 
 A BAT file is not a Windows trust workaround. App Control does not directly evaluate commands interpreted by `cmd.exe`, but child EXE and DLL files are still evaluated when the BAT starts them. Replacing `Media Dock.exe` with a BAT that launches the same unsigned Electron runtime therefore preserves the block instead of fixing it. Public Windows packages still require Authenticode or Microsoft Trusted Signing and Smart App Control acceptance evidence.
 
+The user-facing explanation and supported recovery choices are maintained in [Windows security and privacy](release/windows-security-and-privacy.md). Every unsigned Windows package also embeds the concise version in `README-windows.txt` beside the executable.
+
 ## Native build commands
 
 ```bash
