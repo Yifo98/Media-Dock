@@ -44,6 +44,7 @@ An OIDC/federated identity should replace the client secret when the release env
 - Every staged third-party EXE/DLL under `tools` is excluded from Media Dock signing, and its pre-build/final hash must match byte-for-byte so a vendor signature cannot be silently replaced.
 - A formal candidate is tested on Smart App Control-enabled Windows 11 after ZIP download/extraction. GitHub-hosted CI alone is not evidence for `VerifiedAndReputableDesktop` acceptance.
 - A signed build must use an immutable versioned FFmpeg source URL, not a moving `latest` asset.
+- A BAT launcher is not accepted as a signing substitute. App Control still evaluates the Electron executable, helper processes, managed runtimes, and DLLs started through that BAT.
 
 ## macOS
 
@@ -68,5 +69,6 @@ Apple-ID notarization credentials (`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, an
 When `MEDIA_DOCK_SIGNED_RELEASE` is not `1`, artifacts are named `Unsigned-Developer-Preview`. They can exercise package structure, metadata, portable writes, runtime probes, and application behavior, but they cannot prove platform trust:
 
 - Smart App Control or enterprise Windows policy may block `Media Dock.exe` before any application code runs.
+- Renaming the entry to a BAT cannot remove this limitation because the child executables and DLLs remain policy-controlled.
 - Gatekeeper may block an unsigned/unnotarized `.app` on another Mac.
 - Do not describe these packages as universally “unzip and run.”

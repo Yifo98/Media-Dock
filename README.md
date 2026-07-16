@@ -18,7 +18,7 @@ Media Dock · 泊是器度 QIDU 旗下的本地优先媒体获取、音画合并
 | 3.0.0 | 正式源码版本 | 使用全新工作台、任务模型与 3.0 数据边界的用户 |
 | [2.1.2](https://github.com/Yifo98/Media-Dock/releases/tag/v2.1.2) | 旧版维护线 | 需要旧界面和旧数据布局的用户 |
 
-Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2.1.2 数据。当前公开便携包尚未接入商业代码签名，仍会明确标记为未签名预览；Windows Smart App Control 或 macOS Gatekeeper 可能在应用启动前拦截它。
+Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2.1.2 数据。当前公开便携包尚未接入商业代码签名，仍会明确标记为未签名预览；Windows Smart App Control 或 macOS Gatekeeper 可能在应用启动前拦截它。BAT 不能替代 Windows 代码签名：即使批处理文件本身能够打开，它启动的 Electron、yt-dlp、Deno、FFmpeg 和 DLL 仍会被系统策略逐项检查。
 
 ## Media Dock 3 一览
 
@@ -55,6 +55,10 @@ Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2
 - macOS 只保留一个入口：`Launch Media Dock.command`；应用运行组件收纳在 `core/Media Dock.app`。
 
 标准分享包由 `electron-builder` 生成，并在启动入口同级的 `Media Dock Data/` 保存任务数据、工具和缓存。带 `Unsigned` 标记的资产只供可接受系统安全提示的测试者；它不是已经取得平台信任的签名包。
+
+Windows 包不会附带一个声称能绕过 Smart App Control 的 BAT 启动器。若系统以 `VerifiedAndReputableDesktop` 拦截未签名程序，可靠的公开发布方案仍是 Authenticode 或 Microsoft Trusted Signing，并在启用 Smart App Control 的 Windows 11 环境验证最终 ZIP。
+
+未签名不等于 Windows 已检测到恶意软件；它表示当前版本没有可验证发布者身份的证书。Windows 允许启动后，签名缺失本身不会限制 Media Dock 功能。下载前的官方来源与 SHA-256 核对、隐私边界，以及 SmartScreen / Smart App Control 两类提示的安全处理方法，见 [Windows 安全提示与隐私说明](docs/release/windows-security-and-privacy.md)。
 
 ## MediaCookies
 
@@ -116,7 +120,7 @@ Media Dock · 泊 is a QIDU local-first desktop workspace for acquiring public m
 | 3.0.0 | Stable source release | Users adopting the new workspace, task model, and isolated 3.0 data boundary |
 | [2.1.2](https://github.com/Yifo98/Media-Dock/releases/tag/v2.1.2) | Legacy maintenance line | Users who still need the previous UI and data layout |
 
-Media Dock 3 owns the isolated `Media Dock Data/v3/` namespace and never rewrites 2.1.2 data. Current portable binaries are still explicitly labeled unsigned previews because the repository has no platform signing credentials; Smart App Control or Gatekeeper may block them before launch.
+Media Dock 3 owns the isolated `Media Dock Data/v3/` namespace and never rewrites 2.1.2 data. Current portable binaries are still explicitly labeled unsigned previews because the repository has no platform signing credentials; Smart App Control or Gatekeeper may block them before launch. A BAT file cannot replace Windows code signing: Electron, yt-dlp, Deno, FFmpeg, and their DLLs are still evaluated when launched through a batch wrapper.
 
 Watch the [16-second bilingual feature demo](docs/showcase/3.0.0/Media-Dock-3.0.0-demo.mp4), or download the complete media pack from the Release.
 
@@ -139,6 +143,10 @@ Download the 3.0.0 asset for your platform from [GitHub Releases](https://github
 - macOS: run the single root entry, `Launch Media Dock.command`; the internal app runtime remains under `core/Media Dock.app`.
 
 Packages are produced by `electron-builder`; portable data stays in the sibling `Media Dock Data/` directory. Assets labeled `Unsigned` are controlled-test artifacts only. Smart App Control or Gatekeeper may block them before launch, so they are not general-public releases.
+
+The Windows package intentionally has no BAT wrapper that claims to bypass Smart App Control. A publicly trusted build still requires Authenticode or Microsoft Trusted Signing and validation of the extracted ZIP on a Smart App Control-enabled Windows 11 target.
+
+Unsigned does not mean Windows detected malware; it means this build has no certificate that verifies its publisher identity. Once Windows permits startup, the missing signature does not limit Media Dock features. See [Windows security and privacy](docs/release/windows-security-and-privacy.md) for official-source and SHA-256 checks, local privacy boundaries, and safe handling of SmartScreen or Smart App Control prompts.
 
 ### Development and checks
 
