@@ -41,6 +41,12 @@ test('electron-builder owns the Windows executable identity and ZIP target', () 
   assert.equal(build.mac.target, 'zip')
   assert.equal(build.mac.hardenedRuntime, true)
   assert.equal(build.mac.entitlements, 'build/entitlements.mac.plist')
+  assert.equal(build.mac.identity, '-', 'unsigned arm64 packages still require a valid ad-hoc bundle signature')
+  assert.match(
+    build.mac.signIgnore,
+    /Contents.*Resources.*tools/u,
+    'unsigned managed runtimes keep their independently verified signatures instead of inheriting hardened-runtime flags',
+  )
   assert.match(build.mac.artifactName, /Unsigned-Developer-Preview/)
 })
 
@@ -49,6 +55,12 @@ test('the macOS candidate is built and verified on a native macOS runner', () =>
   assert.match(macosWorkflow, /verify-macos-package\.sh/)
   assert.match(macosWorkflow, /APPLE_API_KEY_BASE64/)
   assert.match(macosWorkflow, /MAC_CSC_LINK/)
+  const signatureVerificationIndex = macVerifyScript.indexOf(
+    'codesign --verify --deep --strict --verbose=2 "$APP_PATH"',
+  )
+  const trustedReleaseBranchIndex = macVerifyScript.indexOf('if [[ "$REQUIRE_SIGNED" == "1" ]]')
+  assert.ok(signatureVerificationIndex >= 0 && signatureVerificationIndex < trustedReleaseBranchIndex,
+    'the final extracted bundle must pass structural code-signature verification even when it is an unsigned preview')
 })
 
 test('the Windows candidate is built and verified on a native Windows runner', () => {

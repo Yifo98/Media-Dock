@@ -140,6 +140,14 @@ module.exports = {
     strictVerify: true,
     forceCodeSigning: signedRelease,
     notarize: signedRelease,
-    ...(signedRelease ? {} : { identity: null }),
+    // Apple Silicon still requires a structurally valid signature even when
+    // the preview has no Developer ID trust. Let electron-builder own the
+    // bundle signature, while preserving the independently verified runtime
+    // signatures created by build-mac-share.sh. Re-signing those binaries with
+    // hardened-runtime flags prevents FFmpeg from loading its ad-hoc dylibs.
+    ...(signedRelease ? {} : {
+      identity: '-',
+      signIgnore: '/Contents/Resources/tools/',
+    }),
   },
 }
