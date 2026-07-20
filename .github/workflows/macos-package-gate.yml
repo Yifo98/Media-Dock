@@ -67,7 +67,7 @@ jobs:
           npm run dist:mac
 
       - name: Verify bundle, startup, runtimes, and release trust
-        shell: zsh
+        shell: /bin/zsh -e {0}
         env:
           MEDIA_DOCK_REQUIRE_SIGNING: ${{ inputs.signed_release && '1' || '0' }}
         run: |

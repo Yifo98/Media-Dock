@@ -57,6 +57,11 @@ test('the macOS candidate is built and verified on a native macOS runner', () =>
   assert.match(macosWorkflow, /MAC_CSC_LINK/)
   assert.match(
     macosWorkflow,
+    /shell:\s*\/bin\/zsh\s+-e\s+\{0\}/u,
+    'custom zsh workflow steps must use the GitHub Actions {0} shell template',
+  )
+  assert.match(
+    macosWorkflow,
     /unset CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER/u,
     'unsigned workflows must remove empty signing variables before electron-builder resolves CSC_LINK',
   )
