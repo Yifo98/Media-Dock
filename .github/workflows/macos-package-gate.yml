@@ -61,6 +61,9 @@ jobs:
           APPLE_API_ISSUER: ${{ inputs.signed_release && secrets.APPLE_API_ISSUER || '' }}
         run: |
           export YTDLP_ENV_ROOT="$(brew --prefix)"
+          if [[ "$MEDIA_DOCK_SIGNED_RELEASE" != "1" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER
+          fi
           npm run dist:mac
 
       - name: Verify bundle, startup, runtimes, and release trust

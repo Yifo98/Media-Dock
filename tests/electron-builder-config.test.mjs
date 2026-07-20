@@ -55,6 +55,11 @@ test('the macOS candidate is built and verified on a native macOS runner', () =>
   assert.match(macosWorkflow, /verify-macos-package\.sh/)
   assert.match(macosWorkflow, /APPLE_API_KEY_BASE64/)
   assert.match(macosWorkflow, /MAC_CSC_LINK/)
+  assert.match(
+    macosWorkflow,
+    /unset CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER/u,
+    'unsigned workflows must remove empty signing variables before electron-builder resolves CSC_LINK',
+  )
   const signatureVerificationIndex = macVerifyScript.indexOf(
     'codesign --verify --deep --strict --verbose=2 "$APP_PATH"',
   )
