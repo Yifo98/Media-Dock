@@ -133,7 +133,9 @@ module.exports = {
     category: 'public.app-category.video',
     target: 'zip',
     artifactName: `Media-Dock-\${version}${previewLabel}-\${arch}-mac.\${ext}`,
-    hardenedRuntime: true,
+    // Hardened library validation requires a real Developer ID Team ID.
+    // Unsigned previews use a complete ad-hoc signature without claiming it.
+    hardenedRuntime: signedRelease,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.inherit.plist',
     gatekeeperAssess: false,

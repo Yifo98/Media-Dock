@@ -39,7 +39,7 @@ test('electron-builder owns the Windows executable identity and ZIP target', () 
   assert.match(build.win.artifactName, /^Media-Dock-/)
   assert.match(build.win.artifactName, /Unsigned-Developer-Preview/)
   assert.equal(build.mac.target, 'zip')
-  assert.equal(build.mac.hardenedRuntime, true)
+  assert.equal(build.mac.hardenedRuntime, false, 'unsigned ad-hoc builds have no Team ID for hardened library validation')
   assert.equal(build.mac.entitlements, 'build/entitlements.mac.plist')
   assert.equal(build.mac.identity, '-', 'unsigned arm64 packages still require a valid ad-hoc bundle signature')
   assert.match(
