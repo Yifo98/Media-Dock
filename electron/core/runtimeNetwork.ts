@@ -68,10 +68,11 @@ export async function fetchRuntimeJson<T>(options: {
   fetchImpl: RuntimeFetch
   url: string
   label: string
+  headers?: RequestInit['headers']
 }): Promise<T> {
   let response: Response
   try {
-    response = await options.fetchImpl(options.url)
+    response = await options.fetchImpl(options.url, options.headers ? { headers: options.headers } : undefined)
   } catch (error) {
     throw createRuntimeRequestError(options.label, options.url, error)
   }

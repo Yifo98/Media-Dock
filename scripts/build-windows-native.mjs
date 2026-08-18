@@ -37,7 +37,7 @@ const toolsDirectory = path.join(projectRoot, 'tools')
 const toolsBinDirectory = path.join(toolsDirectory, 'bin')
 const temporaryDirectory = await mkdtemp(path.join(tmpdir(), 'media-dock-windows-build-'))
 const ytDlpVersion = String(process.env.YTDLP_VERSION ?? '').trim()
-const denoVersion = String(process.env.DENO_VERSION ?? '2.9.2').trim()
+const denoVersion = String(process.env.DENO_VERSION ?? '2.9.5').trim()
 const denoUrl = process.env.DENO_URL
   ?? `https://github.com/denoland/deno/releases/download/v${denoVersion}/deno-x86_64-pc-windows-msvc.zip`
 const ffmpegUrl = String(process.env.FFMPEG_URL ?? '').trim()

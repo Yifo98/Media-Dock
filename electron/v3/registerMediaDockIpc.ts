@@ -1,4 +1,8 @@
 import type { MediaTaskEngine, PlanTaskInput, TaskPlan } from './mediaTaskEngine.js'
+import {
+  normalizeRuntimeMirrorBaseUrl,
+  type RuntimeDownloadRequest,
+} from '../core/runtimeDownloadSource.js'
 
 export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   getWorkspace: 'media-dock:v3:get-workspace',
@@ -18,10 +22,8 @@ export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   cancelTask: 'media-dock:v3:cancel-task',
   clearTaskHistory: 'media-dock:v3:clear-task-history',
   revealDeliverable: 'media-dock:v3:reveal-deliverable',
-  checkProductUpdate: 'media-dock:v3:check-product-update',
-  prepareProductUpdate: 'media-dock:v3:prepare-product-update',
-  installProductUpdate: 'media-dock:v3:install-product-update',
   checkRuntimeUpdates: 'media-dock:v3:check-runtime-updates',
+  updateRuntimeTools: 'media-dock:v3:update-runtime-tools',
   exportSupportDiagnostics: 'media-dock:v3:export-support-diagnostics',
   workspaceChanged: 'media-dock:v3:workspace-changed',
 })
@@ -43,10 +45,8 @@ type MediaDockV3Pickers = Readonly<{
   openAuthenticationProfilesDirectory(): Promise<void>
   openMediaCookiesResource(resource: 'chrome-store' | 'github'): Promise<void>
   revealDeliverable(deliverableId: string): Promise<void>
-  checkProductUpdate(): Promise<unknown>
-  prepareProductUpdate(): Promise<unknown>
-  installProductUpdate(): Promise<unknown>
   checkRuntimeUpdates(): Promise<unknown>
+  updateRuntimeTools(input: RuntimeDownloadRequest): Promise<unknown>
   exportSupportDiagnostics(input: Readonly<{ language: 'zh-CN' | 'en'; recentError?: string }>): Promise<string | null>
 }>
 
@@ -74,6 +74,23 @@ function optionalString(value: unknown, label: string): string | undefined {
 function parseMediaCookiesResource(value: unknown): 'chrome-store' | 'github' {
   if (value === 'chrome-store' || value === 'github') return value
   throw new TypeError('MediaCookies resource is unsupported.')
+}
+
+function parseRuntimeDownloadRequest(value: unknown): RuntimeDownloadRequest {
+  const input = requireRecord(value, 'Runtime download request')
+  if (input.source === 'official') {
+    if (input.mirrorBaseUrl !== undefined) {
+      throw new TypeError('Official runtime downloads must not include a mirror URL.')
+    }
+    return Object.freeze({ source: 'official' })
+  }
+  if (input.source === 'mirror') {
+    return Object.freeze({
+      source: 'mirror',
+      mirrorBaseUrl: normalizeRuntimeMirrorBaseUrl(requireString(input.mirrorBaseUrl, 'Runtime mirror URL')),
+    })
+  }
+  throw new TypeError('Runtime download source must be official or mirror.')
 }
 
 function parseSupportDiagnosticsInput(value: unknown): Readonly<{ language: 'zh-CN' | 'en'; recentError?: string }> {
@@ -294,10 +311,8 @@ export function registerMediaDockV3Ipc(
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.cancelTask, (_event, payload) => engine.cancelTask(requireString(payload, 'Media Task id')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.clearTaskHistory, () => engine.clearTaskHistory())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.revealDeliverable, (_event, payload) => pickers.revealDeliverable(requireString(payload, 'Deliverable id')))
-  ipc.handle(MEDIA_DOCK_V3_CHANNELS.checkProductUpdate, () => pickers.checkProductUpdate())
-  ipc.handle(MEDIA_DOCK_V3_CHANNELS.prepareProductUpdate, () => pickers.prepareProductUpdate())
-  ipc.handle(MEDIA_DOCK_V3_CHANNELS.installProductUpdate, () => pickers.installProductUpdate())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates, () => pickers.checkRuntimeUpdates())
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, (_event, payload) => pickers.updateRuntimeTools(parseRuntimeDownloadRequest(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, (_event, payload) => pickers.exportSupportDiagnostics(parseSupportDiagnosticsInput(payload)))
 
   const unsubscribe = engine.subscribeWorkspace((snapshot) => {
@@ -325,10 +340,8 @@ export function registerMediaDockV3Ipc(
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.cancelTask)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.clearTaskHistory)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.revealDeliverable)
-    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.checkProductUpdate)
-    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.prepareProductUpdate)
-    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.installProductUpdate)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates)
+    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics)
   }
 }

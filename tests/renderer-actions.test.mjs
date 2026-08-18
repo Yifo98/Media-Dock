@@ -129,16 +129,8 @@ test('3.0 reveals a completed deliverable from its Task Center row', () => {
   assertRendererAction('v3DeliverableReveal')
 })
 
-test('3.0 checks yt-dlp and Deno updates from Settings on demand', () => {
+test('3.0 checks managed runtimes before offering official and mirror updates', () => {
   assertRendererAction('v3RuntimeCheck')
-})
-
-test('3.0 prepares a verified product update and restarts to install it in-app', () => {
-  assertRendererAction('v3ProductUpdate')
-})
-
-test('3.0 hides an older release asset when the current product version is newer', () => {
-  assertRendererAction('v3ProductCurrent')
 })
 
 test('3.0 discloses and exports a sanitized support log from Settings', () => {

@@ -7,6 +7,10 @@ on:
         description: Exact yt-dlp release tag to package
         required: true
         default: "2026.07.04"
+      deno_version:
+        description: Exact Deno release version to package
+        required: true
+        default: "2.9.5"
       signed_release:
         description: Require Authenticode or Microsoft Trusted Signing
         required: true
@@ -44,6 +48,7 @@ jobs:
         shell: pwsh
         env:
           YTDLP_VERSION: ${{ inputs.yt_dlp_version }}
+          DENO_VERSION: ${{ inputs.deno_version }}
           MEDIA_DOCK_SIGNED_RELEASE: ${{ inputs.signed_release && '1' || '0' }}
           WIN_CSC_LINK: ${{ inputs.signed_release && secrets.WIN_CSC_LINK || '' }}
           CSC_LINK: ${{ inputs.signed_release && secrets.WIN_CSC_LINK || '' }}

@@ -20,10 +20,8 @@ const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   cancelTask: 'media-dock:v3:cancel-task',
   clearTaskHistory: 'media-dock:v3:clear-task-history',
   revealDeliverable: 'media-dock:v3:reveal-deliverable',
-  checkProductUpdate: 'media-dock:v3:check-product-update',
-  prepareProductUpdate: 'media-dock:v3:prepare-product-update',
-  installProductUpdate: 'media-dock:v3:install-product-update',
   checkRuntimeUpdates: 'media-dock:v3:check-runtime-updates',
+  updateRuntimeTools: 'media-dock:v3:update-runtime-tools',
   exportSupportDiagnostics: 'media-dock:v3:export-support-diagnostics',
   workspaceChanged: 'media-dock:v3:workspace-changed',
 })
@@ -48,10 +46,8 @@ function createMediaDockV3Api(renderer) {
     cancelTask: (taskId) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.cancelTask, taskId),
     clearTaskHistory: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.clearTaskHistory),
     revealDeliverable: (deliverableId) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.revealDeliverable, deliverableId),
-    checkProductUpdate: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.checkProductUpdate),
-    prepareProductUpdate: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.prepareProductUpdate),
-    installProductUpdate: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.installProductUpdate),
     checkRuntimeUpdates: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates),
+    updateRuntimeTools: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, input),
     exportSupportDiagnostics: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, input),
     onWorkspaceChanged: (listener) => {
       const wrapped = (_event, snapshot) => listener(snapshot)

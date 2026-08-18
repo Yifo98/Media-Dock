@@ -30,10 +30,8 @@ test('the IPC boundary accepts a complete local audio-video pair and rejects inc
     openAuthenticationProfilesDirectory: async () => {},
     openMediaCookiesResource: async () => {},
     revealDeliverable: async () => {},
-    checkProductUpdate: async () => null,
-    prepareProductUpdate: async () => null,
-    installProductUpdate: async () => null,
     checkRuntimeUpdates: async () => null,
+    updateRuntimeTools: async () => null,
   }
   const unregister = registerMediaDockV3Ipc(ipc, engine, () => [], pickers)
   const planHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.planTask)
@@ -103,7 +101,7 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
   }
   let receivedInput = null
   let authenticationDirectoryOpened = false
-  const productUpdateCalls = []
+  const runtimeUpdateCalls = []
   const pickers = {
     pickLocalSource: async () => null,
     pickLocalSources: async () => [],
@@ -112,29 +110,34 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
     openAuthenticationProfilesDirectory: async () => { authenticationDirectoryOpened = true },
     openMediaCookiesResource: async () => {},
     revealDeliverable: async () => {},
-    checkProductUpdate: async () => { productUpdateCalls.push('check'); return { prepared: false } },
-    prepareProductUpdate: async () => { productUpdateCalls.push('prepare'); return { prepared: true } },
-    installProductUpdate: async () => { productUpdateCalls.push('install'); return { scheduled: true } },
-    checkRuntimeUpdates: async () => null,
+    checkRuntimeUpdates: async () => { runtimeUpdateCalls.push('check'); return { updateAvailable: true } },
+    updateRuntimeTools: async (input) => { runtimeUpdateCalls.push(input); return { updateAvailable: false } },
     exportSupportDiagnostics: async (input) => { receivedInput = input; return 'support-log.txt' },
   }
   const unregister = registerMediaDockV3Ipc(ipc, engine, () => [], pickers)
   const exportHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics)
   const openAuthenticationDirectoryHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.openAuthenticationProfilesDirectory)
-  const checkProductUpdateHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.checkProductUpdate)
-  const prepareProductUpdateHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.prepareProductUpdate)
-  const installProductUpdateHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.installProductUpdate)
+  const checkRuntimeUpdatesHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates)
+  const updateRuntimeToolsHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools)
 
   assert.equal(typeof exportHandler, 'function')
   assert.equal(typeof openAuthenticationDirectoryHandler, 'function')
-  assert.equal(typeof checkProductUpdateHandler, 'function')
-  assert.equal(typeof prepareProductUpdateHandler, 'function')
-  assert.equal(typeof installProductUpdateHandler, 'function')
+  assert.equal(typeof checkRuntimeUpdatesHandler, 'function')
+  assert.equal(typeof updateRuntimeToolsHandler, 'function')
   await openAuthenticationDirectoryHandler({})
-  assert.deepEqual(await checkProductUpdateHandler({}), { prepared: false })
-  assert.deepEqual(await prepareProductUpdateHandler({}), { prepared: true })
-  assert.deepEqual(await installProductUpdateHandler({}), { scheduled: true })
-  assert.deepEqual(productUpdateCalls, ['check', 'prepare', 'install'])
+  assert.deepEqual(await checkRuntimeUpdatesHandler({}), { updateAvailable: true })
+  assert.deepEqual(await updateRuntimeToolsHandler({}, { source: 'official' }), { updateAvailable: false })
+  assert.deepEqual(await updateRuntimeToolsHandler({}, { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy' }), { updateAvailable: false })
+  assert.deepEqual(runtimeUpdateCalls, [
+    'check',
+    { source: 'official' },
+    { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' },
+  ])
+  await assert.rejects(
+    async () => updateRuntimeToolsHandler({}, { source: 'mirror', mirrorBaseUrl: 'http://mirror.example' }),
+    /HTTPS/i,
+  )
+  await assert.rejects(async () => updateRuntimeToolsHandler({}, { source: 'automatic' }), /official or mirror/i)
   assert.equal(authenticationDirectoryOpened, true)
   assert.equal(await exportHandler({}, { language: 'zh-CN', recentError: 'network unavailable' }), 'support-log.txt')
   assert.deepEqual(receivedInput, { language: 'zh-CN', recentError: 'network unavailable' })

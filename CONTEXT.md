@@ -117,7 +117,7 @@ Media Dock 为执行媒体任务而维护的 yt-dlp、Deno、FFmpeg 等版本化
 _Avoid_：内核文件、依赖程序、工具副本
 
 **认证配置（Authentication Profile）**：
-由用户导入并由 Media Dock 按来源匹配的一组本地认证材料，唯一存放在 `Media Dock Data/v3/authentication-profiles/`。配置具有站点、名称、健康状态和不含敏感值的 Cookie 条目计数；Cookie 值不进入任务数据库、日志或界面快照。重复导入会生成新的当前配置，旧配置只为已创建任务保留可复现性。
+由用户导入并由 Media Dock 按来源匹配的一组本地认证材料，唯一存放在 `Media Dock Data/v3/authentication-profiles/`。配置具有站点、名称、健康状态和不含敏感值的 Cookie 条目计数；Cookie 值不进入任务数据库、日志或界面快照。更新时先验证并完整复制新包，再将其切换为唯一当前配置并删除旧副本；若等待中或处理中的任务正使用旧配置，更新必须先停止。
 _Avoid_：Cookie 文件、登录账号、认证目录
 
 **登录准备（Authentication Readiness）**：

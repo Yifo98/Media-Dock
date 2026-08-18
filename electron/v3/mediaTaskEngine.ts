@@ -14,7 +14,12 @@ import {
 import { sanitizeDeliveryFileName } from './deliveryNaming.js'
 import { getLocalMediaRecipeOptions, inspectLocalMediaSource } from './localMediaSourceAdapter.js'
 import { inspectNetworkCollectionSource, type NetworkCollectionResolver } from './networkCollectionSourceAdapter.js'
-import { getNetworkMediaRecipeOptions, inspectNetworkMediaSource, inspectNetworkVideoQualities } from './networkMediaSourceAdapter.js'
+import {
+  getNetworkMediaRecipeOptions,
+  inspectNetworkMediaSourceWithQualities,
+  inspectNetworkVideoQualities,
+  type NetworkVideoQualityOption,
+} from './networkMediaSourceAdapter.js'
 import { runScheduledTaskBatch, type SchedulingProfile } from './taskBatchScheduler.js'
 
 export const MEDIA_DOCK_CONTRACT_VERSION = 1 as const
@@ -791,6 +796,25 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   const taskProgresses = new Map<string, MediaTaskProgress>()
   const taskProgressFormatIds = new Map<string, string>()
   const taskProgressPublishedAt = new Map<string, number>()
+  const pendingQualityPreviews = new Map<string, readonly NetworkVideoQualityOption[]>()
+
+  function qualityPreviewKey(
+    source: InspectedNetworkSource,
+    authenticationProfileId: string | null,
+  ): string {
+    const ytDlpVersion = options.managedRuntimes?.ytDlp?.version ?? 'missing'
+    const denoVersion = options.managedRuntimes?.deno?.version ?? 'none'
+    return JSON.stringify([source.locator, source.serviceName, authenticationProfileId, ytDlpVersion, denoVersion])
+  }
+
+  function rememberQualityPreview(key: string, qualityOptions: readonly NetworkVideoQualityOption[]): void {
+    pendingQualityPreviews.set(key, qualityOptions)
+    while (pendingQualityPreviews.size > 64) {
+      const oldestKey = pendingQualityPreviews.keys().next().value as string | undefined
+      if (!oldestKey) break
+      pendingQualityPreviews.delete(oldestKey)
+    }
+  }
   function publishWorkspace(): WorkspaceSnapshot {
     const snapshot = readWorkspaceSnapshot(database, taskProgresses)
     for (const listener of workspaceListeners) {
@@ -806,8 +830,8 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   function findMatchingAuthenticationProfile(sourceService: string): AuthenticationProfileSnapshot | null {
     const matches = readAuthenticationProfiles(database)
       .filter((profile) => profile.services.some((service) => authenticationServiceMatches(service, sourceService)))
-    // Automatic matching follows the most recently imported package for a service.
-    // This keeps repeat imports useful without silently dropping back to guest mode.
+    // Existing alpha workspaces may still contain more than one profile until
+    // the next explicit refresh replaces them with one current package.
     return matches.length > 0 ? matches[matches.length - 1] : null
   }
 
@@ -967,11 +991,18 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const authenticationCookiePath = authenticationProfile && sourceService
         ? resolveAuthenticationCookiePath(authenticationProfile.id, sourceService)
         : null
-      return await inspectNetworkMediaSource(input.url, ytDlp, {
+      const result = await inspectNetworkMediaSourceWithQualities(input.url, ytDlp, {
         authenticationCookiePath,
         deno: options.managedRuntimes?.deno,
         signal: shutdownController.signal,
       })
+      if (result.inspection.status === 'ready' && result.inspection.source.kind === 'network-url' && result.qualityOptions) {
+        rememberQualityPreview(
+          qualityPreviewKey(result.inspection.source, authenticationProfile?.id ?? null),
+          result.qualityOptions,
+        )
+      }
+      return result.inspection
     },
 
     async inspectVideoQualities(source: InspectedNetworkSource): Promise<VideoQualityInspection> {
@@ -982,7 +1013,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const authenticationCookiePath = authenticationProfile
         ? resolveAuthenticationCookiePath(authenticationProfile.id, source.serviceName)
         : null
-      const qualityOptions = await inspectNetworkVideoQualities(source.locator, ytDlp, {
+      const previewKey = qualityPreviewKey(source, authenticationProfile?.id ?? null)
+      const cachedQualityOptions = pendingQualityPreviews.get(previewKey)
+      if (cachedQualityOptions) pendingQualityPreviews.delete(previewKey)
+      const qualityOptions = cachedQualityOptions ?? await inspectNetworkVideoQualities(source.locator, ytDlp, {
         authenticationCookiePath,
         deno: options.managedRuntimes?.deno,
         signal: shutdownController.signal,
@@ -1052,6 +1086,21 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const displayName = input.displayName.trim()
       if (!displayName) throw new Error('Authentication Profile display name must not be empty.')
       const files = await inspectAuthenticationPackage(input.sourceDirectory)
+      const previousProfiles = database.prepare(`
+        SELECT id, display_name, services_json, cookie_counts_json, directory_name, created_at
+        FROM authentication_profiles
+        ORDER BY created_at ASC, id ASC
+      `).all() as AuthenticationProfileRow[]
+      const previousProfileIds = new Set(previousProfiles.map((profile) => profile.id))
+      const activeTaskUsesPreviousProfile = readTasks(database).some((task) => {
+        const profileId = task.plan.authenticationProfileId
+        return (task.state === 'queued' || task.state === 'running')
+          && profileId !== undefined
+          && previousProfileIds.has(profileId)
+      })
+      if (activeTaskUsesPreviousProfile) {
+        throw new Error('Finish or cancel active media tasks before replacing website sign-in data.')
+      }
       const id = options.idFactory?.('authentication-profile') ?? randomUUID()
       if (!/^[a-zA-Z0-9._-]+$/u.test(id)) throw new Error('Authentication Profile id is unsafe.')
       const timestamp = (options.now?.() ?? new Date()).toISOString()
@@ -1063,6 +1112,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
 
       database.exec('BEGIN IMMEDIATE')
       try {
+        database.prepare('DELETE FROM authentication_profiles').run()
         database.prepare(`
           INSERT INTO authentication_profiles (id, display_name, services_json, cookie_counts_json, directory_name, created_at)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -1084,6 +1134,14 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         database.exec('ROLLBACK')
         await rm(targetDirectory, { recursive: true, force: true })
         throw error
+      }
+
+      for (const profile of previousProfiles) {
+        try {
+          await rm(path.join(authenticationProfilesRoot, profile.directory_name), { recursive: true, force: true })
+        } catch (error) {
+          console.warn(`Could not remove replaced Authentication Profile ${profile.id}:`, error)
+        }
       }
       return publishWorkspace()
     },
@@ -1332,6 +1390,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
             command: ytDlp.command,
             args: [
               ...(ytDlp.argsPrefix ?? []),
+              '--ignore-config',
               '--no-update',
               '--no-playlist',
               '--progress',
@@ -1537,6 +1596,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         taskProgresses.clear()
         taskProgressFormatIds.clear()
         taskProgressPublishedAt.clear()
+        pendingQualityPreviews.clear()
         isClosed = true
       })()
       return await shutdownPromise
@@ -1556,6 +1616,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       taskProgresses.clear()
       taskProgressFormatIds.clear()
       taskProgressPublishedAt.clear()
+      pendingQualityPreviews.clear()
       isClosed = true
     },
   })

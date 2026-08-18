@@ -24,7 +24,6 @@ test('the versioned preload API exposes only Media Dock product commands and rev
 
   assert.deepEqual(Object.keys(api).sort(), [
     'cancelTask',
-    'checkProductUpdate',
     'checkRuntimeUpdates',
     'clearTaskHistory',
     'contractVersion',
@@ -35,7 +34,6 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     'importAuthenticationProfile',
     'inspectSource',
     'inspectVideoQualities',
-    'installProductUpdate',
     'onWorkspaceChanged',
     'openAuthenticationProfilesDirectory',
     'openMediaCookiesResource',
@@ -43,10 +41,10 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     'pickLocalSources',
     'pickOutputDirectory',
     'planTask',
-    'prepareProductUpdate',
     'revealDeliverable',
     'runTask',
     'runTaskBatch',
+    'updateRuntimeTools',
   ])
   assert.equal(api.contractVersion, 1)
 
@@ -67,10 +65,8 @@ test('the versioned preload API exposes only Media Dock product commands and rev
   await api.cancelTask('task-002')
   await api.clearTaskHistory()
   await api.revealDeliverable('deliverable-001')
-  await api.checkProductUpdate()
-  await api.prepareProductUpdate()
-  await api.installProductUpdate()
   await api.checkRuntimeUpdates()
+  await api.updateRuntimeTools({ source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' })
   await api.exportSupportDiagnostics({ language: 'zh-CN', recentError: 'network unavailable' })
 
   assert.deepEqual(invocations, [
@@ -91,10 +87,8 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     { channel: 'media-dock:v3:cancel-task', payload: 'task-002' },
     { channel: 'media-dock:v3:clear-task-history', payload: undefined },
     { channel: 'media-dock:v3:reveal-deliverable', payload: 'deliverable-001' },
-    { channel: 'media-dock:v3:check-product-update', payload: undefined },
-    { channel: 'media-dock:v3:prepare-product-update', payload: undefined },
-    { channel: 'media-dock:v3:install-product-update', payload: undefined },
     { channel: 'media-dock:v3:check-runtime-updates', payload: undefined },
+    { channel: 'media-dock:v3:update-runtime-tools', payload: { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' } },
     { channel: 'media-dock:v3:export-support-diagnostics', payload: { language: 'zh-CN', recentError: 'network unavailable' } },
   ])
 

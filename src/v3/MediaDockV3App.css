@@ -397,13 +397,15 @@
 .md3-system-list b { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; font-weight: 600; }
 .md3-system-action { min-height: 36px; padding: 0 13px; border: 1px solid var(--md3-line); border-radius: 11px; color: var(--md3-ink); background: var(--md3-surface); cursor: pointer; font-size: 11px; font-weight: 750; }
 .md3-system-action:disabled { cursor: wait; opacity: 0.55; }
-.md3-system-list article.md3-product-update { align-items: start; padding: 22px 0; }
-.md3-product-update > div > small { overflow: visible; text-overflow: initial; white-space: normal; }
-.md3-product-update-state { display: grid !important; gap: 4px !important; margin-top: 7px; }
-.md3-product-update-state b { color: var(--md3-cyan-strong); font-size: 10px; }
-.md3-product-update-state span { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; }
-.md3-product-update-actions { display: flex !important; flex-direction: column; align-items: stretch; gap: 7px !important; }
-.md3-product-update-actions .md3-system-action { min-width: 150px; }
+.md3-system-list article.md3-runtime-maintenance { grid-template-columns: auto minmax(0, 1fr) minmax(240px, 300px); align-items: start; padding: 22px 0; }
+.md3-runtime-maintenance > div > small { overflow: visible; text-overflow: initial; white-space: normal; }
+.md3-runtime-actions { display: grid !important; gap: 7px !important; }
+.md3-runtime-actions .md3-system-action { width: 100%; }
+.md3-runtime-actions .md3-system-action.is-primary { border-color: color-mix(in srgb, var(--md3-cyan-strong) 46%, var(--md3-line)); background: color-mix(in srgb, var(--md3-cyan) 10%, var(--md3-surface)); }
+.md3-runtime-mirror-field { display: grid; gap: 5px; margin-top: 3px; }
+.md3-runtime-mirror-field > span { color: var(--md3-ink-soft); font-size: 9px; font-weight: 750; }
+.md3-runtime-mirror-field > input { width: 100%; min-height: 34px; padding: 0 10px; border: 1px solid var(--md3-line); border-radius: 9px; color: var(--md3-ink); background: var(--md3-canvas); font-size: 9px; }
+.md3-runtime-source-hint { overflow: visible !important; color: var(--md3-ink-faint); font-size: 9px !important; line-height: 1.55 !important; text-overflow: initial !important; white-space: normal !important; }
 .md3-system-list article.md3-authentication-guide { align-items: start; padding: 22px 0; }
 .md3-authentication-guide small { overflow: visible; text-overflow: initial; white-space: normal; }
 .md3-authentication-guide ol { display: grid; gap: 4px; margin: 5px 0 0; padding-left: 18px; color: var(--md3-ink-soft); font-size: 10px; line-height: 1.5; }
@@ -413,6 +415,7 @@
 .md3-authentication-actions .md3-system-action { min-width: 152px; }
 .md3-runtime-results { display: flex !important; flex-wrap: wrap; gap: 6px !important; margin-top: 4px; }
 .md3-runtime-results span { padding: 4px 7px; border-radius: 7px; color: var(--md3-ink-soft); background: var(--md3-surface-soft); font-family: ui-monospace, monospace; font-size: 9px; }
+.md3-runtime-results > b { flex-basis: 100%; margin-top: 2px; color: var(--md3-cyan-strong); font-family: inherit; font-size: 10px; font-weight: 750; }
 .md3-system-list article.md3-support-diagnostics { align-items: start; padding: 22px 0; }
 .md3-support-diagnostics > div > small { overflow: visible; text-overflow: initial; white-space: normal; }
 .md3-diagnostics-disclosure { display: grid !important; gap: 5px !important; margin-top: 8px; }
@@ -497,6 +500,8 @@ label:has(input:focus-visible) { outline: 2px solid var(--md3-cyan-strong); outl
   .md3-space-map { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .md3-collection-list { grid-template-columns: 1fr; }
   .md3-brand-footer { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .md3-system-list article.md3-runtime-maintenance { grid-template-columns: auto minmax(0, 1fr); }
+  .md3-runtime-actions { grid-column: 2; }
 }
 
 @media (max-height: 650px) {

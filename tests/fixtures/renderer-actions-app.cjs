@@ -56,12 +56,12 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3ProductCurrent' || action === 'v3ProductUpdate' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3ProductionPreload') {
       const rendered = await waitFor(
         win,
-        `document.body.innerText.includes('处理工作台') && !document.body.innerText.includes('Renderer error') && ['pickLocalSources', 'inspectVideoQualities', 'revealDeliverable', 'checkProductUpdate', 'prepareProductUpdate', 'installProductUpdate', 'checkRuntimeUpdates', 'exportSupportDiagnostics'].every((key) => typeof window.mediaDock?.[key] === 'function')`,
+        `document.body.innerText.includes('处理工作台') && !document.body.innerText.includes('Renderer error') && ['pickLocalSources', 'inspectVideoQualities', 'revealDeliverable', 'checkRuntimeUpdates', 'updateRuntimeTools', 'exportSupportDiagnostics'].every((key) => typeof window.mediaDock?.[key] === 'function')`,
       )
       if (!rendered) throw new Error('Production preload did not expose the Media Dock 3 contract')
       console.log('[GREEN] the production preload exposes the Media Dock 3 sandbox contract.')
@@ -527,47 +527,22 @@ app.whenReady().then(async () => {
     }
     if (action === 'v3RuntimeCheck') {
       await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '设置').click()`, true)
-      const checkReady = await waitFor(win, `Array.from(document.querySelectorAll('.md3-system-list button')).some((button) => button.textContent.trim() === '检查更新')`)
-      if (!checkReady) throw new Error('Runtime update check did not render')
+      const checkReady = await waitFor(win, `Array.from(document.querySelectorAll('.md3-system-list button')).some((button) => button.textContent.trim() === '检查更新') && !document.body.innerText.includes('Media Dock 产品更新')`)
+      if (!checkReady) throw new Error('Managed runtime check action did not replace the product updater')
       await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-system-list button')).find((button) => button.textContent.trim() === '检查更新').click()`, true)
-      const checked = await waitFor(win, `document.body.innerText.includes('yt-dlp 2026.07.04 → 2026.08.01') && document.body.innerText.includes('Deno 2.9.2')`)
-      if (!checked) throw new Error('Runtime update results did not render')
-      console.log('[GREEN] Media Dock 3 checks yt-dlp and Deno updates on demand.')
-      app.exit(0)
-      return
-    }
-    if (action === 'v3ProductUpdate') {
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '设置').click()`, true)
-      const productUpdateReady = await waitFor(win, `Boolean(document.querySelector('.md3-product-update')) && Array.from(document.querySelectorAll('.md3-product-update button')).some((button) => button.textContent.trim() === '检查产品更新')`)
-      if (!productUpdateReady) throw new Error('Product update check did not render')
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-product-update button')).find((button) => button.textContent.trim() === '检查产品更新').click()`, true)
-      const updateAvailable = await waitFor(win, `document.querySelector('.md3-product-update')?.innerText.includes('3.0.0 → 3.1.0') && Array.from(document.querySelectorAll('.md3-product-update button')).some((button) => button.textContent.trim() === '下载并准备升级')`)
-      if (!updateAvailable) throw new Error('Available product update did not expose the prepare action')
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-product-update button')).find((button) => button.textContent.trim() === '下载并准备升级').click()`, true)
-      const prepared = await waitFor(win, `document.querySelector('.md3-product-update')?.innerText.includes('更新包已校验') && Array.from(document.querySelectorAll('.md3-product-update button')).some((button) => button.textContent.trim() === '重启并升级')`)
-      if (!prepared) throw new Error('Verified product update did not expose the restart action')
+      const choicesReady = await waitFor(win, `document.body.innerText.includes('yt-dlp 2026.07.04 → 2026.08.01') && document.body.innerText.includes('Deno 2.9.2 → 2.9.5') && document.body.innerText.includes('发现可用更新') && Array.from(document.querySelectorAll('.md3-runtime-actions button')).some((button) => button.textContent.trim() === '官方更新') && Array.from(document.querySelectorAll('.md3-runtime-actions button')).some((button) => button.textContent.trim() === '镜像更新') && document.querySelector('.md3-runtime-mirror-field input')?.value === 'https://gh-proxy.com/'`)
+      if (!choicesReady) throw new Error('Managed runtime source choices did not appear after checking')
+      await win.webContents.executeJavaScript(`(() => { const input = document.querySelector('.md3-runtime-mirror-field input'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'https://mirror.example/ghproxy/'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`, true)
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-runtime-actions button')).find((button) => button.textContent.trim() === '镜像更新').click()`, true)
+      const updated = await waitFor(win, `document.body.innerText.includes('yt-dlp 2026.08.01') && document.body.innerText.includes('Deno 2.9.5') && document.body.innerText.includes('重启 Media Dock 后生效') && !document.body.innerText.includes('2026.07.04 → 2026.08.01')`)
+      if (!updated) throw new Error('Managed runtime updates were not downloaded, verified, and staged')
       if (screenshotPath) {
-        await win.webContents.executeJavaScript(`new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))`, true)
+        await win.webContents.executeJavaScript(`document.querySelector('.md3-runtime-results')?.scrollIntoView({ block: 'center' })`, true)
+        await new Promise((resolve) => setTimeout(resolve, 250))
         fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
         fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
       }
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-product-update button')).find((button) => button.textContent.trim() === '重启并升级').click()`, true)
-      const restarting = await waitFor(win, `document.querySelector('.md3-product-update')?.innerText.includes('正在退出并升级')`)
-      if (!restarting) throw new Error('Product update did not enter the restart-and-install stage')
-      console.log('[GREEN] Media Dock 3 prepares a verified product update and restarts to install it in-app.')
-      app.exit(0)
-      return
-    }
-    if (action === 'v3ProductCurrent') {
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '设置').click()`, true)
-      const productUpdateReady = await waitFor(win, `Array.from(document.querySelectorAll('.md3-product-update button')).some((button) => button.textContent.trim() === '检查产品更新')`)
-      if (!productUpdateReady) throw new Error('Current product update check did not render')
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-product-update button')).find((button) => button.textContent.trim() === '检查产品更新').click()`, true)
-      const current = await waitFor(win, `document.querySelector('.md3-product-update')?.innerText.includes('当前 3.0.0 已是最新版')`)
-      if (!current) throw new Error('Current product version did not render')
-      const staleAssetVisible = await win.webContents.executeJavaScript(`document.querySelector('.md3-product-update')?.innerText.includes('Media-Dock-3.0.0-arm64-mac.zip')`, true)
-      if (staleAssetVisible) throw new Error('An older latest-release asset was shown beside a newer current version')
-      console.log('[GREEN] Media Dock 3 does not show an older release asset when the product is already current.')
+      console.log('[GREEN] Media Dock 3 checks first, then updates managed runtimes through the selected mirror.')
       app.exit(0)
       return
     }
@@ -791,8 +766,8 @@ app.whenReady().then(async () => {
       const updateLabel = english ? 'Update Cookies' : '更新 Cookies'
       const folderLabel = english ? 'Open Cookies folder' : '打开 Cookies 文件夹'
       const returnLabel = english ? 'Return to processing' : '返回处理工作台'
-      const latestLabel = english ? 'LATEST IMPORT' : '最新导入'
-      const availableLabel = english ? 'AVAILABLE BY SITE' : '可按站点匹配'
+      const latestLabel = english ? 'CURRENT' : '当前使用'
+      const replacedLabel = english ? 'old sign-in data was replaced' : '旧登录信息已替换'
       const systemReady = await waitFor(
         win,
         `Array.from(document.querySelectorAll('.md3-rail nav button')).some((button) => button.textContent.trim() === ${JSON.stringify(systemLabel)})`,
@@ -815,7 +790,7 @@ app.whenReady().then(async () => {
       `, true)
       const imported = await waitFor(
         win,
-        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes(${JSON.stringify(english ? '4 sites' : '4 个站点')}) && document.body.innerText.includes(${JSON.stringify(english ? '43 Cookie entries' : '43 条 Cookie')}) && document.body.innerText.includes(${JSON.stringify(latestLabel)}) && document.body.innerText.includes(${JSON.stringify(availableLabel)}) && document.querySelector('.md3-authentication-success')`,
+        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes(${JSON.stringify(english ? '4 sites' : '4 个站点')}) && document.body.innerText.includes(${JSON.stringify(english ? '43 Cookie entries' : '43 条 Cookie')}) && document.body.innerText.includes(${JSON.stringify(latestLabel)}) && document.body.innerText.includes(${JSON.stringify(replacedLabel)}) && !document.body.innerText.includes('Bilibili login') && document.querySelectorAll('.md3-profile-list article').length === 1 && document.querySelector('.md3-authentication-success')`,
       )
       if (!imported) throw new Error('Imported Authentication Profile did not appear in System Center')
       const updateReady = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === ${JSON.stringify(updateLabel)})`, true)

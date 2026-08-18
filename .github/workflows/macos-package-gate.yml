@@ -7,6 +7,10 @@ on:
         description: Exact yt-dlp release tag to package
         required: true
         default: "2026.07.04"
+      deno_version:
+        description: Exact Deno release version to package
+        required: true
+        default: "2.9.5"
       signed_release:
         description: Require Developer ID, notarization, and stapling
         required: true
@@ -52,6 +56,7 @@ jobs:
       - name: Build on native macOS
         env:
           YTDLP_VERSION: ${{ inputs.yt_dlp_version }}
+          DENO_VERSION: ${{ inputs.deno_version }}
           FFMPEG_SOURCE: Homebrew formula installed by macOS package gate
           MEDIA_DOCK_SIGNED_RELEASE: ${{ inputs.signed_release && '1' || '0' }}
           CSC_LINK: ${{ inputs.signed_release && secrets.MAC_CSC_LINK || '' }}
