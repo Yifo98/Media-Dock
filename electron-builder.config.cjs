@@ -133,13 +133,23 @@ module.exports = {
     category: 'public.app-category.video',
     target: 'zip',
     artifactName: `Media-Dock-\${version}${previewLabel}-\${arch}-mac.\${ext}`,
-    hardenedRuntime: true,
+    // Hardened library validation requires a real Developer ID Team ID.
+    // Unsigned previews use a complete ad-hoc signature without claiming it.
+    hardenedRuntime: signedRelease,
     entitlements: 'build/entitlements.mac.plist',
     entitlementsInherit: 'build/entitlements.mac.inherit.plist',
     gatekeeperAssess: false,
     strictVerify: true,
     forceCodeSigning: signedRelease,
     notarize: signedRelease,
-    ...(signedRelease ? {} : { identity: null }),
+    // Apple Silicon still requires a structurally valid signature even when
+    // the preview has no Developer ID trust. Let electron-builder own the
+    // bundle signature, while preserving the independently verified runtime
+    // signatures created by build-mac-share.sh. Re-signing those binaries with
+    // hardened-runtime flags prevents FFmpeg from loading its ad-hoc dylibs.
+    ...(signedRelease ? {} : {
+      identity: '-',
+      signIgnore: '/Contents/Resources/tools/',
+    }),
   },
 }

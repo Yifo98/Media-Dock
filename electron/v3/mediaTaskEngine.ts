@@ -126,12 +126,12 @@ export type ReadySourceInspection = Readonly<{
 
 export type ProblemAction = Readonly<{
   id: string
-  kind: 'choose-source' | 'retry-task'
+  kind: 'choose-source' | 'retry-task' | 'update-authentication'
 }>
 
 export type ProblemSnapshot = Readonly<{
   code: string
-  category: 'source' | 'media-processing'
+  category: 'source' | 'authentication' | 'media-processing'
   stage: 'preparing' | 'acquiring' | 'processing' | 'delivering'
   titleKey: string
   summaryKey: string
@@ -523,6 +523,42 @@ function requiredRuntimeProblem(): ProblemSnapshot {
     stage: 'preparing',
     titleKey: 'problem.requiredRuntimeUnavailable.title',
     summaryKey: 'problem.requiredRuntimeUnavailable.summary',
+    actions: Object.freeze([
+      Object.freeze({ id: 'retry-task', kind: 'retry-task' }),
+    ]),
+  })
+}
+
+function hasExplicitExpiredCookieEvidence(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return [
+    /\b(?:provided\s+)?(?:[a-z0-9_-]+\s+){0,3}cookies?\s+(?:are|is)\s+(?:no longer valid|invalid|expired)\b/iu,
+    /\b(?:your\s+)?(?:[a-z0-9_-]+\s+){0,3}cookies?\s+have\s+(?:expired|become invalid)\b/iu,
+    /\bfresh cookies?\s+(?:are|is)\s+(?:needed|required)\b/iu,
+  ].some((pattern) => pattern.test(message))
+}
+
+function taskExecutionProblem(task: MediaTaskSnapshot, error: unknown): ProblemSnapshot {
+  const isNetworkTask = task.plan.source.kind === 'network-url'
+  if (isNetworkTask && task.plan.authenticationProfileId && hasExplicitExpiredCookieEvidence(error)) {
+    return Object.freeze({
+      code: 'authentication.cookies-expired',
+      category: 'authentication',
+      stage: 'acquiring',
+      titleKey: 'problem.authenticationCookiesExpired.title',
+      summaryKey: 'problem.authenticationCookiesExpired.summary',
+      actions: Object.freeze([
+        Object.freeze({ id: 'update-authentication', kind: 'update-authentication' }),
+      ]),
+    })
+  }
+
+  return Object.freeze({
+    code: isNetworkTask ? 'network.acquisition.failed' : 'media.processing.failed',
+    category: 'media-processing',
+    stage: isNetworkTask ? 'acquiring' : 'processing',
+    titleKey: isNetworkTask ? 'problem.networkAcquisitionFailed.title' : 'problem.mediaProcessingFailed.title',
+    summaryKey: isNetworkTask ? 'problem.networkAcquisitionFailed.summary' : 'problem.mediaProcessingFailed.summary',
     actions: Object.freeze([
       Object.freeze({ id: 'retry-task', kind: 'retry-task' }),
     ]),
@@ -1430,22 +1466,12 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         if (isShuttingDown || isClosed) {
           throw error
         }
-        const isNetworkTask = task.plan.source.kind === 'network-url'
-        const problem = Object.freeze({
-          code: isNetworkTask ? 'network.acquisition.failed' : 'media.processing.failed',
-          category: 'media-processing' as const,
-          stage: isNetworkTask ? 'acquiring' as const : 'processing' as const,
-          titleKey: isNetworkTask ? 'problem.networkAcquisitionFailed.title' : 'problem.mediaProcessingFailed.title',
-          summaryKey: isNetworkTask ? 'problem.networkAcquisitionFailed.summary' : 'problem.mediaProcessingFailed.summary',
-          actions: Object.freeze([
-            Object.freeze({ id: 'retry-task', kind: 'retry-task' as const }),
-          ]),
-        })
+        const problem = taskExecutionProblem(task, error)
         updateTaskExecutionState(
           database,
           taskId,
           'needs-attention',
-          isNetworkTask ? 'acquiring' : 'processing',
+          problem.stage,
           (options.now?.() ?? new Date()).toISOString(),
           problem,
         )

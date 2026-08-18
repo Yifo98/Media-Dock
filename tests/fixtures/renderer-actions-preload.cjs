@@ -181,7 +181,25 @@ let v3Workspace = {
   taskBatches: action === 'v3CollectionFlow'
     ? [{ id: 'batch-z-existing', schedulingProfile: 'safe', createdAt: '2026-07-13T07:00:00.000Z', taskIds: [] }]
     : [],
-  tasks: action === 'v3TaskScrolling' ? scrollingTasks : action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? [{
+  tasks: action === 'v3TaskScrolling' ? scrollingTasks : action === 'v3ExpiredCookieProblem' ? [{
+    id: 'task-expired-cookie', state: 'needs-attention', stage: 'acquiring', createdAt: '2026-08-18T10:00:00.000Z', updatedAt: '2026-08-18T10:01:00.000Z',
+    problem: {
+      code: 'authentication.cookies-expired',
+      category: 'authentication',
+      stage: 'acquiring',
+      titleKey: 'problem.authenticationCookiesExpired.title',
+      summaryKey: 'problem.authenticationCookiesExpired.summary',
+      actions: [{ id: 'update-authentication', kind: 'update-authentication' }],
+    },
+    plan: {
+      planVersion: 1,
+      source: { kind: 'network-url', locator: 'https://www.youtube.com/watch?v=expired', displayName: 'Cookie expiry fixture', mediaKind: 'video', durationSeconds: 30, formatName: 'webm', sourceId: 'expired', serviceName: 'Youtube' },
+      recipe: { id: 'network-video', deliverableKind: 'video', extension: 'mp4' },
+      outputDirectory: 'I:\\成品', deliveryName: 'Cookie expiry fixture - 视频.mp4',
+      steps: [{ id: 'verify-input', stage: 'preparing' }, { id: 'acquire-network', stage: 'acquiring', runtime: 'yt-dlp' }, { id: 'deliver', stage: 'delivering' }],
+      runtimeVersions: { ffmpeg: 'fixture', ytDlp: '2026.08.18' }, authenticationProfileId: 'auth-profile-expired', videoQuality: { mode: 'max-height', height: 1080 },
+    },
+  }] : action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? [{
     id: 'task-visible', state: action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? 'completed' : 'running', stage: action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? 'delivering' : 'acquiring', createdAt: '2026-07-13T10:00:00.000Z', updatedAt: '2026-07-13T10:01:00.000Z', problem: null,
     ...(action === 'v3TaskVisibility' ? { progress: { mediaKind: 'video', percent: 42.5, downloaded: '34.0MiB', total: '80.0MiB', speed: '4.2MiB/s', eta: '00:11' } } : {}),
     plan: {
@@ -194,8 +212,8 @@ let v3Workspace = {
     },
   }] : [],
   deliverables: action === 'v3DeliverableReveal' || action === 'v3ClearHistory' ? [{ id: 'deliverable-visible', taskId: 'task-visible', path: 'I:\\成品\\山海.mp4', deliveryName: '山海.mp4', createdAt: '2026-07-13T10:00:00.000Z' }] : [],
-  authenticationProfiles: action === 'v3TaskVisibility' || action === 'v3ClearHistory'
-    ? [{ id: 'auth-profile-fixture', displayName: 'My MediaCookies', services: ['fixturetv'], serviceCookieCounts: [{ service: 'fixturetv', cookieCount: 8 }], cookieCount: 8, health: 'ready', createdAt: '2026-07-13T09:00:00.000Z' }]
+  authenticationProfiles: action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3ExpiredCookieProblem'
+    ? [{ id: action === 'v3ExpiredCookieProblem' ? 'auth-profile-expired' : 'auth-profile-fixture', displayName: 'My MediaCookies', services: [action === 'v3ExpiredCookieProblem' ? 'youtube' : 'fixturetv'], serviceCookieCounts: [{ service: action === 'v3ExpiredCookieProblem' ? 'youtube' : 'fixturetv', cookieCount: 8 }], cookieCount: 8, health: 'ready', createdAt: '2026-07-13T09:00:00.000Z' }]
     : action === 'v3EnglishWorkbench'
       ? [
           { id: 'auth-profile-youtube', displayName: 'YouTube login', services: ['youtube'], serviceCookieCounts: [{ service: 'youtube', cookieCount: 12 }], cookieCount: 12, health: 'ready', createdAt: '2026-07-11T08:00:00.000Z' },
@@ -419,6 +437,23 @@ const mediaDockApi = {
   revealDeliverable: async (deliverableId) => {
     if (action === 'v3DeliverableReveal' && deliverableId !== 'deliverable-visible') throw new Error('Wrong Deliverable id')
   },
+  checkProductUpdate: async () => ({
+    currentVersion: '3.0.0',
+    latestVersion: action === 'v3ProductUpdate' ? '3.1.0' : '3.0.0',
+    updateAvailable: action === 'v3ProductUpdate',
+    releaseName: action === 'v3ProductUpdate' ? 'Media Dock 3.1.0' : 'Media Dock 3.0.0',
+    assetName: action === 'v3ProductUpdate'
+      ? 'Media-Dock-3.1.0-arm64-mac.zip'
+      : action === 'v3ProductCurrent'
+        ? 'Media-Dock-3.0.0-arm64-mac.zip'
+        : null,
+    prepared: false,
+  }),
+  prepareProductUpdate: async () => ({
+    currentVersion: '3.0.0', latestVersion: '3.1.0', updateAvailable: true,
+    releaseName: 'Media Dock 3.1.0', assetName: 'Media-Dock-3.1.0-arm64-mac.zip', prepared: true,
+  }),
+  installProductUpdate: async () => ({ scheduled: true, latestVersion: '3.1.0' }),
   checkRuntimeUpdates: async () => ({
     ytDlp: { tool: 'yt-dlp', currentVersion: '2026.07.04', latestVersion: action === 'v3RuntimeCheck' ? '2026.08.01' : '2026.07.04', updateAvailable: action === 'v3RuntimeCheck', repairRequired: false, releaseUrl: null, detail: 'yt-dlp' },
     deno: { tool: 'deno', currentVersion: '2.9.2', latestVersion: '2.9.2', updateAvailable: false, repairRequired: false, releaseUrl: null, detail: 'deno' },

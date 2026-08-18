@@ -7,6 +7,13 @@ import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 import { assertSafeLocalPath } from './core/localPath.js'
 import {
+  createPortableUpdateLaunch,
+  resolveProductApplicationRoot,
+  resolvePortableUpdatePayload,
+  verifyProductUpdateAsset,
+  type ProductUpdatePlatform,
+} from './core/productUpdate.js'
+import {
   ensureWritablePortableDataDirectory,
   getPortableDataDirectory,
 } from './core/portableData.js'
@@ -28,7 +35,7 @@ import {
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
 import { runRuntimeProcessCollectOutput, terminateRuntimeProcessTree } from './core/runtimeProcess.js'
-import { extractZipArchive } from './core/zipArchive.js'
+import { extractZipArchive, removeExtractedArchiveDirectory } from './core/zipArchive.js'
 import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
 import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
@@ -162,6 +169,8 @@ type UpdateCheckResult = {
   releaseUrl: string | null
   assetName: string | null
   assetUrl: string | null
+  assetSize: number | null
+  assetDigest: string | null
 }
 
 type UpdateDownloadResult = {
@@ -169,6 +178,15 @@ type UpdateDownloadResult = {
   assetName: string
   releaseUrl: string
 }
+
+type PreparedProductUpdate = Readonly<{
+  update: UpdateCheckResult
+  archivePath: string
+  extractedRoot: string
+  payloadRoot: string
+  applicationRoot: string
+  backupRoot: string
+}>
 
 type RuntimeToolInstallResult = {
   tool: RuntimeToolInstallTarget
@@ -391,6 +409,7 @@ let v3TaskEngine: MediaTaskEngine | null = null
 let v3RuntimeRegistry: ManagedRuntimeRegistry | null = null
 let unregisterV3Ipc: (() => void) | null = null
 let portableDataRootDirectory: string | null = null
+let preparedProductUpdate: PreparedProductUpdate | null = null
 let activeBatchRequest: DownloadRequest | null = null
 let pendingJobs: Array<{ jobId: string; url: string; index: number; totalJobs: number }> = []
 const activeJobs = new Map<string, JobContext>()
@@ -1352,11 +1371,13 @@ function selectUpdateAsset(assets: NonNullable<GitHubReleasePayload['assets']>) 
     .map((asset) => ({
       name: asset.name ?? '',
       url: asset.browser_download_url ?? '',
+      size: typeof asset.size === 'number' ? asset.size : null,
+      digest: asset.digest ?? null,
     }))
     .filter((asset) => asset.name && asset.url)
 
   if (isWindows) {
-    return normalizedAssets.find((asset) => /\.exe$/i.test(asset.name))
+    return normalizedAssets.find((asset) => /x64.*win.*\.zip$/i.test(asset.name))
       ?? normalizedAssets.find((asset) => /win.*\.zip$/i.test(asset.name))
       ?? null
   }
@@ -1389,6 +1410,8 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
     releaseUrl: release.html_url ?? null,
     assetName: asset?.name ?? null,
     assetUrl: asset?.url ?? null,
+    assetSize: asset?.size ?? null,
+    assetDigest: asset?.digest ?? null,
   }
 }
 
@@ -1423,6 +1446,125 @@ async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
     assetName: update.assetName,
     releaseUrl: update.releaseUrl,
   }
+}
+
+function productUpdateSnapshot(update: UpdateCheckResult, prepared = false) {
+  return Object.freeze({
+    currentVersion: update.currentVersion,
+    latestVersion: update.latestVersion,
+    updateAvailable: update.updateAvailable,
+    releaseName: update.releaseName,
+    assetName: update.assetName,
+    prepared,
+  })
+}
+
+async function prepareLatestProductUpdate() {
+  const platform = process.platform
+  if (platform !== 'darwin' && platform !== 'win32') {
+    throw new Error('In-app product updates are available only on Windows and macOS.')
+  }
+  if (!app.isPackaged) {
+    throw new Error('In-app product updates can be prepared only by a packaged Media Dock application.')
+  }
+
+  if (preparedProductUpdate) {
+    removeExtractedArchiveDirectory(preparedProductUpdate.extractedRoot)
+    preparedProductUpdate = null
+  }
+  const update = await checkForUpdates()
+  if (!update.updateAvailable || !update.latestVersion) {
+    throw new Error('Media Dock is already up to date.')
+  }
+  if (!update.releaseUrl || !update.assetName || !update.assetUrl || !update.assetSize || !update.assetDigest) {
+    throw new Error('The latest release does not provide a complete verified update asset for this platform.')
+  }
+
+  const outputDirectory = ensureDirectory(getUpdateDownloadDir())
+  const archivePath = join(outputDirectory, update.assetName)
+  const versionDirectoryName = update.latestVersion.replace(/[^a-z0-9._-]+/giu, '-')
+  const extractedRoot = join(outputDirectory, 'staged', versionDirectoryName)
+  try {
+    await downloadUrlToFile(update.assetUrl, archivePath, 'Media Dock update asset download')
+    await verifyProductUpdateAsset(archivePath, {
+      expectedSize: update.assetSize,
+      expectedDigest: update.assetDigest,
+    })
+    await extractZipArchive(archivePath, extractedRoot)
+    const payloadRoot = resolvePortableUpdatePayload(extractedRoot, platform)
+    const applicationRoot = resolveProductApplicationRoot(process.execPath, platform)
+    const backupRoot = join(
+      outputDirectory,
+      'backups',
+      `${app.getVersion()}-${Date.now()}`,
+    )
+    preparedProductUpdate = Object.freeze({
+      update,
+      archivePath,
+      extractedRoot,
+      payloadRoot,
+      applicationRoot,
+      backupRoot,
+    })
+    return productUpdateSnapshot(update, true)
+  } catch (error) {
+    preparedProductUpdate = null
+    console.error('Media Dock product update preparation failed:', error)
+    try {
+      removeExtractedArchiveDirectory(extractedRoot)
+      rmSync(archivePath, { force: true })
+    } catch (cleanupError) {
+      console.error('Media Dock product update cleanup failed:', cleanupError)
+    }
+    throw error
+  }
+}
+
+async function installPreparedProductUpdate() {
+  const prepared = preparedProductUpdate
+  if (!prepared) throw new Error('No verified Media Dock product update is ready to install.')
+  const platform = process.platform
+  if (platform !== 'darwin' && platform !== 'win32') {
+    throw new Error('In-app product updates are available only on Windows and macOS.')
+  }
+  const activeTasks = v3TaskEngine?.getWorkspaceSnapshot().tasks.some(
+    (task) => task.state === 'queued' || task.state === 'running',
+  ) ?? false
+  if (activeTasks) {
+    throw new Error('Finish or cancel active Media Tasks before installing a product update.')
+  }
+  const payloadRoot = resolvePortableUpdatePayload(prepared.extractedRoot, platform)
+  if (
+    payloadRoot !== prepared.payloadRoot
+    || resolveProductApplicationRoot(process.execPath, platform) !== prepared.applicationRoot
+  ) {
+    throw new Error('The prepared product update no longer matches this Media Dock installation.')
+  }
+  const helperDirectory = ensureDirectory(join(getUpdateDownloadDir(), 'helpers'))
+  const launch = createPortableUpdateLaunch({
+    platform: platform as ProductUpdatePlatform,
+    helperDirectory,
+    currentPid: process.pid,
+    payloadRoot: prepared.payloadRoot,
+    portableRoot: prepared.applicationRoot,
+    backupRoot: prepared.backupRoot,
+  })
+  const helper = spawn(launch.command, [...launch.args], {
+    cwd: helperDirectory,
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    windowsVerbatimArguments: launch.windowsVerbatimArguments,
+    env: { ...process.env, ...launch.env },
+  })
+  await new Promise<void>((resolve, reject) => {
+    helper.once('spawn', resolve)
+    helper.once('error', reject)
+  })
+  helper.unref()
+  preparedProductUpdate = null
+  setTimeout(() => app.quit(), 100)
+  return Object.freeze({ scheduled: true, latestVersion: prepared.update.latestVersion })
 }
 
 function selectYtDlpDownloadAsset(assets: NonNullable<GitHubReleasePayload['assets']>) {
@@ -4118,6 +4260,20 @@ async function initializeV3TaskEngine() {
         const deliverable = v3TaskEngine?.getWorkspaceSnapshot().deliverables.find((candidate) => candidate.id === deliverableId)
         if (!deliverable) throw new Error(`Deliverable does not exist: ${deliverableId}`)
         shell.showItemInFolder(deliverable.path)
+      },
+      async checkProductUpdate() {
+        const update = await checkForUpdates()
+        const prepared = Boolean(
+          preparedProductUpdate
+          && preparedProductUpdate.update.latestVersion === update.latestVersion,
+        )
+        return productUpdateSnapshot(update, prepared)
+      },
+      async prepareProductUpdate() {
+        return await prepareLatestProductUpdate()
+      },
+      async installProductUpdate() {
+        return await installPreparedProductUpdate()
       },
       async checkRuntimeUpdates() {
         return await checkRuntimeToolUpdates()

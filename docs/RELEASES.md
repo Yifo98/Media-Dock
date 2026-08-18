@@ -4,13 +4,17 @@ Media Dock 2.1.2 remains the stable line. Media Dock 3 candidates are opt-in pre
 
 ## Package shape
 
-- Windows: `Media-Dock-<version>-<arch>-win.zip`; run `Media Dock.exe` from the extracted root. `Launch Media Dock.bat` is optional.
+- Windows: `Media-Dock-<version>-<arch>-win.zip`; run the single root entry `Media Dock.exe`. A BAT launcher is intentionally not included.
 - macOS: `Media-Dock-<version>-<arch>-mac.zip`; open `Media Dock.app` from the extracted ZIP.
 - Portable state lives in the sibling `Media Dock Data/` directory. A real write probe runs before the UI starts.
 - `yt-dlp`, Deno, FFmpeg, FFprobe, and required shared libraries are bundled under application resources.
 - No package is manually reconstructed after executable editing, signing, or notarization.
 
 Unsigned artifacts include `Unsigned-Developer-Preview` in the filename. They are internal test assets, not public releases. Windows Smart App Control may block them before launch, and macOS Gatekeeper may reject them.
+
+A BAT file is not a Windows trust workaround. App Control does not directly evaluate commands interpreted by `cmd.exe`, but child EXE and DLL files are still evaluated when the BAT starts them. Replacing `Media Dock.exe` with a BAT that launches the same unsigned Electron runtime therefore preserves the block instead of fixing it. Public Windows packages still require Authenticode or Microsoft Trusted Signing and Smart App Control acceptance evidence.
+
+The user-facing explanation and supported recovery choices are maintained in [Windows security and privacy](release/windows-security-and-privacy.md). Every unsigned Windows package also embeds the concise version in `README-windows.txt` beside the executable.
 
 ## Native build commands
 

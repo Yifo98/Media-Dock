@@ -9,6 +9,7 @@ import {
   type InspectedNetworkSource,
   type Language,
   type MediaTaskSnapshot,
+  type ProductUpdateSnapshot,
   type ProductSpace,
   type RuntimeUpdateSnapshot,
   type SourceInspection,
@@ -123,6 +124,10 @@ export default function MediaDockV3App() {
   const [revealedDeliverableId, setRevealedDeliverableId] = useState<string | null>(null)
   const [runtimeChecking, setRuntimeChecking] = useState(false)
   const [runtimeUpdates, setRuntimeUpdates] = useState<RuntimeUpdateSnapshot | null>(null)
+  const [productUpdateChecking, setProductUpdateChecking] = useState(false)
+  const [productUpdatePreparing, setProductUpdatePreparing] = useState(false)
+  const [productUpdateInstalling, setProductUpdateInstalling] = useState(false)
+  const [productUpdate, setProductUpdate] = useState<ProductUpdateSnapshot | null>(null)
   const [supportLogExporting, setSupportLogExporting] = useState(false)
   const [supportLogExported, setSupportLogExported] = useState(false)
   const [historyClearing, setHistoryClearing] = useState(false)
@@ -233,6 +238,7 @@ export default function MediaDockV3App() {
   const problemTask = activeTask?.problem ? activeTask : activeBatchTasks.find((task) => task.problem)
   const terminalTaskCount = workspace.tasks.filter((task) =>
     task.state === 'completed' || task.state === 'cancelled' || task.state === 'needs-attention').length
+  const hasActiveMediaTasks = workspace.tasks.some((task) => task.state === 'queued' || task.state === 'running')
   const mergePairing = useMemo(() => matchLocalAvSources(mergeSources), [mergeSources])
   const mergePairSources = useMemo<readonly InspectedLocalAvPairSource[]>(() => mergePairing.pairs.map((pair) => Object.freeze({
     kind: 'local-av-pair',
@@ -593,6 +599,41 @@ export default function MediaDockV3App() {
       setErrorMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setRuntimeChecking(false)
+    }
+  }
+
+  async function checkProductUpdate() {
+    setProductUpdateChecking(true)
+    setErrorMessage(null)
+    try {
+      setProductUpdate(await api.checkProductUpdate())
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setProductUpdateChecking(false)
+    }
+  }
+
+  async function prepareProductUpdate() {
+    setProductUpdatePreparing(true)
+    setErrorMessage(null)
+    try {
+      setProductUpdate(await api.prepareProductUpdate())
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setProductUpdatePreparing(false)
+    }
+  }
+
+  async function installProductUpdate() {
+    setProductUpdateInstalling(true)
+    setErrorMessage(null)
+    try {
+      await api.installProductUpdate()
+    } catch (error) {
+      setProductUpdateInstalling(false)
+      setErrorMessage(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -1151,7 +1192,7 @@ export default function MediaDockV3App() {
 
           {errorMessage && <div className="md3-error" role="alert"><strong>{copy.genericError}</strong><span>{copy.errorGuidance}</span><details><summary>{copy.technicalDetails}</summary><code>{errorMessage}</code></details></div>}
           <div className="md3-action-row"><div className="md3-flow-steps" aria-hidden="true"><span className={mergePairSources.length > 0 ? 'is-active' : ''} /><span className={mergeOutputDirectory ? 'is-active' : ''} /><span className={mergeActiveTasks.length > 0 ? 'is-active' : ''} /><span className={mergeWorkCompleted ? 'is-active' : ''} /></div><button className="md3-primary-action md3-merge-primary" disabled={mergeBusy || mergePlanLoading || Boolean(mergePairSources.length > 0 && mergeOutputDirectory && mergePlans.length !== mergePairSources.length)} onClick={() => void runMergePrimaryAction()}>{mergePrimaryLabel}<span aria-hidden="true">→</span></button></div>
-          {mergeActiveTasks.length > 0 && <TaskList tasks={mergeActiveTasks} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} onRevealDeliverable={revealDeliverable} />}
+          {mergeActiveTasks.length > 0 && <TaskList tasks={mergeActiveTasks} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} onRevealDeliverable={revealDeliverable} onUpdateAuthentication={showAuthenticationSettings} />}
         </div>
       </SpacePage>
     )
@@ -1161,17 +1202,18 @@ export default function MediaDockV3App() {
     if (activeSpace === 'workbench') return renderWorkbench()
     if (activeSpace === 'merge') return renderMergeWorkbench()
     if (activeSpace === 'tasks') {
-      return <SpacePage><div className="md3-history-toolbar"><div><strong>{copy.clearHistoryWarning}</strong><span>{copy.clearHistoryHint}</span></div><button className="md3-history-clear" disabled={terminalTaskCount === 0 || historyClearing} onClick={() => void clearTaskHistory()}>{historyClearing ? copy.clearingHistory : historyClearConfirming ? copy.confirmClearHistory : copy.clearHistory}</button></div>{workspace.tasks.length === 0 ? <p className="md3-empty-line">{copy.noActivity}</p> : <TaskList tasks={[...workspace.tasks].reverse()} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} onRevealDeliverable={revealDeliverable} />}</SpacePage>
+      return <SpacePage><div className="md3-history-toolbar"><div><strong>{copy.clearHistoryWarning}</strong><span>{copy.clearHistoryHint}</span></div><button className="md3-history-clear" disabled={terminalTaskCount === 0 || historyClearing} onClick={() => void clearTaskHistory()}>{historyClearing ? copy.clearingHistory : historyClearConfirming ? copy.confirmClearHistory : copy.clearHistory}</button></div>{workspace.tasks.length === 0 ? <p className="md3-empty-line">{copy.noActivity}</p> : <TaskList tasks={[...workspace.tasks].reverse()} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} onRevealDeliverable={revealDeliverable} onUpdateAuthentication={showAuthenticationSettings} />}</SpacePage>
     }
     return (
       <SpacePage>
         <div className="md3-system-list">
           <article><span>01</span><div><strong>{copy.engine}</strong><small>{copy.engineValue}</small></div><b>{copy.revision} {workspace.revision}</b></article>
           <article><span>02</span><div><strong>{copy.dataBoundary}</strong><small>{copy.dataBoundaryValue}</small></div><b>{copy.localBadge.toUpperCase()}</b></article>
-          <article><span>03</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled} → {runtimeUpdates.ytDlp.latestVersion ?? copy.unknownVersion}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span></div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.checkingUpdates : copy.checkUpdates}</button></article>
-          <article id="md3-authentication-settings" className="md3-authentication-guide"><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
-          <article className="md3-support-diagnostics"><span>05</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
-          <article className="md3-qidu-about"><span>06</span><div><strong>{copy.aboutTitle}</strong><small>{copy.aboutValue}</small><div className="md3-qidu-motto"><b>{copy.brandMotto}</b><span>{copy.brandMottoSecondary}</span></div></div><em>{copy.brandSignature}</em></article>
+          <article className="md3-product-update"><span>03</span><div><strong>{copy.productUpdate}</strong><small>{copy.productUpdateValue}</small>{productUpdate && <div className="md3-product-update-state" role="status"><b>{productUpdate.prepared && productUpdate.latestVersion ? copy.productUpdatePrepared(productUpdate.latestVersion) : productUpdate.updateAvailable && productUpdate.latestVersion ? copy.productUpdateAvailable(productUpdate.currentVersion, productUpdate.latestVersion) : copy.productUpdateCurrent(productUpdate.currentVersion)}</b>{productUpdate.updateAvailable && productUpdate.assetName && <span>{productUpdate.assetName}</span>}</div>}</div><div className="md3-product-update-actions"><button className="md3-system-action" disabled={productUpdateChecking || productUpdatePreparing || productUpdateInstalling} onClick={() => void checkProductUpdate()}>{productUpdateChecking ? copy.checkingProductUpdate : copy.checkProductUpdate}</button>{productUpdate?.updateAvailable && !productUpdate.prepared && <button className="md3-system-action" disabled={productUpdatePreparing || productUpdateInstalling} onClick={() => void prepareProductUpdate()}>{productUpdatePreparing ? copy.preparingProductUpdate : copy.prepareProductUpdate}</button>}{productUpdate?.prepared && <button className="md3-system-action" disabled={productUpdateInstalling || hasActiveMediaTasks} onClick={() => void installProductUpdate()}>{productUpdateInstalling ? copy.restartingToUpdate : copy.restartToUpdate}</button>}</div></article>
+          <article><span>04</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled} → {runtimeUpdates.ytDlp.latestVersion ?? copy.unknownVersion}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span></div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.checkingUpdates : copy.checkUpdates}</button></article>
+          <article id="md3-authentication-settings" className="md3-authentication-guide"><span>05</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
+          <article className="md3-support-diagnostics"><span>06</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
+          <article className="md3-qidu-about"><span>07</span><div><strong>{copy.aboutTitle}</strong><small>{copy.aboutValue}</small><div className="md3-qidu-motto"><b>{copy.brandMotto}</b><span>{copy.brandMottoSecondary}</span></div></div><em>{copy.brandSignature}</em></article>
         </div>
         {authenticationImportResult && <section className="md3-authentication-success" role="status"><i aria-hidden="true">✓</i><div><strong>{copy.authenticationImportSuccess}</strong><span>{authenticationImportResult.displayName}</span><b>{copy.authenticationSummary(authenticationImportResult.services.length, authenticationImportResult.cookieCount)}</b><small>{authenticationImportResult.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</small></div><button type="button" onClick={returnToWorkbench}>{copy.returnToWorkbench}<span aria-hidden="true">→</span></button></section>}
         {workspace.authenticationProfiles.length === 0
@@ -1259,6 +1301,7 @@ function TaskList({
   revealingDeliverableId,
   revealedDeliverableId,
   onRevealDeliverable,
+  onUpdateAuthentication,
 }: {
   tasks: readonly MediaTaskSnapshot[]
   authenticationProfiles: WorkspaceSnapshot['authenticationProfiles']
@@ -1267,6 +1310,7 @@ function TaskList({
   revealingDeliverableId: string | null
   revealedDeliverableId: string | null
   onRevealDeliverable: (deliverableId: string) => Promise<void>
+  onUpdateAuthentication: () => void
 }) {
   const copy = messages[language]
   return <div className="md3-task-list">{tasks.map((task) => {
@@ -1294,6 +1338,9 @@ function TaskList({
         : profile
           ? copy.taskUsesProfile(profile.displayName)
           : copy.taskGuestMode
-    return <article key={task.id}><div className={`md3-task-state is-${task.state}`}><i /><span>{taskStateLabel(task, language)}</span></div><div className="md3-task-copy"><strong>{task.plan.deliveryName}</strong><small title={task.plan.source.locator}>{task.plan.source.displayName}</small><div className="md3-task-meta"><span>{sourceStatus}</span>{task.plan.videoQuality && <span>{task.plan.videoQuality.mode === 'best' ? copy.qualityBest : `${task.plan.videoQuality.height}p`}</span>}</div>{downloadProgress ? <div className="md3-task-download-progress" role="progressbar" aria-label={copy.downloadProgress} aria-valuemin={0} aria-valuemax={100} aria-valuenow={downloadProgress.percent}><i><span style={{ width: `${downloadProgress.percent}%` }} /></i><small>{progressDetails.join(' · ')}</small></div> : <div className="md3-task-progress" role="progressbar" aria-label={copy.taskProgress} aria-valuemin={0} aria-valuemax={task.plan.steps.length} aria-valuenow={completed ? task.plan.steps.length : Math.max(0, activeStepIndex + 1)}>{task.plan.steps.map((step, index) => <span key={step.id} className={completed || index < activeStepIndex ? 'is-complete' : index === activeStepIndex ? 'is-current' : ''} />)}</div>}</div><div className="md3-task-actions"><time>{new Date(task.updatedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}</time>{deliverable && <button type="button" disabled={revealingDeliverableId === deliverable.id} onClick={() => void onRevealDeliverable(deliverable.id)}>{revealedDeliverableId === deliverable.id ? copy.revealedInFolder : revealingDeliverableId === deliverable.id ? copy.openingFolder : copy.revealInFolder}</button>}</div></article>
+    const expiredAuthentication = task.problem?.code === 'authentication.cookies-expired'
+      ? copy.authenticationCookiesExpired
+      : null
+    return <article key={task.id}><div className={`md3-task-state is-${task.state}`}><i /><span>{taskStateLabel(task, language)}</span></div><div className="md3-task-copy"><strong>{task.plan.deliveryName}</strong><small title={task.plan.source.locator}>{task.plan.source.displayName}</small><div className="md3-task-meta"><span>{sourceStatus}</span>{task.plan.videoQuality && <span>{task.plan.videoQuality.mode === 'best' ? copy.qualityBest : `${task.plan.videoQuality.height}p`}</span>}</div>{expiredAuthentication && <div className="md3-task-problem" role="alert"><strong>{expiredAuthentication.title}</strong><span>{expiredAuthentication.summary}</span><small>{task.problem?.code}</small><button type="button" onClick={onUpdateAuthentication}>{expiredAuthentication.action}</button></div>}{downloadProgress ? <div className="md3-task-download-progress" role="progressbar" aria-label={copy.downloadProgress} aria-valuemin={0} aria-valuemax={100} aria-valuenow={downloadProgress.percent}><i><span style={{ width: `${downloadProgress.percent}%` }} /></i><small>{progressDetails.join(' · ')}</small></div> : <div className="md3-task-progress" role="progressbar" aria-label={copy.taskProgress} aria-valuemin={0} aria-valuemax={task.plan.steps.length} aria-valuenow={completed ? task.plan.steps.length : Math.max(0, activeStepIndex + 1)}>{task.plan.steps.map((step, index) => <span key={step.id} className={completed || index < activeStepIndex ? 'is-complete' : index === activeStepIndex ? 'is-current' : ''} />)}</div>}</div><div className="md3-task-actions"><time>{new Date(task.updatedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}</time>{deliverable && <button type="button" disabled={revealingDeliverableId === deliverable.id} onClick={() => void onRevealDeliverable(deliverable.id)}>{revealedDeliverableId === deliverable.id ? copy.revealedInFolder : revealingDeliverableId === deliverable.id ? copy.openingFolder : copy.revealInFolder}</button>}</div></article>
   })}</div>
 }
