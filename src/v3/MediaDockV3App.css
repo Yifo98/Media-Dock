@@ -326,6 +326,11 @@
 .md3-task-copy { display: grid; min-width: 0; gap: 3px; }
 .md3-task-copy strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .md3-task-copy small { overflow: hidden; color: var(--md3-ink-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.md3-task-problem { display: grid; justify-items: start; gap: 4px; margin-top: 7px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--md3-danger) 38%, var(--md3-line)); border-radius: 11px; background: color-mix(in srgb, var(--md3-danger) 8%, var(--md3-surface)); }
+.md3-task-problem strong { color: var(--md3-danger); white-space: normal; }
+.md3-task-problem span { color: var(--md3-ink-soft); font-size: 10px; line-height: 1.55; }
+.md3-task-problem small { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: normal; }
+.md3-task-problem button { min-height: 30px; margin-top: 3px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--md3-danger) 45%, var(--md3-line)); border-radius: 9px; color: var(--md3-ink); background: var(--md3-surface); cursor: pointer; font-size: 9px; font-weight: 750; }
 .md3-task-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
 .md3-task-meta span { padding: 3px 7px; border-radius: 7px; color: var(--md3-ink-soft); background: var(--md3-surface-soft); font-size: 10px; }
 .md3-task-progress { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; margin-top: 5px; }
@@ -392,6 +397,13 @@
 .md3-system-list b { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; font-weight: 600; }
 .md3-system-action { min-height: 36px; padding: 0 13px; border: 1px solid var(--md3-line); border-radius: 11px; color: var(--md3-ink); background: var(--md3-surface); cursor: pointer; font-size: 11px; font-weight: 750; }
 .md3-system-action:disabled { cursor: wait; opacity: 0.55; }
+.md3-system-list article.md3-product-update { align-items: start; padding: 22px 0; }
+.md3-product-update > div > small { overflow: visible; text-overflow: initial; white-space: normal; }
+.md3-product-update-state { display: grid !important; gap: 4px !important; margin-top: 7px; }
+.md3-product-update-state b { color: var(--md3-cyan-strong); font-size: 10px; }
+.md3-product-update-state span { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; }
+.md3-product-update-actions { display: flex !important; flex-direction: column; align-items: stretch; gap: 7px !important; }
+.md3-product-update-actions .md3-system-action { min-width: 150px; }
 .md3-system-list article.md3-authentication-guide { align-items: start; padding: 22px 0; }
 .md3-authentication-guide small { overflow: visible; text-overflow: initial; white-space: normal; }
 .md3-authentication-guide ol { display: grid; gap: 4px; margin: 5px 0 0; padding-left: 18px; color: var(--md3-ink-soft); font-size: 10px; line-height: 1.5; }

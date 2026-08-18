@@ -132,6 +132,15 @@ export type RuntimeUpdateSnapshot = Readonly<{
   deno: RuntimeToolUpdateInfo
 }>
 
+export type ProductUpdateSnapshot = Readonly<{
+  currentVersion: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  releaseName: string | null
+  assetName: string | null
+  prepared: boolean
+}>
+
 export type MediaTaskSnapshot = Readonly<{
   id: string
   state: 'queued' | 'running' | 'needs-attention' | 'completed' | 'cancelled'
@@ -214,6 +223,9 @@ export type MediaDockV3Api = Readonly<{
   cancelTask(taskId: string): Promise<WorkspaceSnapshot>
   clearTaskHistory(): Promise<WorkspaceSnapshot>
   revealDeliverable(deliverableId: string): Promise<void>
+  checkProductUpdate(): Promise<ProductUpdateSnapshot>
+  prepareProductUpdate(): Promise<ProductUpdateSnapshot>
+  installProductUpdate(): Promise<Readonly<{ scheduled: true; latestVersion: string | null }>>
   checkRuntimeUpdates(): Promise<RuntimeUpdateSnapshot>
   exportSupportDiagnostics(input: Readonly<{ language: Language; recentError?: string }>): Promise<string | null>
   onWorkspaceChanged(listener: (snapshot: WorkspaceSnapshot) => void): () => void

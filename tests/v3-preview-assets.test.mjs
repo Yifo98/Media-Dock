@@ -77,6 +77,11 @@ function visibleAlphaBounds(icon) {
   return { left, top, right, bottom }
 }
 
+function canonicalTextDigest(path) {
+  const text = readFileSync(path, 'utf8').replace(/\r\n?/gu, '\n')
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
 test('the v3 branch keeps its tracked launcher entry point unambiguous', () => {
   assert.equal(existsSync('scripts/launch-mac-v3-preview.sh'), true)
   assert.equal(existsSync('scripts/Launch Media Dock 3 Preview.command'), true)
@@ -122,9 +127,8 @@ test('the official icon is derived from the QIDU open-berth production master', 
 
 test('the production master owns every committed vector derivative', () => {
   assert.equal(existsSync('scripts/build-media-dock-brand-svg.py'), true)
-  const master = readFileSync('docs/design/assets/media-dock-qidu-berth.svg')
-  const digest = createHash('sha256').update(master).digest('hex')
-  assert.equal(createHash('sha256').update(readFileSync('public/favicon.svg')).digest('hex'), digest)
+  const digest = canonicalTextDigest('docs/design/assets/media-dock-qidu-berth.svg')
+  assert.equal(canonicalTextDigest('public/favicon.svg'), digest)
   assert.match(readFileSync('build/readme-hero.svg', 'utf8'), new RegExp(`data-master-sha256="${digest}"`, 'u'))
 })
 

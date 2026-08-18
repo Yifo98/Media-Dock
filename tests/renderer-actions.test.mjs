@@ -117,6 +117,10 @@ test('3.0 shows exact download progress and whether a MediaCookies profile is in
   assertRendererAction('v3TaskVisibility')
 })
 
+test('3.0 explains an expired Cookie in Chinese and links to authentication recovery', () => {
+  assertRendererAction('v3ExpiredCookieProblem')
+})
+
 test('3.0 clears terminal task history without deleting delivered files', () => {
   assertRendererAction('v3ClearHistory')
 })
@@ -127,6 +131,14 @@ test('3.0 reveals a completed deliverable from its Task Center row', () => {
 
 test('3.0 checks yt-dlp and Deno updates from Settings on demand', () => {
   assertRendererAction('v3RuntimeCheck')
+})
+
+test('3.0 prepares a verified product update and restarts to install it in-app', () => {
+  assertRendererAction('v3ProductUpdate')
+})
+
+test('3.0 hides an older release asset when the current product version is newer', () => {
+  assertRendererAction('v3ProductCurrent')
 })
 
 test('3.0 discloses and exports a sanitized support log from Settings', () => {

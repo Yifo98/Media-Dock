@@ -41,9 +41,11 @@ SHORT_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' 
 [[ "$SHORT_VERSION" == "$EXPECTED_VERSION" ]] || { echo "Unexpected app version: $SHORT_VERSION (expected $EXPECTED_VERSION)"; exit 1; }
 echo "[OK] macOS bundle identity"
 
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+echo "[OK] structurally valid macOS code signature"
+
 if [[ "$REQUIRE_SIGNED" == "1" ]]; then
   [[ "$(basename "$PACKAGE_PATH")" != *Unsigned-Developer-Preview* ]] || { echo "Signed package carries unsigned label."; exit 1; }
-  codesign --verify --deep --strict --verbose=2 "$APP_PATH"
   spctl --assess --type execute --verbose=2 "$APP_PATH"
   xcrun stapler validate "$APP_PATH"
   echo "[OK] Developer ID signature, Gatekeeper assessment, notarization staple"

@@ -117,6 +117,37 @@ writeFileSync(args[outputFlag + 1], Buffer.from('authenticated-network-media'))
 `)
 }
 
+function writeExpiredCookieFakeYtDlp(filePath) {
+  writeFileSync(filePath, `
+const args = process.argv.slice(2)
+const sourceUrl = args.find((value) => /^https?:/u.test(value)) ?? 'https://www.youtube.com/watch?v=expired-cookie-video'
+const isOrdinaryForbidden = sourceUrl.includes('ordinary-403')
+if (args.includes('--dump-single-json')) {
+  process.stdout.write(JSON.stringify({
+    id: isOrdinaryForbidden ? 'ordinary-403' : 'expired-cookie-video',
+    title: isOrdinaryForbidden ? 'Ordinary Forbidden Video' : 'Expired Cookie Video',
+    duration: 30,
+    webpage_url: sourceUrl,
+    extractor_key: 'Youtube',
+    ext: 'webm',
+    vcodec: 'vp9',
+    acodec: 'opus',
+    formats: [
+      { format_id: 'video', height: 1080, vcodec: 'vp9', acodec: 'none', filesize: 1500000 },
+      { format_id: 'audio', vcodec: 'none', acodec: 'opus', filesize: 200000 },
+    ],
+  }))
+  process.exit(0)
+}
+if (isOrdinaryForbidden) {
+  process.stderr.write('ERROR: [youtube] ordinary-403: HTTP Error 403: Forbidden')
+  process.exit(1)
+}
+process.stderr.write('ERROR: [youtube] The provided YouTube account cookies are no longer valid. They have likely been rotated in the browser as a security measure.')
+process.exit(1)
+`)
+}
+
 const ffprobeCommand = process.env.MEDIA_DOCK_TEST_FFPROBE ?? 'ffprobe'
 const hasFfprobe = spawnSync(ffprobeCommand, ['-version'], { stdio: 'ignore' }).status === 0
 const ffmpegCommand = process.env.MEDIA_DOCK_TEST_FFMPEG ?? 'ffmpeg'
@@ -1171,6 +1202,93 @@ test('an imported MediaCookies package stays secret while its profile is pinned 
       assert.equal(completed.tasks[0].state, 'completed')
       assert.equal(existsSync(path.join(outputDirectory, 'Private Episode - Video.mp4')), true)
       assert.equal(JSON.stringify(completed).includes(cookieSecret), false)
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('an expired Cookie becomes an actionable authentication Problem instead of a generic acquisition failure', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const dataDirectory = path.join(rootDirectory, 'data')
+    const packageDirectory = path.join(rootDirectory, 'MediaCookies Export')
+    const serviceDirectory = path.join(packageDirectory, 'by-service')
+    const outputDirectory = path.join(rootDirectory, 'output')
+    const fakeYtDlpPath = path.join(rootDirectory, 'expired-cookie-yt-dlp.cjs')
+    mkdirSync(serviceDirectory, { recursive: true })
+    mkdirSync(outputDirectory)
+    writeFileSync(
+      path.join(serviceDirectory, 'youtube.cookies.txt'),
+      '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1\tSID\texpired-fixture\n',
+    )
+    writeExpiredCookieFakeYtDlp(fakeYtDlpPath)
+
+    let taskId = 0
+    const engine = createMediaTaskEngine({
+      dataDirectory,
+      idFactory: (kind) => kind === 'authentication-profile'
+        ? 'expired-authentication-profile'
+        : kind === 'task'
+          ? `expired-cookie-task-${++taskId}`
+          : 'expired-cookie-deliverable',
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: 'fixture' },
+        ffmpeg: { command: 'ffmpeg', version: 'fixture' },
+      },
+    })
+
+    try {
+      await engine.importAuthenticationPackage({
+        sourceDirectory: packageDirectory,
+        displayName: 'Expired MediaCookies',
+      })
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://www.youtube.com/watch?v=expired-cookie-video',
+      })
+      assert.equal(inspection.status, 'ready')
+      if (inspection.status !== 'ready') return
+      const plan = await engine.planTask({
+        source: inspection.source,
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'zh-CN',
+      })
+      engine.createTask(plan)
+
+      await assert.rejects(engine.runTask('expired-cookie-task-1'), /cookies are no longer valid/i)
+      const task = engine.getWorkspaceSnapshot().tasks[0]
+      assert.equal(task.state, 'needs-attention')
+      assert.deepEqual(task.problem, {
+        code: 'authentication.cookies-expired',
+        category: 'authentication',
+        stage: 'acquiring',
+        titleKey: 'problem.authenticationCookiesExpired.title',
+        summaryKey: 'problem.authenticationCookiesExpired.summary',
+        actions: [{ id: 'update-authentication', kind: 'update-authentication' }],
+      })
+
+      const forbiddenInspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://www.youtube.com/watch?v=ordinary-403',
+      })
+      assert.equal(forbiddenInspection.status, 'ready')
+      if (forbiddenInspection.status !== 'ready') return
+      const forbiddenPlan = await engine.planTask({
+        source: forbiddenInspection.source,
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'zh-CN',
+      })
+      engine.createTask(forbiddenPlan)
+
+      await assert.rejects(engine.runTask('expired-cookie-task-2'), /HTTP Error 403: Forbidden/i)
+      const forbiddenTask = engine.getWorkspaceSnapshot().tasks.find(
+        (candidate) => candidate.id === 'expired-cookie-task-2',
+      )
+      assert.equal(forbiddenTask?.state, 'needs-attention')
+      assert.equal(forbiddenTask?.problem?.code, 'network.acquisition.failed')
+      assert.equal(forbiddenTask?.problem?.category, 'media-processing')
     } finally {
       engine.close()
     }

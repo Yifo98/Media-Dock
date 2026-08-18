@@ -189,12 +189,14 @@ export async function inspectNetworkVideoQualities(
     }
     return null
   }
-  const audioEstimates = formats
+  const audioFormats = formats
     .filter((format) => format.vcodec === 'none' && format.acodec !== 'none')
-    .map(estimateBytes)
-    .filter((value): value is number => value !== null)
-  const bestAudioEstimate = audioEstimates.length > 0 ? Math.max(...audioEstimates) : null
-  const estimatesByHeight = new Map<number, number[]>()
+  // yt-dlp returns formats from least to most preferred. The download selector
+  // uses the last eligible video/audio formats, so the preview must follow that
+  // order instead of treating the largest byte count as the best format.
+  const bestAudioFormat = audioFormats[audioFormats.length - 1]
+  const bestAudioEstimate = bestAudioFormat ? estimateBytes(bestAudioFormat) : null
+  const estimateByHeight = new Map<number, number | null>()
 
   for (const format of formats) {
     if (format.vcodec === 'none' || typeof format.height !== 'number' || !Number.isFinite(format.height) || format.height <= 0) continue
@@ -206,19 +208,13 @@ export async function inspectNetworkVideoQualities(
       : includesAudio || bestAudioEstimate === null
         ? ownEstimate
         : ownEstimate + bestAudioEstimate
-    if (combinedEstimate !== null) {
-      const current = estimatesByHeight.get(height) ?? []
-      current.push(combinedEstimate)
-      estimatesByHeight.set(height, current)
-    } else if (!estimatesByHeight.has(height)) {
-      estimatesByHeight.set(height, [])
-    }
+    estimateByHeight.set(height, combinedEstimate)
   }
 
-  return Object.freeze([...estimatesByHeight.entries()]
+  return Object.freeze([...estimateByHeight.entries()]
     .sort(([left], [right]) => right - left)
-    .map(([height, estimates]) => Object.freeze({
+    .map(([height, estimatedBytes]) => Object.freeze({
       height,
-      estimatedBytes: estimates.length > 0 ? Math.max(...estimates) : null,
+      estimatedBytes,
     })))
 }

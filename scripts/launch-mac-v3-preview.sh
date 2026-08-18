@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ELECTRON_BIN="$PROJECT_ROOT/node_modules/.bin/electron"
+ELECTRON_PACKAGE_DIR="$PROJECT_ROOT/node_modules/electron"
+ELECTRON_PATH_FILE="$ELECTRON_PACKAGE_DIR/path.txt"
 
 fail() {
   print -u2 "Media Dock 3 Preview launcher could not start."
@@ -15,6 +17,10 @@ fail() {
 [[ "$(uname -s)" == "Darwin" ]] || fail "This launcher is for macOS."
 [[ -f "$PROJECT_ROOT/package.json" ]] || fail "package.json was not found at $PROJECT_ROOT"
 [[ -x "$ELECTRON_BIN" ]] || fail "Project dependencies are missing. Run npm install in $PROJECT_ROOT first."
+[[ -f "$ELECTRON_PATH_FILE" ]] || fail "Electron runtime is incomplete. Run npm rebuild electron in $PROJECT_ROOT, then relaunch."
+
+ELECTRON_RUNTIME="$ELECTRON_PACKAGE_DIR/dist/$(<"$ELECTRON_PATH_FILE")"
+[[ -x "$ELECTRON_RUNTIME" ]] || fail "Electron runtime is incomplete. Run npm rebuild electron in $PROJECT_ROOT, then relaunch."
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 export MEDIA_DOCK_V3_PREVIEW="1"
