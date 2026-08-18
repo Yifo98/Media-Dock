@@ -55,6 +55,9 @@ test('the macOS candidate is built and verified on a native macOS runner', () =>
   assert.match(macosWorkflow, /verify-macos-package\.sh/)
   assert.match(macosWorkflow, /APPLE_API_KEY_BASE64/)
   assert.match(macosWorkflow, /MAC_CSC_LINK/)
+  assert.match(macosWorkflow, /deno_version:[\s\S]*?default:\s*"2\.9\.5"/u)
+  assert.match(macosWorkflow, /DENO_VERSION:\s*\$\{\{ inputs\.deno_version \}\}/u)
+  assert.match(macBuildScript, /DENO_VERSION="\$\{DENO_VERSION:-2\.9\.5\}"/u)
   assert.match(
     macosWorkflow,
     /shell:\s*\/bin\/zsh\s+-e\s+\{0\}/u,
@@ -83,6 +86,9 @@ test('the Windows candidate is built and verified on a native Windows runner', (
   assert.match(windowsWorkflow, /Get-AuthenticodeSignature/)
   assert.match(windowsWorkflow, /ProductName/)
   assert.match(windowsWorkflow, /MEDIA_DOCK_FFMPEG_WINDOWS_URL/)
+  assert.match(windowsWorkflow, /deno_version:[\s\S]*?default:\s*"2\.9\.5"/u)
+  assert.match(windowsWorkflow, /DENO_VERSION:\s*\$\{\{ inputs\.deno_version \}\}/u)
+  assert.match(windowsBuildScript, /process\.env\.DENO_VERSION \?\? '2\.9\.5'/u)
   assert.doesNotMatch(windowsBuildScript, /run\(['"](?:npm|npx)\.cmd['"]/u)
   assert.match(windowsBuildScript, /run\(process\.execPath/u)
 })

@@ -18,7 +18,7 @@ VERSION_DIR="$RELEASE_DIR/$APP_VERSION"
 ENV_ROOT="${YTDLP_ENV_ROOT:-$HOME/.conda/envs/yt-dlp}"
 ARCH_NAME="$(uname -m)"
 YTDLP_VERSION="${YTDLP_VERSION:-}"
-DENO_VERSION="${DENO_VERSION:-2.9.2}"
+DENO_VERSION="${DENO_VERSION:-2.9.5}"
 FFMPEG_SOURCE="${FFMPEG_SOURCE:-native macOS FFmpeg runtime supplied by the build environment}"
 
 case "$ARCH_NAME" in
