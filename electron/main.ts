@@ -7,13 +7,6 @@ import { fileURLToPath } from 'node:url'
 import { TextDecoder } from 'node:util'
 import { assertSafeLocalPath } from './core/localPath.js'
 import {
-  createPortableUpdateLaunch,
-  resolveProductApplicationRoot,
-  resolvePortableUpdatePayload,
-  verifyProductUpdateAsset,
-  type ProductUpdatePlatform,
-} from './core/productUpdate.js'
-import {
   ensureWritablePortableDataDirectory,
   getPortableDataDirectory,
 } from './core/portableData.js'
@@ -35,7 +28,17 @@ import {
   type RuntimeToolInstallTarget,
 } from './core/runtimeOperationCoordinator.js'
 import { runRuntimeProcessCollectOutput, terminateRuntimeProcessTree } from './core/runtimeProcess.js'
-import { extractZipArchive, removeExtractedArchiveDirectory } from './core/zipArchive.js'
+import {
+  createStartupSplashDocument,
+  createStartupSplashProgressScript,
+  normalizeStartupProgress,
+  STARTUP_SPLASH_COMPLETE_HOLD_MS,
+  STARTUP_SPLASH_FADE_OUT_MS,
+  STARTUP_SPLASH_MIN_VISIBLE_MS,
+  STARTUP_SPLASH_TOTAL_STEPS,
+  type StartupProgressSnapshot,
+} from './core/startupSplash.js'
+import { extractZipArchive } from './core/zipArchive.js'
 import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
 import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
@@ -179,15 +182,6 @@ type UpdateDownloadResult = {
   releaseUrl: string
 }
 
-type PreparedProductUpdate = Readonly<{
-  update: UpdateCheckResult
-  archivePath: string
-  extractedRoot: string
-  payloadRoot: string
-  applicationRoot: string
-  backupRoot: string
-}>
-
 type RuntimeToolInstallResult = {
   tool: RuntimeToolInstallTarget
   path: string
@@ -208,6 +202,10 @@ type RuntimeToolUpdateCheckResult = {
   ytDlp: RuntimeToolUpdateInfo
   deno: RuntimeToolUpdateInfo
 }
+
+type ManagedRuntimeUpdateResult = RuntimeToolUpdateCheckResult & Readonly<{
+  restartRequired: boolean
+}>
 
 type RuntimeToolProgressUpdate = {
   tool: RuntimeToolInstallTarget
@@ -405,11 +403,19 @@ const preloadPath = join(__dirname, '..', 'electron', 'preload.cjs')
 
 let mainWindow: BrowserWindow | null = null
 let mediaToolsWindow: BrowserWindow | null = null
+let startupSplashWindow: BrowserWindow | null = null
+let startupSplashShownAt = 0
+let startupSplashTransitionTimer: NodeJS.Timeout | null = null
+let startupSplashDocumentReady = false
+let startupSplashProgress: StartupProgressSnapshot = normalizeStartupProgress(
+  0,
+  STARTUP_SPLASH_TOTAL_STEPS,
+  '正在准备应用数据…',
+)
 let v3TaskEngine: MediaTaskEngine | null = null
 let v3RuntimeRegistry: ManagedRuntimeRegistry | null = null
 let unregisterV3Ipc: (() => void) | null = null
 let portableDataRootDirectory: string | null = null
-let preparedProductUpdate: PreparedProductUpdate | null = null
 let activeBatchRequest: DownloadRequest | null = null
 let pendingJobs: Array<{ jobId: string; url: string; index: number; totalJobs: number }> = []
 const activeJobs = new Map<string, JobContext>()
@@ -884,6 +890,132 @@ function applyDockIcon() {
   if (iconPath) {
     app.dock?.setIcon(iconPath)
   }
+}
+
+function getStartupSplashIconDataUrl(): string | null {
+  const iconPath = getWindowIconPath()
+  if (!iconPath) return null
+  try {
+    return `data:image/png;base64,${readFileSync(iconPath).toString('base64')}`
+  } catch {
+    return null
+  }
+}
+
+function publishStartupSplashProgress(): void {
+  const splash = startupSplashWindow
+  if (!startupSplashDocumentReady || !splash || splash.isDestroyed()) return
+  const progress = startupSplashProgress
+  void splash.webContents.executeJavaScript(createStartupSplashProgressScript(
+    progress.completed,
+    progress.total,
+    progress.message,
+  )).catch(() => undefined)
+}
+
+function updateStartupSplashProgress(completed: number, message: string): void {
+  startupSplashProgress = normalizeStartupProgress(
+    completed,
+    STARTUP_SPLASH_TOTAL_STEPS,
+    message,
+  )
+  publishStartupSplashProgress()
+}
+
+function createStartupSplashWindow(): void {
+  startupSplashProgress = normalizeStartupProgress(
+    0,
+    STARTUP_SPLASH_TOTAL_STEPS,
+    '正在准备应用数据…',
+  )
+  startupSplashDocumentReady = false
+  const splash = new BrowserWindow({
+    width: 430,
+    height: 270,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
+    focusable: false,
+    skipTaskbar: true,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: true,
+    title: 'Media Dock 正在启动',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+  startupSplashWindow = splash
+  startupSplashShownAt = 0
+  splash.center()
+  splash.once('ready-to-show', () => {
+    if (!splash.isDestroyed()) {
+      startupSplashShownAt = Date.now()
+      splash.showInactive()
+    }
+  })
+  splash.webContents.once('did-finish-load', () => {
+    if (startupSplashWindow !== splash || splash.isDestroyed()) return
+    startupSplashDocumentReady = true
+    publishStartupSplashProgress()
+  })
+  splash.on('closed', () => {
+    if (startupSplashWindow === splash) {
+      startupSplashWindow = null
+      startupSplashDocumentReady = false
+    }
+  })
+  void splash.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(
+    createStartupSplashDocument(getStartupSplashIconDataUrl()),
+  )}`)
+}
+
+function destroyStartupSplashWindow(): void {
+  if (startupSplashTransitionTimer) {
+    clearTimeout(startupSplashTransitionTimer)
+    startupSplashTransitionTimer = null
+  }
+  const splash = startupSplashWindow
+  startupSplashWindow = null
+  startupSplashDocumentReady = false
+  if (splash && !splash.isDestroyed()) splash.destroy()
+}
+
+function revealMainWindowAfterStartup(win: BrowserWindow): void {
+  updateStartupSplashProgress(STARTUP_SPLASH_TOTAL_STEPS, '启动完成')
+  const splash = startupSplashWindow
+  if (!splash || splash.isDestroyed()) {
+    if (!win.isDestroyed()) win.show()
+    return
+  }
+
+  const visibleDuration = startupSplashShownAt > 0 ? Date.now() - startupSplashShownAt : 0
+  const remaining = Math.max(
+    STARTUP_SPLASH_COMPLETE_HOLD_MS,
+    STARTUP_SPLASH_MIN_VISIBLE_MS - visibleDuration,
+  )
+  startupSplashTransitionTimer = setTimeout(() => {
+    startupSplashTransitionTimer = null
+    if (splash.isDestroyed()) {
+      if (!win.isDestroyed()) win.show()
+      return
+    }
+    void splash.webContents.executeJavaScript("document.body.classList.add('leaving')")
+      .catch(() => undefined)
+    startupSplashTransitionTimer = setTimeout(() => {
+      startupSplashTransitionTimer = null
+      destroyStartupSplashWindow()
+      if (!win.isDestroyed()) {
+        win.show()
+        win.focus()
+      }
+    }, STARTUP_SPLASH_FADE_OUT_MS)
+  }, remaining)
 }
 
 function shouldOpenDevTools() {
@@ -1448,125 +1580,6 @@ async function downloadLatestUpdate(): Promise<UpdateDownloadResult> {
   }
 }
 
-function productUpdateSnapshot(update: UpdateCheckResult, prepared = false) {
-  return Object.freeze({
-    currentVersion: update.currentVersion,
-    latestVersion: update.latestVersion,
-    updateAvailable: update.updateAvailable,
-    releaseName: update.releaseName,
-    assetName: update.assetName,
-    prepared,
-  })
-}
-
-async function prepareLatestProductUpdate() {
-  const platform = process.platform
-  if (platform !== 'darwin' && platform !== 'win32') {
-    throw new Error('In-app product updates are available only on Windows and macOS.')
-  }
-  if (!app.isPackaged) {
-    throw new Error('In-app product updates can be prepared only by a packaged Media Dock application.')
-  }
-
-  if (preparedProductUpdate) {
-    removeExtractedArchiveDirectory(preparedProductUpdate.extractedRoot)
-    preparedProductUpdate = null
-  }
-  const update = await checkForUpdates()
-  if (!update.updateAvailable || !update.latestVersion) {
-    throw new Error('Media Dock is already up to date.')
-  }
-  if (!update.releaseUrl || !update.assetName || !update.assetUrl || !update.assetSize || !update.assetDigest) {
-    throw new Error('The latest release does not provide a complete verified update asset for this platform.')
-  }
-
-  const outputDirectory = ensureDirectory(getUpdateDownloadDir())
-  const archivePath = join(outputDirectory, update.assetName)
-  const versionDirectoryName = update.latestVersion.replace(/[^a-z0-9._-]+/giu, '-')
-  const extractedRoot = join(outputDirectory, 'staged', versionDirectoryName)
-  try {
-    await downloadUrlToFile(update.assetUrl, archivePath, 'Media Dock update asset download')
-    await verifyProductUpdateAsset(archivePath, {
-      expectedSize: update.assetSize,
-      expectedDigest: update.assetDigest,
-    })
-    await extractZipArchive(archivePath, extractedRoot)
-    const payloadRoot = resolvePortableUpdatePayload(extractedRoot, platform)
-    const applicationRoot = resolveProductApplicationRoot(process.execPath, platform)
-    const backupRoot = join(
-      outputDirectory,
-      'backups',
-      `${app.getVersion()}-${Date.now()}`,
-    )
-    preparedProductUpdate = Object.freeze({
-      update,
-      archivePath,
-      extractedRoot,
-      payloadRoot,
-      applicationRoot,
-      backupRoot,
-    })
-    return productUpdateSnapshot(update, true)
-  } catch (error) {
-    preparedProductUpdate = null
-    console.error('Media Dock product update preparation failed:', error)
-    try {
-      removeExtractedArchiveDirectory(extractedRoot)
-      rmSync(archivePath, { force: true })
-    } catch (cleanupError) {
-      console.error('Media Dock product update cleanup failed:', cleanupError)
-    }
-    throw error
-  }
-}
-
-async function installPreparedProductUpdate() {
-  const prepared = preparedProductUpdate
-  if (!prepared) throw new Error('No verified Media Dock product update is ready to install.')
-  const platform = process.platform
-  if (platform !== 'darwin' && platform !== 'win32') {
-    throw new Error('In-app product updates are available only on Windows and macOS.')
-  }
-  const activeTasks = v3TaskEngine?.getWorkspaceSnapshot().tasks.some(
-    (task) => task.state === 'queued' || task.state === 'running',
-  ) ?? false
-  if (activeTasks) {
-    throw new Error('Finish or cancel active Media Tasks before installing a product update.')
-  }
-  const payloadRoot = resolvePortableUpdatePayload(prepared.extractedRoot, platform)
-  if (
-    payloadRoot !== prepared.payloadRoot
-    || resolveProductApplicationRoot(process.execPath, platform) !== prepared.applicationRoot
-  ) {
-    throw new Error('The prepared product update no longer matches this Media Dock installation.')
-  }
-  const helperDirectory = ensureDirectory(join(getUpdateDownloadDir(), 'helpers'))
-  const launch = createPortableUpdateLaunch({
-    platform: platform as ProductUpdatePlatform,
-    helperDirectory,
-    currentPid: process.pid,
-    payloadRoot: prepared.payloadRoot,
-    portableRoot: prepared.applicationRoot,
-    backupRoot: prepared.backupRoot,
-  })
-  const helper = spawn(launch.command, [...launch.args], {
-    cwd: helperDirectory,
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-    windowsVerbatimArguments: launch.windowsVerbatimArguments,
-    env: { ...process.env, ...launch.env },
-  })
-  await new Promise<void>((resolve, reject) => {
-    helper.once('spawn', resolve)
-    helper.once('error', reject)
-  })
-  helper.unref()
-  preparedProductUpdate = null
-  setTimeout(() => app.quit(), 100)
-  return Object.freeze({ scheduled: true, latestVersion: prepared.update.latestVersion })
-}
-
 function selectYtDlpDownloadAsset(assets: NonNullable<GitHubReleasePayload['assets']>) {
   const preferredName = isWindows ? 'yt-dlp.exe' : 'yt-dlp'
   const normalizedAssets = assets
@@ -1687,6 +1700,172 @@ async function checkRuntimeToolUpdates(): Promise<RuntimeToolUpdateCheckResult> 
       detail: getDenoPath(),
     },
   }
+}
+
+async function getLatestManagedRuntimeReleases() {
+  const [ytDlpRelease, denoRelease] = await Promise.all([
+    fetchLatestYtDlpRelease(),
+    fetchLatestDenoRelease(),
+  ])
+  return Object.freeze({ ytDlpRelease, denoRelease })
+}
+
+function managedRuntimeUpdateSnapshot(
+  registry: ManagedRuntimeRegistry,
+  releases: Awaited<ReturnType<typeof getLatestManagedRuntimeReleases>>,
+): RuntimeToolUpdateCheckResult {
+  const currentYtDlp = registry.getActive('yt-dlp')
+  const currentDeno = registry.getActive('deno')
+  const latestYtDlpVersion = releases.ytDlpRelease.tag_name
+    ? normalizeVersion(releases.ytDlpRelease.tag_name)
+    : null
+  const latestDenoVersion = releases.denoRelease.tag_name
+    ? normalizeVersion(releases.denoRelease.tag_name)
+    : null
+
+  return Object.freeze({
+    ytDlp: Object.freeze({
+      tool: 'yt-dlp',
+      currentVersion: currentYtDlp?.version ?? null,
+      latestVersion: latestYtDlpVersion,
+      ...getRuntimeUpdateAvailability(currentYtDlp?.version ?? null, latestYtDlpVersion),
+      releaseUrl: releases.ytDlpRelease.html_url ?? null,
+      detail: currentYtDlp?.command ?? null,
+    }),
+    deno: Object.freeze({
+      tool: 'deno',
+      currentVersion: currentDeno?.version ?? null,
+      latestVersion: latestDenoVersion,
+      updateAvailable: Boolean(latestDenoVersion && (!currentDeno || compareVersions(currentDeno.version, latestDenoVersion) < 0)),
+      repairRequired: false,
+      releaseUrl: releases.denoRelease.html_url ?? null,
+      detail: currentDeno?.command ?? null,
+    }),
+  })
+}
+
+async function checkV3ManagedRuntimeUpdates(): Promise<ManagedRuntimeUpdateResult> {
+  if (!v3RuntimeRegistry) throw new Error('The managed runtime registry is not ready.')
+  return Object.freeze({
+    ...managedRuntimeUpdateSnapshot(v3RuntimeRegistry, await getLatestManagedRuntimeReleases()),
+    restartRequired: false,
+  })
+}
+
+async function installV3ManagedYtDlp(
+  registry: ManagedRuntimeRegistry,
+  release: GitHubReleasePayload,
+  version: string,
+): Promise<void> {
+  const asset = selectYtDlpDownloadAsset(release.assets ?? [])
+  if (!asset) throw new Error('No matching yt-dlp release asset was found for this platform.')
+
+  await registry.installAndActivate({
+    tool: 'yt-dlp',
+    version,
+    executableName: getExecutableName('yt-dlp'),
+    expectedSize: asset.size,
+    expectedSha256: asset.digest,
+    populateCandidate: async (candidatePath) => {
+      await downloadUrlToFile(asset.url, candidatePath, 'yt-dlp asset download', ({ percent }) => {
+        emitRuntimeToolProgress({
+          tool: 'yt-dlp',
+          stage: 'downloading',
+          message: `正在下载 yt-dlp ${version}...`,
+          percent,
+        })
+      })
+    },
+    probeVersion: probeYtDlpVersion,
+    onStage: (stage) => {
+      if (stage === 'staging') {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'downloading', message: `正在下载 yt-dlp ${version}...`, percent: 0 })
+      } else if (stage === 'verifying') {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: '正在校验 yt-dlp 完整性和版本...', percent: null })
+      } else if (stage === 'activating') {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage: 'installing', message: '正在激活新的 yt-dlp 版本...', percent: null })
+      } else if (stage === 'complete') {
+        emitRuntimeToolProgress({ tool: 'yt-dlp', stage, message: `yt-dlp ${version} 已安装，将在下次启动时启用。`, percent: 100 })
+      }
+    },
+  })
+}
+
+async function installV3ManagedDeno(
+  registry: ManagedRuntimeRegistry,
+  release: GitHubReleasePayload,
+  version: string,
+): Promise<void> {
+  const asset = selectDenoDownloadAsset(release.assets ?? [])
+  if (!asset) throw new Error('No matching Deno release asset was found for this platform.')
+  const executableName = getExecutableName('deno')
+
+  await registry.installAndActivate({
+    tool: 'deno',
+    version,
+    executableName,
+    populateCandidate: async (candidatePath) => {
+      const archivePath = `${candidatePath}.zip`
+      const extractedDirectory = `${candidatePath}-extracted`
+      try {
+        await downloadUrlToFile(asset.url, archivePath, 'Deno asset download', ({ percent }) => {
+          emitRuntimeToolProgress({
+            tool: 'deno',
+            stage: 'downloading',
+            message: `正在下载 Deno ${version}...`,
+            percent,
+          })
+        })
+        emitRuntimeToolProgress({ tool: 'deno', stage: 'extracting', message: '正在解压 Deno...', percent: null })
+        await extractZip(archivePath, extractedDirectory)
+        const extractedDeno = findFileRecursive(extractedDirectory, executableName)
+        if (!extractedDeno) throw new Error(`Downloaded Deno archive did not contain ${executableName}.`)
+        copyFileSync(extractedDeno, candidatePath)
+      } finally {
+        rmSync(archivePath, { force: true })
+        rmSync(extractedDirectory, { recursive: true, force: true })
+      }
+    },
+    probeVersion: probeDenoVersion,
+    onStage: (stage) => {
+      if (stage === 'staging') {
+        emitRuntimeToolProgress({ tool: 'deno', stage: 'downloading', message: `正在下载 Deno ${version}...`, percent: 0 })
+      } else if (stage === 'verifying') {
+        emitRuntimeToolProgress({ tool: 'deno', stage, message: '正在校验 Deno 版本...', percent: null })
+      } else if (stage === 'activating') {
+        emitRuntimeToolProgress({ tool: 'deno', stage: 'installing', message: '正在激活新的 Deno 版本...', percent: null })
+      } else if (stage === 'complete') {
+        emitRuntimeToolProgress({ tool: 'deno', stage, message: `Deno ${version} 已安装，将在下次启动时启用。`, percent: 100 })
+      }
+    },
+  })
+}
+
+async function updateV3ManagedRuntimeTools(): Promise<ManagedRuntimeUpdateResult> {
+  if (!v3RuntimeRegistry) throw new Error('The managed runtime registry is not ready.')
+  const hasActiveTasks = v3TaskEngine?.getWorkspaceSnapshot().tasks.some(
+    (task) => task.state === 'queued' || task.state === 'running',
+  ) ?? false
+  if (hasActiveTasks) {
+    throw new Error('请先完成或取消正在等待、处理的媒体任务，再更新下载内核。')
+  }
+  const registry = v3RuntimeRegistry
+  const releases = await getLatestManagedRuntimeReleases()
+  const available = managedRuntimeUpdateSnapshot(registry, releases)
+  let restartRequired = false
+
+  if (available.ytDlp.updateAvailable && available.ytDlp.latestVersion) {
+    await installV3ManagedYtDlp(registry, releases.ytDlpRelease, available.ytDlp.latestVersion)
+    restartRequired = true
+  }
+  if (available.deno.updateAvailable && available.deno.latestVersion) {
+    await installV3ManagedDeno(registry, releases.denoRelease, available.deno.latestVersion)
+    restartRequired = true
+  }
+  return Object.freeze({
+    ...managedRuntimeUpdateSnapshot(registry, releases),
+    restartRequired,
+  })
 }
 
 async function installYtDlpRuntime(): Promise<RuntimeToolInstallResult> {
@@ -4036,6 +4215,7 @@ function createAppWindow(hash = '') {
     minWidth: isV3Window ? 760 : 1280,
     minHeight: isV3Window ? 520 : 840,
     backgroundColor: isV3Window ? '#f4f1eb' : '#09111f',
+    show: !isV3Window,
     title: WINDOW_DISPLAY_NAME,
     ...(windowIconPath ? { icon: windowIconPath } : {}),
     autoHideMenuBar: true,
@@ -4115,6 +4295,8 @@ function createAppWindow(hash = '') {
 
 function createWindow() {
   mainWindow = createAppWindow('#v3')
+  const windowToReveal = mainWindow
+  windowToReveal.once('ready-to-show', () => revealMainWindowAfterStartup(windowToReveal))
   mainWindow.on('closed', () => {
     mainWindow = null
   })
@@ -4152,18 +4334,27 @@ async function probeMediaRuntimeVersion(command: string, args = ['-version']) {
 }
 
 async function initializeV3TaskEngine() {
+  const v3DataDirectory = ensureDirectory(join(getPortableDataRootDir(), 'v3'))
+  updateStartupSplashProgress(1, '应用数据已就绪，正在检查下载内核…')
+
   const ffmpegCommand = getFfmpegPath()
   const ffprobeCommand = getFfprobePath()
   const ytDlpCommand = getYtDlpPath()
   const denoCommand = getDenoPath()
+  let completedStartupSteps = 1
+  const trackStartupRuntimeProbe = async <Result>(label: string, probe: Promise<Result>) => {
+    const result = await probe
+    completedStartupSteps += 1
+    updateStartupSplashProgress(completedStartupSteps, `${label} 检查完成`)
+    return result
+  }
   const [ffmpegVersion, ffprobeVersion, ytDlpVersion, denoVersion] = await Promise.all([
-    probeMediaRuntimeVersion(ffmpegCommand),
-    probeMediaRuntimeVersion(ffprobeCommand),
-    probeMediaRuntimeVersion(ytDlpCommand, ['--version']),
-    denoCommand ? getCurrentDenoVersion() : Promise.resolve(null),
+    trackStartupRuntimeProbe('FFmpeg', probeMediaRuntimeVersion(ffmpegCommand)),
+    trackStartupRuntimeProbe('FFprobe', probeMediaRuntimeVersion(ffprobeCommand)),
+    trackStartupRuntimeProbe('yt-dlp', probeMediaRuntimeVersion(ytDlpCommand, ['--version'])),
+    trackStartupRuntimeProbe('Deno', denoCommand ? getCurrentDenoVersion() : Promise.resolve(null)),
   ])
 
-  const v3DataDirectory = ensureDirectory(join(getPortableDataRootDir(), 'v3'))
   v3RuntimeRegistry = createManagedRuntimeRegistry({
     rootDirectory: join(v3DataDirectory, 'tools'),
     baselines: {
@@ -4261,22 +4452,11 @@ async function initializeV3TaskEngine() {
         if (!deliverable) throw new Error(`Deliverable does not exist: ${deliverableId}`)
         shell.showItemInFolder(deliverable.path)
       },
-      async checkProductUpdate() {
-        const update = await checkForUpdates()
-        const prepared = Boolean(
-          preparedProductUpdate
-          && preparedProductUpdate.update.latestVersion === update.latestVersion,
-        )
-        return productUpdateSnapshot(update, prepared)
-      },
-      async prepareProductUpdate() {
-        return await prepareLatestProductUpdate()
-      },
-      async installProductUpdate() {
-        return await installPreparedProductUpdate()
-      },
       async checkRuntimeUpdates() {
-        return await checkRuntimeToolUpdates()
+        return await checkV3ManagedRuntimeUpdates()
+      },
+      async updateRuntimeTools() {
+        return await updateV3ManagedRuntimeTools()
       },
       async exportSupportDiagnostics(input) {
         const generatedAt = new Date()
@@ -4311,6 +4491,7 @@ async function initializeV3TaskEngine() {
       },
     },
   )
+  updateStartupSplashProgress(6, '任务工作区已就绪，正在加载主界面…')
 }
 
 app.whenReady().then(async () => {
@@ -4343,15 +4524,17 @@ app.whenReady().then(async () => {
   }
 
   applyDockIcon()
+  createStartupSplashWindow()
   await initializeV3TaskEngine()
   createWindow()
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!applicationShutdownStarted && BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
   })
 }).catch((error) => {
+  destroyStartupSplashWindow()
   const message = error instanceof Error ? error.message : String(error)
   dialog.showErrorBox('Media Dock cannot start', message)
   app.exit(1)
@@ -4378,6 +4561,7 @@ async function shutdownApplicationWork() {
     activeMediaProcess = null
     activeSubtitleCleanupAbort?.abort()
     activeSubtitleCleanupAbort = null
+    destroyStartupSplashWindow()
 
     unregisterV3Ipc?.()
     unregisterV3Ipc = null
@@ -4407,7 +4591,7 @@ app.on('before-quit', (event) => {
     })
     .finally(() => {
       applicationShutdownCompleted = true
-      app.quit()
+      app.exit(0)
     })
 })
 

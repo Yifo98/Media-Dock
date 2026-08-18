@@ -65,5 +65,15 @@ test('application shutdown terminates active work before closing the task databa
   assert.match(mainSource, /activeSubtitleCleanupAbort\?\.abort\(\)/u)
   assert.match(mainSource, /await v3TaskEngine\?\.shutdown\(\)/u)
   assert.match(mainSource, /app\.on\('before-quit',[\s\S]*?shutdownApplicationWork\(\)/u)
+  assert.match(
+    mainSource,
+    /app\.on\('activate',[\s\S]*?!applicationShutdownStarted[\s\S]*?createWindow\(\)/u,
+    'macOS must not recreate a renderer after shutdown has removed its IPC handlers',
+  )
+  assert.match(
+    mainSource,
+    /applicationShutdownCompleted = true\s+app\.exit\(0\)/u,
+    'completed asynchronous cleanup must exit instead of re-entering before-quit',
+  )
   assert.match(mainSource, /MEDIA_DOCK_EXIT_PROBE[\s\S]*?exit-probe\.json/u)
 })

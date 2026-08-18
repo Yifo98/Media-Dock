@@ -65,6 +65,7 @@ export async function runRuntimeProcessCollectOutput(options: {
       cwd: workingDirectory,
       env: options.env,
       detached: process.platform !== 'win32',
+      windowsHide: true,
     })
 
     let stdout = ''

@@ -41,11 +41,23 @@ function writeSilentWave(filePath) {
   writeFileSync(filePath, buffer)
 }
 
-function writeFakeYtDlp(filePath) {
+function writeFakeYtDlp(filePath, invocationCounterPath = null) {
   writeFileSync(filePath, `
-const { writeFileSync } = require('node:fs')
+const { readFileSync, writeFileSync } = require('node:fs')
 
 const args = process.argv.slice(2)
+if (!args.includes('--ignore-config')) {
+  process.stderr.write('managed yt-dlp invocation did not isolate user configuration')
+  process.exit(9)
+}
+const invocationCounterPath = ${JSON.stringify(invocationCounterPath)}
+if (invocationCounterPath) {
+  let invocationCount = 0
+  try {
+    invocationCount = Number.parseInt(readFileSync(invocationCounterPath, 'utf8'), 10) || 0
+  } catch {}
+  writeFileSync(invocationCounterPath, String(invocationCount + 1))
+}
 if (args.includes('--dump-single-json')) {
   process.stdout.write(JSON.stringify({
     id: 'public-episode-42',
@@ -773,6 +785,34 @@ test('Source Inspection returns an actionable Problem when a local file is missi
   })
 })
 
+test('Source Inspection keeps invalid yt-dlp JSON distinct from a runtime failure', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const fakeYtDlpPath = path.join(rootDirectory, 'invalid-json-yt-dlp.cjs')
+    writeFileSync(fakeYtDlpPath, `
+const args = process.argv.slice(2)
+if (!args.includes('--ignore-config')) process.exit(9)
+process.stdout.write('not-json')
+`)
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: 'invalid-json-fixture' },
+      },
+    })
+
+    try {
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://media.example/watch?v=invalid-json',
+      })
+      assert.equal(inspection.status, 'needs-attention')
+      assert.equal(inspection.problem.code, 'source.network.invalid-metadata')
+    } finally {
+      engine.close()
+    }
+  })
+})
+
 test('Source Inspection resolves a public network URL through the pinned yt-dlp runtime', async () => {
   await withTemporaryWorkspace(async (rootDirectory) => {
     const fakeYtDlpPath = path.join(rootDirectory, 'fake-yt-dlp.cjs')
@@ -818,6 +858,37 @@ test('Source Inspection resolves a public network URL through the pinned yt-dlp 
         authenticationProfileId: null,
         authenticationProfileDisplayName: null,
       })
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('Quality Preview reuses the matching Source Inspection metadata once before a fresh preflight', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const fakeYtDlpPath = path.join(rootDirectory, 'fake-yt-dlp.cjs')
+    const invocationCounterPath = path.join(rootDirectory, 'yt-dlp-invocations.txt')
+    writeFakeYtDlp(fakeYtDlpPath, invocationCounterPath)
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: '2026.07.04-fixture' },
+      },
+    })
+
+    try {
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://media.example/watch?v=42',
+      })
+      assert.equal(inspection.status, 'ready')
+      if (inspection.status !== 'ready' || inspection.source.kind !== 'network-url') return
+
+      await engine.inspectVideoQualities(inspection.source)
+      assert.equal(readFileSync(invocationCounterPath, 'utf8'), '1')
+
+      await engine.inspectVideoQualities(inspection.source)
+      assert.equal(readFileSync(invocationCounterPath, 'utf8'), '2')
     } finally {
       engine.close()
     }

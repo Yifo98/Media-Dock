@@ -9,7 +9,6 @@ import {
   type InspectedNetworkSource,
   type Language,
   type MediaTaskSnapshot,
-  type ProductUpdateSnapshot,
   type ProductSpace,
   type RuntimeUpdateSnapshot,
   type SourceInspection,
@@ -124,10 +123,7 @@ export default function MediaDockV3App() {
   const [revealedDeliverableId, setRevealedDeliverableId] = useState<string | null>(null)
   const [runtimeChecking, setRuntimeChecking] = useState(false)
   const [runtimeUpdates, setRuntimeUpdates] = useState<RuntimeUpdateSnapshot | null>(null)
-  const [productUpdateChecking, setProductUpdateChecking] = useState(false)
-  const [productUpdatePreparing, setProductUpdatePreparing] = useState(false)
-  const [productUpdateInstalling, setProductUpdateInstalling] = useState(false)
-  const [productUpdate, setProductUpdate] = useState<ProductUpdateSnapshot | null>(null)
+  const [runtimeRestartRequired, setRuntimeRestartRequired] = useState(false)
   const [supportLogExporting, setSupportLogExporting] = useState(false)
   const [supportLogExported, setSupportLogExported] = useState(false)
   const [historyClearing, setHistoryClearing] = useState(false)
@@ -238,7 +234,6 @@ export default function MediaDockV3App() {
   const problemTask = activeTask?.problem ? activeTask : activeBatchTasks.find((task) => task.problem)
   const terminalTaskCount = workspace.tasks.filter((task) =>
     task.state === 'completed' || task.state === 'cancelled' || task.state === 'needs-attention').length
-  const hasActiveMediaTasks = workspace.tasks.some((task) => task.state === 'queued' || task.state === 'running')
   const mergePairing = useMemo(() => matchLocalAvSources(mergeSources), [mergeSources])
   const mergePairSources = useMemo<readonly InspectedLocalAvPairSource[]>(() => mergePairing.pairs.map((pair) => Object.freeze({
     kind: 'local-av-pair',
@@ -592,48 +587,16 @@ export default function MediaDockV3App() {
 
   async function checkRuntimeUpdates() {
     setRuntimeChecking(true)
+    setRuntimeRestartRequired(false)
     setErrorMessage(null)
     try {
-      setRuntimeUpdates(await api.checkRuntimeUpdates())
+      const result = await api.updateRuntimeTools()
+      setRuntimeUpdates(result)
+      setRuntimeRestartRequired(result.restartRequired)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setRuntimeChecking(false)
-    }
-  }
-
-  async function checkProductUpdate() {
-    setProductUpdateChecking(true)
-    setErrorMessage(null)
-    try {
-      setProductUpdate(await api.checkProductUpdate())
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error))
-    } finally {
-      setProductUpdateChecking(false)
-    }
-  }
-
-  async function prepareProductUpdate() {
-    setProductUpdatePreparing(true)
-    setErrorMessage(null)
-    try {
-      setProductUpdate(await api.prepareProductUpdate())
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error))
-    } finally {
-      setProductUpdatePreparing(false)
-    }
-  }
-
-  async function installProductUpdate() {
-    setProductUpdateInstalling(true)
-    setErrorMessage(null)
-    try {
-      await api.installProductUpdate()
-    } catch (error) {
-      setProductUpdateInstalling(false)
-      setErrorMessage(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -1209,11 +1172,10 @@ export default function MediaDockV3App() {
         <div className="md3-system-list">
           <article><span>01</span><div><strong>{copy.engine}</strong><small>{copy.engineValue}</small></div><b>{copy.revision} {workspace.revision}</b></article>
           <article><span>02</span><div><strong>{copy.dataBoundary}</strong><small>{copy.dataBoundaryValue}</small></div><b>{copy.localBadge.toUpperCase()}</b></article>
-          <article className="md3-product-update"><span>03</span><div><strong>{copy.productUpdate}</strong><small>{copy.productUpdateValue}</small>{productUpdate && <div className="md3-product-update-state" role="status"><b>{productUpdate.prepared && productUpdate.latestVersion ? copy.productUpdatePrepared(productUpdate.latestVersion) : productUpdate.updateAvailable && productUpdate.latestVersion ? copy.productUpdateAvailable(productUpdate.currentVersion, productUpdate.latestVersion) : copy.productUpdateCurrent(productUpdate.currentVersion)}</b>{productUpdate.updateAvailable && productUpdate.assetName && <span>{productUpdate.assetName}</span>}</div>}</div><div className="md3-product-update-actions"><button className="md3-system-action" disabled={productUpdateChecking || productUpdatePreparing || productUpdateInstalling} onClick={() => void checkProductUpdate()}>{productUpdateChecking ? copy.checkingProductUpdate : copy.checkProductUpdate}</button>{productUpdate?.updateAvailable && !productUpdate.prepared && <button className="md3-system-action" disabled={productUpdatePreparing || productUpdateInstalling} onClick={() => void prepareProductUpdate()}>{productUpdatePreparing ? copy.preparingProductUpdate : copy.prepareProductUpdate}</button>}{productUpdate?.prepared && <button className="md3-system-action" disabled={productUpdateInstalling || hasActiveMediaTasks} onClick={() => void installProductUpdate()}>{productUpdateInstalling ? copy.restartingToUpdate : copy.restartToUpdate}</button>}</div></article>
-          <article><span>04</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled} → {runtimeUpdates.ytDlp.latestVersion ?? copy.unknownVersion}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span></div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.checkingUpdates : copy.checkUpdates}</button></article>
-          <article id="md3-authentication-settings" className="md3-authentication-guide"><span>05</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
-          <article className="md3-support-diagnostics"><span>06</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
-          <article className="md3-qidu-about"><span>07</span><div><strong>{copy.aboutTitle}</strong><small>{copy.aboutValue}</small><div className="md3-qidu-motto"><b>{copy.brandMotto}</b><span>{copy.brandMottoSecondary}</span></div></div><em>{copy.brandSignature}</em></article>
+          <article><span>03</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled}{runtimeUpdates.ytDlp.latestVersion && runtimeUpdates.ytDlp.latestVersion !== runtimeUpdates.ytDlp.currentVersion ? ` → ${runtimeUpdates.ytDlp.latestVersion}` : ''}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span>{runtimeRestartRequired && <b role="status">{copy.runtimeRestartRequired}</b>}</div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.updatingRuntimeTools : copy.checkAndUpdateRuntimeTools}</button></article>
+          <article id="md3-authentication-settings" className="md3-authentication-guide"><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
+          <article className="md3-support-diagnostics"><span>05</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
+          <article className="md3-qidu-about"><span>06</span><div><strong>{copy.aboutTitle}</strong><small>{copy.aboutValue}</small><div className="md3-qidu-motto"><b>{copy.brandMotto}</b><span>{copy.brandMottoSecondary}</span></div></div><em>{copy.brandSignature}</em></article>
         </div>
         {authenticationImportResult && <section className="md3-authentication-success" role="status"><i aria-hidden="true">✓</i><div><strong>{copy.authenticationImportSuccess}</strong><span>{authenticationImportResult.displayName}</span><b>{copy.authenticationSummary(authenticationImportResult.services.length, authenticationImportResult.cookieCount)}</b><small>{authenticationImportResult.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</small></div><button type="button" onClick={returnToWorkbench}>{copy.returnToWorkbench}<span aria-hidden="true">→</span></button></section>}
         {workspace.authenticationProfiles.length === 0

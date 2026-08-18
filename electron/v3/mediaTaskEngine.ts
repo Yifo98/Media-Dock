@@ -14,7 +14,12 @@ import {
 import { sanitizeDeliveryFileName } from './deliveryNaming.js'
 import { getLocalMediaRecipeOptions, inspectLocalMediaSource } from './localMediaSourceAdapter.js'
 import { inspectNetworkCollectionSource, type NetworkCollectionResolver } from './networkCollectionSourceAdapter.js'
-import { getNetworkMediaRecipeOptions, inspectNetworkMediaSource, inspectNetworkVideoQualities } from './networkMediaSourceAdapter.js'
+import {
+  getNetworkMediaRecipeOptions,
+  inspectNetworkMediaSourceWithQualities,
+  inspectNetworkVideoQualities,
+  type NetworkVideoQualityOption,
+} from './networkMediaSourceAdapter.js'
 import { runScheduledTaskBatch, type SchedulingProfile } from './taskBatchScheduler.js'
 
 export const MEDIA_DOCK_CONTRACT_VERSION = 1 as const
@@ -791,6 +796,25 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   const taskProgresses = new Map<string, MediaTaskProgress>()
   const taskProgressFormatIds = new Map<string, string>()
   const taskProgressPublishedAt = new Map<string, number>()
+  const pendingQualityPreviews = new Map<string, readonly NetworkVideoQualityOption[]>()
+
+  function qualityPreviewKey(
+    source: InspectedNetworkSource,
+    authenticationProfileId: string | null,
+  ): string {
+    const ytDlpVersion = options.managedRuntimes?.ytDlp?.version ?? 'missing'
+    const denoVersion = options.managedRuntimes?.deno?.version ?? 'none'
+    return JSON.stringify([source.locator, source.serviceName, authenticationProfileId, ytDlpVersion, denoVersion])
+  }
+
+  function rememberQualityPreview(key: string, qualityOptions: readonly NetworkVideoQualityOption[]): void {
+    pendingQualityPreviews.set(key, qualityOptions)
+    while (pendingQualityPreviews.size > 64) {
+      const oldestKey = pendingQualityPreviews.keys().next().value as string | undefined
+      if (!oldestKey) break
+      pendingQualityPreviews.delete(oldestKey)
+    }
+  }
   function publishWorkspace(): WorkspaceSnapshot {
     const snapshot = readWorkspaceSnapshot(database, taskProgresses)
     for (const listener of workspaceListeners) {
@@ -967,11 +991,18 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const authenticationCookiePath = authenticationProfile && sourceService
         ? resolveAuthenticationCookiePath(authenticationProfile.id, sourceService)
         : null
-      return await inspectNetworkMediaSource(input.url, ytDlp, {
+      const result = await inspectNetworkMediaSourceWithQualities(input.url, ytDlp, {
         authenticationCookiePath,
         deno: options.managedRuntimes?.deno,
         signal: shutdownController.signal,
       })
+      if (result.inspection.status === 'ready' && result.inspection.source.kind === 'network-url' && result.qualityOptions) {
+        rememberQualityPreview(
+          qualityPreviewKey(result.inspection.source, authenticationProfile?.id ?? null),
+          result.qualityOptions,
+        )
+      }
+      return result.inspection
     },
 
     async inspectVideoQualities(source: InspectedNetworkSource): Promise<VideoQualityInspection> {
@@ -982,7 +1013,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const authenticationCookiePath = authenticationProfile
         ? resolveAuthenticationCookiePath(authenticationProfile.id, source.serviceName)
         : null
-      const qualityOptions = await inspectNetworkVideoQualities(source.locator, ytDlp, {
+      const previewKey = qualityPreviewKey(source, authenticationProfile?.id ?? null)
+      const cachedQualityOptions = pendingQualityPreviews.get(previewKey)
+      if (cachedQualityOptions) pendingQualityPreviews.delete(previewKey)
+      const qualityOptions = cachedQualityOptions ?? await inspectNetworkVideoQualities(source.locator, ytDlp, {
         authenticationCookiePath,
         deno: options.managedRuntimes?.deno,
         signal: shutdownController.signal,
@@ -1332,6 +1366,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
             command: ytDlp.command,
             args: [
               ...(ytDlp.argsPrefix ?? []),
+              '--ignore-config',
               '--no-update',
               '--no-playlist',
               '--progress',
@@ -1537,6 +1572,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         taskProgresses.clear()
         taskProgressFormatIds.clear()
         taskProgressPublishedAt.clear()
+        pendingQualityPreviews.clear()
         isClosed = true
       })()
       return await shutdownPromise
@@ -1556,6 +1592,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       taskProgresses.clear()
       taskProgressFormatIds.clear()
       taskProgressPublishedAt.clear()
+      pendingQualityPreviews.clear()
       isClosed = true
     },
   })

@@ -397,13 +397,6 @@
 .md3-system-list b { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; font-weight: 600; }
 .md3-system-action { min-height: 36px; padding: 0 13px; border: 1px solid var(--md3-line); border-radius: 11px; color: var(--md3-ink); background: var(--md3-surface); cursor: pointer; font-size: 11px; font-weight: 750; }
 .md3-system-action:disabled { cursor: wait; opacity: 0.55; }
-.md3-system-list article.md3-product-update { align-items: start; padding: 22px 0; }
-.md3-product-update > div > small { overflow: visible; text-overflow: initial; white-space: normal; }
-.md3-product-update-state { display: grid !important; gap: 4px !important; margin-top: 7px; }
-.md3-product-update-state b { color: var(--md3-cyan-strong); font-size: 10px; }
-.md3-product-update-state span { color: var(--md3-ink-faint); font-family: ui-monospace, monospace; font-size: 9px; }
-.md3-product-update-actions { display: flex !important; flex-direction: column; align-items: stretch; gap: 7px !important; }
-.md3-product-update-actions .md3-system-action { min-width: 150px; }
 .md3-system-list article.md3-authentication-guide { align-items: start; padding: 22px 0; }
 .md3-authentication-guide small { overflow: visible; text-overflow: initial; white-space: normal; }
 .md3-authentication-guide ol { display: grid; gap: 4px; margin: 5px 0 0; padding-left: 18px; color: var(--md3-ink-soft); font-size: 10px; line-height: 1.5; }

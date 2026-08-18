@@ -39,6 +39,11 @@ export type NetworkVideoQualityOptions = Readonly<{
   signal?: AbortSignal
 }>
 
+export type NetworkMediaSourceInspectionResult = Readonly<{
+  inspection: SourceInspection
+  qualityOptions: readonly NetworkVideoQualityOption[] | null
+}>
+
 const NETWORK_VIDEO_RECIPE = Object.freeze({
   id: 'network-video' as const,
   deliverableKind: 'video' as const,
@@ -74,110 +79,47 @@ function isPublicNetworkUrl(value: string): boolean {
   }
 }
 
-export async function inspectNetworkMediaSource(
+function createMetadataArgs(
   sourceUrl: string,
   ytDlp: ManagedRuntimeReference,
-  options: NetworkVideoQualityOptions = {},
-): Promise<SourceInspection> {
-  if (!isPublicNetworkUrl(sourceUrl)) {
-    return networkSourceProblem(
-      'source.network.invalid-url',
-      'problem.invalidNetworkSource.title',
-      'problem.invalidNetworkSource.summary',
-    )
-  }
-
-  let result
-  try {
-    result = await runRuntimeProcessCollectOutput({
-      command: ytDlp.command,
-      args: [
-        ...(ytDlp.argsPrefix ?? []),
-        '--no-update',
-        '--no-playlist',
-        '--skip-download',
-        '--dump-single-json',
-        '--no-warnings',
-        ...(options.deno ? ['--js-runtimes', `deno:${options.deno.command}`] : []),
-        ...(options.authenticationCookiePath ? ['--cookies', options.authenticationCookiePath] : []),
-        sourceUrl,
-      ],
-      timeoutMs: 45_000,
-      workingDirectory: path.dirname(ytDlp.command),
-      env: process.env,
-      signal: options.signal,
-    })
-  } catch {
-    return networkSourceProblem(
-      'source.network.inspect-failed',
-      'problem.networkInspectionFailed.title',
-      'problem.networkInspectionFailed.summary',
-    )
-  }
-
-  let metadata: YtDlpMetadata
-  try {
-    metadata = JSON.parse(result.stdout.trim()) as YtDlpMetadata
-  } catch {
-    return networkSourceProblem(
-      'source.network.invalid-metadata',
-      'problem.invalidNetworkMetadata.title',
-      'problem.invalidNetworkMetadata.summary',
-    )
-  }
-
-  if (!metadata.id || !metadata.title) {
-    return networkSourceProblem(
-      'source.network.incomplete-metadata',
-      'problem.incompleteNetworkMetadata.title',
-      'problem.incompleteNetworkMetadata.summary',
-    )
-  }
-
-  return Object.freeze({
-    status: 'ready',
-    source: Object.freeze({
-      kind: 'network-url',
-      locator: metadata.webpage_url || sourceUrl,
-      displayName: metadata.title,
-      mediaKind: metadata.vcodec && metadata.vcodec !== 'none' ? 'video' : 'audio',
-      durationSeconds: typeof metadata.duration === 'number' && Number.isFinite(metadata.duration)
-        ? metadata.duration
-        : null,
-      formatName: metadata.ext || 'unknown',
-      sourceId: metadata.id,
-      serviceName: metadata.extractor_key || 'unknown',
-    }),
-    recipes: getNetworkMediaRecipeOptions(),
-  })
+  options: NetworkVideoQualityOptions,
+): string[] {
+  return [
+    ...(ytDlp.argsPrefix ?? []),
+    '--ignore-config',
+    '--no-update',
+    '--no-playlist',
+    '--skip-download',
+    '--dump-single-json',
+    '--no-warnings',
+    ...(options.deno ? ['--js-runtimes', `deno:${options.deno.command}`] : []),
+    ...(options.authenticationCookiePath ? ['--cookies', options.authenticationCookiePath] : []),
+    sourceUrl,
+  ]
 }
 
-export async function inspectNetworkVideoQualities(
+async function readNetworkMetadataOutput(
   sourceUrl: string,
   ytDlp: ManagedRuntimeReference,
-  options: NetworkVideoQualityOptions = {},
-): Promise<readonly NetworkVideoQualityOption[]> {
-  if (!isPublicNetworkUrl(sourceUrl)) throw new Error('Network quality inspection requires a public URL.')
-
+  options: NetworkVideoQualityOptions,
+  timeoutMs: number,
+): Promise<string> {
   const result = await runRuntimeProcessCollectOutput({
     command: ytDlp.command,
-    args: [
-      ...(ytDlp.argsPrefix ?? []),
-      '--no-update',
-      '--no-playlist',
-      '--skip-download',
-      '--dump-single-json',
-      '--no-warnings',
-      ...(options.deno ? ['--js-runtimes', `deno:${options.deno.command}`] : []),
-      ...(options.authenticationCookiePath ? ['--cookies', options.authenticationCookiePath] : []),
-      sourceUrl,
-    ],
-    timeoutMs: 60_000,
+    args: createMetadataArgs(sourceUrl, ytDlp, options),
+    timeoutMs,
     workingDirectory: path.dirname(ytDlp.command),
     env: process.env,
     signal: options.signal,
   })
-  const metadata = JSON.parse(result.stdout.trim()) as YtDlpMetadata
+  return result.stdout.trim()
+}
+
+function parseNetworkMetadata(output: string): YtDlpMetadata {
+  return JSON.parse(output) as YtDlpMetadata
+}
+
+function videoQualityOptionsFromMetadata(metadata: YtDlpMetadata): readonly NetworkVideoQualityOption[] {
   const formats = metadata.formats ?? []
   const estimateBytes = (format: (typeof formats)[number]): number | null => {
     const direct = [format.filesize, format.filesize_approx]
@@ -213,8 +155,102 @@ export async function inspectNetworkVideoQualities(
 
   return Object.freeze([...estimateByHeight.entries()]
     .sort(([left], [right]) => right - left)
-    .map(([height, estimatedBytes]) => Object.freeze({
-      height,
-      estimatedBytes,
-    })))
+    .map(([height, estimatedBytes]) => Object.freeze({ height, estimatedBytes })))
+}
+
+export async function inspectNetworkMediaSourceWithQualities(
+  sourceUrl: string,
+  ytDlp: ManagedRuntimeReference,
+  options: NetworkVideoQualityOptions = {},
+): Promise<NetworkMediaSourceInspectionResult> {
+  if (!isPublicNetworkUrl(sourceUrl)) {
+    return Object.freeze({
+      inspection: networkSourceProblem(
+        'source.network.invalid-url',
+        'problem.invalidNetworkSource.title',
+        'problem.invalidNetworkSource.summary',
+      ),
+      qualityOptions: null,
+    })
+  }
+
+  let metadataOutput: string
+  try {
+    metadataOutput = await readNetworkMetadataOutput(sourceUrl, ytDlp, options, 45_000)
+  } catch {
+    return Object.freeze({
+      inspection: networkSourceProblem(
+        'source.network.inspect-failed',
+        'problem.networkInspectionFailed.title',
+        'problem.networkInspectionFailed.summary',
+      ),
+      qualityOptions: null,
+    })
+  }
+
+  let metadata: YtDlpMetadata
+  try {
+    metadata = parseNetworkMetadata(metadataOutput)
+  } catch {
+    return Object.freeze({
+      inspection: networkSourceProblem(
+        'source.network.invalid-metadata',
+        'problem.invalidNetworkMetadata.title',
+        'problem.invalidNetworkMetadata.summary',
+      ),
+      qualityOptions: null,
+    })
+  }
+
+  if (!metadata.id || !metadata.title) {
+    return Object.freeze({
+      inspection: networkSourceProblem(
+        'source.network.incomplete-metadata',
+        'problem.incompleteNetworkMetadata.title',
+        'problem.incompleteNetworkMetadata.summary',
+      ),
+      qualityOptions: null,
+    })
+  }
+
+  return Object.freeze({
+    inspection: Object.freeze({
+      status: 'ready',
+      source: Object.freeze({
+        kind: 'network-url',
+        locator: metadata.webpage_url || sourceUrl,
+        displayName: metadata.title,
+        mediaKind: metadata.vcodec && metadata.vcodec !== 'none' ? 'video' : 'audio',
+        durationSeconds: typeof metadata.duration === 'number' && Number.isFinite(metadata.duration)
+          ? metadata.duration
+          : null,
+        formatName: metadata.ext || 'unknown',
+        sourceId: metadata.id,
+        serviceName: metadata.extractor_key || 'unknown',
+      }),
+      recipes: getNetworkMediaRecipeOptions(),
+    }),
+    qualityOptions: videoQualityOptionsFromMetadata(metadata),
+  })
+}
+
+export async function inspectNetworkMediaSource(
+  sourceUrl: string,
+  ytDlp: ManagedRuntimeReference,
+  options: NetworkVideoQualityOptions = {},
+): Promise<SourceInspection> {
+  return (await inspectNetworkMediaSourceWithQualities(sourceUrl, ytDlp, options)).inspection
+}
+
+export async function inspectNetworkVideoQualities(
+  sourceUrl: string,
+  ytDlp: ManagedRuntimeReference,
+  options: NetworkVideoQualityOptions = {},
+): Promise<readonly NetworkVideoQualityOption[]> {
+  if (!isPublicNetworkUrl(sourceUrl)) throw new Error('Network quality inspection requires a public URL.')
+
+  const metadata = parseNetworkMetadata(
+    await readNetworkMetadataOutput(sourceUrl, ytDlp, options, 60_000),
+  )
+  return videoQualityOptionsFromMetadata(metadata)
 }
