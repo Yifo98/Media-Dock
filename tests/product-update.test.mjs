@@ -219,7 +219,7 @@ test('the Windows portable helper replaces the app, preserves Media Dock Data, a
     assert.equal(readFileSync(path.join(portableRoot, 'resources', 'version.txt'), 'utf8'), 'new')
     assert.equal(readFileSync(path.join(backupRoot, 'resources', 'version.txt'), 'utf8'), 'old')
     assert.equal(readFileSync(dataSentinel, 'utf8'), 'preserved')
-    assert.match(readFileSync(newExecutable).subarray(-11).toString('utf8'), /new-version/u)
+    assert.match(readFileSync(oldExecutable).subarray(-11).toString('utf8'), /new-version/u)
     assert.match(readFileSync(path.join(backupRoot, 'Media Dock.exe')).subarray(-11).toString('utf8'), /old-version/u)
   })
 })
