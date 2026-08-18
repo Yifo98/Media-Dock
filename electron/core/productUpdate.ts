@@ -131,10 +131,10 @@ exit 0
 function windowsPortableUpdateHelper() {
   return `@echo off\r
 setlocal EnableExtensions DisableDelayedExpansion\r
-set "UPDATE_PID=%~1"\r
-set "PAYLOAD_ROOT=%~2"\r
-set "TARGET_ROOT=%~3"\r
-set "BACKUP_ROOT=%~4"\r
+set "UPDATE_PID=%MEDIA_DOCK_UPDATE_PID%"\r
+set "PAYLOAD_ROOT=%MEDIA_DOCK_UPDATE_PAYLOAD_ROOT%"\r
+set "TARGET_ROOT=%MEDIA_DOCK_UPDATE_TARGET_ROOT%"\r
+set "BACKUP_ROOT=%MEDIA_DOCK_UPDATE_BACKUP_ROOT%"\r
 set "ENTRY_LIST=%~f0.entries"\r
 \r
 :wait_for_exit\r
@@ -214,6 +214,24 @@ export function createPortableUpdateLaunch(options: Readonly<{
     options.backupRoot,
   ]
   return Object.freeze(options.platform === 'darwin'
-    ? { command: '/bin/zsh', args: Object.freeze([helperPath, ...updateArguments]), helperPath }
-    : { command: 'cmd.exe', args: Object.freeze(['/d', '/s', '/c', helperPath, ...updateArguments]), helperPath })
+    ? {
+        command: '/bin/zsh',
+        args: Object.freeze([helperPath, ...updateArguments]),
+        env: Object.freeze({}),
+        windowsVerbatimArguments: false,
+        helperPath,
+      }
+    : {
+        command: 'cmd.exe',
+        args: Object.freeze(['/d', '/s', '/v:off', '/c', '"call "%MEDIA_DOCK_UPDATE_HELPER%""']),
+        env: Object.freeze({
+          MEDIA_DOCK_UPDATE_HELPER: helperPath,
+          MEDIA_DOCK_UPDATE_PID: updateArguments[0],
+          MEDIA_DOCK_UPDATE_PAYLOAD_ROOT: updateArguments[1],
+          MEDIA_DOCK_UPDATE_TARGET_ROOT: updateArguments[2],
+          MEDIA_DOCK_UPDATE_BACKUP_ROOT: updateArguments[3],
+        }),
+        windowsVerbatimArguments: true,
+        helperPath,
+      })
 }

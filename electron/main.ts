@@ -1554,6 +1554,8 @@ async function installPreparedProductUpdate() {
     detached: true,
     stdio: 'ignore',
     windowsHide: true,
+    windowsVerbatimArguments: launch.windowsVerbatimArguments,
+    env: { ...process.env, ...launch.env },
   })
   await new Promise<void>((resolve, reject) => {
     helper.once('spawn', resolve)

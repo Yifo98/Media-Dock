@@ -116,6 +116,8 @@ test('portable update helpers wait for exit, keep a rollback backup, and restart
     })
     const windowsHelper = readFileSync(windowsLaunch.helperPath, 'utf8')
     assert.equal(windowsLaunch.command, 'cmd.exe')
+    assert.equal(windowsLaunch.windowsVerbatimArguments, true)
+    assert.equal(windowsLaunch.env.MEDIA_DOCK_UPDATE_HELPER, windowsLaunch.helperPath)
     assert.match(windowsHelper, /tasklist/iu)
     assert.match(windowsHelper, /BACKUP_ROOT/iu)
     assert.match(windowsHelper, /rollback/iu)
@@ -209,6 +211,8 @@ test('the Windows portable helper replaces the app, preserves Media Dock Data, a
     const result = spawnSync(launch.command, [...launch.args], {
       encoding: 'utf8',
       windowsHide: true,
+      windowsVerbatimArguments: launch.windowsVerbatimArguments,
+      env: { ...process.env, ...launch.env },
     })
 
     assert.equal(result.status, 0, `${result.stdout}${result.stderr}`)
