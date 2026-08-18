@@ -30,6 +30,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     'createTask',
     'createTaskBatch',
     'exportSupportDiagnostics',
+    'exportTaskDiagnostics',
     'getWorkspaceSnapshot',
     'importAuthenticationProfile',
     'inspectSource',
@@ -68,6 +69,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
   await api.checkRuntimeUpdates()
   await api.updateRuntimeTools({ source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' })
   await api.exportSupportDiagnostics({ language: 'zh-CN', recentError: 'network unavailable' })
+  await api.exportTaskDiagnostics({ taskId: 'task-002', language: 'zh-CN' })
 
   assert.deepEqual(invocations, [
     { channel: 'media-dock:v3:get-workspace', payload: undefined },
@@ -90,6 +92,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     { channel: 'media-dock:v3:check-runtime-updates', payload: undefined },
     { channel: 'media-dock:v3:update-runtime-tools', payload: { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' } },
     { channel: 'media-dock:v3:export-support-diagnostics', payload: { language: 'zh-CN', recentError: 'network unavailable' } },
+    { channel: 'media-dock:v3:export-task-diagnostics', payload: { taskId: 'task-002', language: 'zh-CN' } },
   ])
 
   const received = []

@@ -25,6 +25,7 @@ export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   checkRuntimeUpdates: 'media-dock:v3:check-runtime-updates',
   updateRuntimeTools: 'media-dock:v3:update-runtime-tools',
   exportSupportDiagnostics: 'media-dock:v3:export-support-diagnostics',
+  exportTaskDiagnostics: 'media-dock:v3:export-task-diagnostics',
   workspaceChanged: 'media-dock:v3:workspace-changed',
 })
 
@@ -48,6 +49,7 @@ type MediaDockV3Pickers = Readonly<{
   checkRuntimeUpdates(): Promise<unknown>
   updateRuntimeTools(input: RuntimeDownloadRequest): Promise<unknown>
   exportSupportDiagnostics(input: Readonly<{ language: 'zh-CN' | 'en'; recentError?: string }>): Promise<string | null>
+  exportTaskDiagnostics(input: Readonly<{ taskId: string; language: 'zh-CN' | 'en' }>): Promise<string | null>
 }>
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -106,6 +108,17 @@ function parseSupportDiagnosticsInput(value: unknown): Readonly<{ language: 'zh-
     ...(typeof input.recentError === 'string' && input.recentError.length > 0
       ? { recentError: input.recentError.slice(0, 8_000) }
       : {}),
+  })
+}
+
+function parseTaskDiagnosticsInput(value: unknown): Readonly<{ taskId: string; language: 'zh-CN' | 'en' }> {
+  const input = requireRecord(value, 'Task diagnostics input')
+  if (input.language !== 'zh-CN' && input.language !== 'en') {
+    throw new TypeError('Task diagnostics language must be zh-CN or en.')
+  }
+  return Object.freeze({
+    taskId: requireString(input.taskId, 'Task diagnostics Media Task id'),
+    language: input.language,
   })
 }
 
@@ -314,6 +327,7 @@ export function registerMediaDockV3Ipc(
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates, () => pickers.checkRuntimeUpdates())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, (_event, payload) => pickers.updateRuntimeTools(parseRuntimeDownloadRequest(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, (_event, payload) => pickers.exportSupportDiagnostics(parseSupportDiagnosticsInput(payload)))
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.exportTaskDiagnostics, (_event, payload) => pickers.exportTaskDiagnostics(parseTaskDiagnosticsInput(payload)))
 
   const unsubscribe = engine.subscribeWorkspace((snapshot) => {
     for (const target of getWorkspaceTargets()) {
@@ -343,5 +357,6 @@ export function registerMediaDockV3Ipc(
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics)
+    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.exportTaskDiagnostics)
   }
 }

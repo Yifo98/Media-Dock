@@ -138,6 +138,8 @@ export default function MediaDockV3App() {
   const [runtimeRestartRequired, setRuntimeRestartRequired] = useState(false)
   const [supportLogExporting, setSupportLogExporting] = useState(false)
   const [supportLogExported, setSupportLogExported] = useState(false)
+  const [taskLogExportingId, setTaskLogExportingId] = useState<string | null>(null)
+  const [taskLogExportedId, setTaskLogExportedId] = useState<string | null>(null)
   const [historyClearing, setHistoryClearing] = useState(false)
   const [historyClearConfirming, setHistoryClearConfirming] = useState(false)
   const [mergeSources, setMergeSources] = useState<readonly InspectedLocalSource[]>([])
@@ -664,6 +666,20 @@ export default function MediaDockV3App() {
       setErrorMessage(error instanceof Error ? error.message : String(error))
     } finally {
       setSupportLogExporting(false)
+    }
+  }
+
+  async function exportTaskDiagnostics(taskId: string) {
+    setTaskLogExportingId(taskId)
+    setTaskLogExportedId(null)
+    setErrorMessage(null)
+    try {
+      const filePath = await api.exportTaskDiagnostics({ taskId, language })
+      if (filePath) setTaskLogExportedId(taskId)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setTaskLogExportingId(null)
     }
   }
 
@@ -1206,7 +1222,7 @@ export default function MediaDockV3App() {
 
           {errorMessage && <div className="md3-error" role="alert"><strong>{copy.genericError}</strong><span>{copy.errorGuidance}</span><details><summary>{copy.technicalDetails}</summary><code>{errorMessage}</code></details></div>}
           <div className="md3-action-row"><div className="md3-flow-steps" aria-hidden="true"><span className={mergePairSources.length > 0 ? 'is-active' : ''} /><span className={mergeOutputDirectory ? 'is-active' : ''} /><span className={mergeActiveTasks.length > 0 ? 'is-active' : ''} /><span className={mergeWorkCompleted ? 'is-active' : ''} /></div><button className="md3-primary-action md3-merge-primary" disabled={mergeBusy || mergePlanLoading || Boolean(mergePairSources.length > 0 && mergeOutputDirectory && mergePlans.length !== mergePairSources.length)} onClick={() => void runMergePrimaryAction()}>{mergePrimaryLabel}<span aria-hidden="true">→</span></button></div>
-          {mergeActiveTasks.length > 0 && <TaskList tasks={mergeActiveTasks} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} onRevealDeliverable={revealDeliverable} onUpdateAuthentication={showAuthenticationSettings} />}
+          {mergeActiveTasks.length > 0 && <TaskList tasks={mergeActiveTasks} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} taskLogExportingId={taskLogExportingId} taskLogExportedId={taskLogExportedId} onRevealDeliverable={revealDeliverable} onExportTaskDiagnostics={exportTaskDiagnostics} onUpdateAuthentication={showAuthenticationSettings} />}
         </div>
       </SpacePage>
     )
@@ -1216,7 +1232,7 @@ export default function MediaDockV3App() {
     if (activeSpace === 'workbench') return renderWorkbench()
     if (activeSpace === 'merge') return renderMergeWorkbench()
     if (activeSpace === 'tasks') {
-      return <SpacePage><div className="md3-history-toolbar"><div><strong>{copy.clearHistoryWarning}</strong><span>{copy.clearHistoryHint}</span></div><button className="md3-history-clear" disabled={terminalTaskCount === 0 || historyClearing} onClick={() => void clearTaskHistory()}>{historyClearing ? copy.clearingHistory : historyClearConfirming ? copy.confirmClearHistory : copy.clearHistory}</button></div>{workspace.tasks.length === 0 ? <p className="md3-empty-line">{copy.noActivity}</p> : <TaskList tasks={[...workspace.tasks].reverse()} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} onRevealDeliverable={revealDeliverable} onUpdateAuthentication={showAuthenticationSettings} />}</SpacePage>
+      return <SpacePage><div className="md3-history-toolbar"><div><strong>{copy.clearHistoryWarning}</strong><span>{copy.clearHistoryHint}</span></div><button className="md3-history-clear" disabled={terminalTaskCount === 0 || historyClearing} onClick={() => void clearTaskHistory()}>{historyClearing ? copy.clearingHistory : historyClearConfirming ? copy.confirmClearHistory : copy.clearHistory}</button></div>{workspace.tasks.length === 0 ? <p className="md3-empty-line">{copy.noActivity}</p> : <TaskList tasks={[...workspace.tasks].reverse()} authenticationProfiles={workspace.authenticationProfiles} deliverables={workspace.deliverables} language={language} revealingDeliverableId={revealingDeliverableId} revealedDeliverableId={revealedDeliverableId} taskLogExportingId={taskLogExportingId} taskLogExportedId={taskLogExportedId} onRevealDeliverable={revealDeliverable} onExportTaskDiagnostics={exportTaskDiagnostics} onUpdateAuthentication={showAuthenticationSettings} />}</SpacePage>
     }
     return (
       <SpacePage>
@@ -1340,7 +1356,10 @@ function TaskList({
   language,
   revealingDeliverableId,
   revealedDeliverableId,
+  taskLogExportingId,
+  taskLogExportedId,
   onRevealDeliverable,
+  onExportTaskDiagnostics,
   onUpdateAuthentication,
 }: {
   tasks: readonly MediaTaskSnapshot[]
@@ -1349,7 +1368,10 @@ function TaskList({
   language: Language
   revealingDeliverableId: string | null
   revealedDeliverableId: string | null
+  taskLogExportingId: string | null
+  taskLogExportedId: string | null
   onRevealDeliverable: (deliverableId: string) => Promise<void>
+  onExportTaskDiagnostics: (taskId: string) => Promise<void>
   onUpdateAuthentication: () => void
 }) {
   const copy = messages[language]
@@ -1381,6 +1403,6 @@ function TaskList({
     const expiredAuthentication = task.problem?.code === 'authentication.cookies-expired'
       ? copy.authenticationCookiesExpired
       : null
-    return <article key={task.id}><div className={`md3-task-state is-${task.state}`}><i /><span>{taskStateLabel(task, language)}</span></div><div className="md3-task-copy"><strong>{task.plan.deliveryName}</strong><small title={task.plan.source.locator}>{task.plan.source.displayName}</small><div className="md3-task-meta"><span>{sourceStatus}</span>{task.plan.videoQuality && <span>{task.plan.videoQuality.mode === 'best' ? copy.qualityBest : `${task.plan.videoQuality.height}p`}</span>}</div>{expiredAuthentication && <div className="md3-task-problem" role="alert"><strong>{expiredAuthentication.title}</strong><span>{expiredAuthentication.summary}</span><small>{task.problem?.code}</small><button type="button" onClick={onUpdateAuthentication}>{expiredAuthentication.action}</button></div>}{downloadProgress ? <div className="md3-task-download-progress" role="progressbar" aria-label={copy.downloadProgress} aria-valuemin={0} aria-valuemax={100} aria-valuenow={downloadProgress.percent}><i><span style={{ width: `${downloadProgress.percent}%` }} /></i><small>{progressDetails.join(' · ')}</small></div> : <div className="md3-task-progress" role="progressbar" aria-label={copy.taskProgress} aria-valuemin={0} aria-valuemax={task.plan.steps.length} aria-valuenow={completed ? task.plan.steps.length : Math.max(0, activeStepIndex + 1)}>{task.plan.steps.map((step, index) => <span key={step.id} className={completed || index < activeStepIndex ? 'is-complete' : index === activeStepIndex ? 'is-current' : ''} />)}</div>}</div><div className="md3-task-actions"><time>{new Date(task.updatedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}</time>{deliverable && <button type="button" disabled={revealingDeliverableId === deliverable.id} onClick={() => void onRevealDeliverable(deliverable.id)}>{revealedDeliverableId === deliverable.id ? copy.revealedInFolder : revealingDeliverableId === deliverable.id ? copy.openingFolder : copy.revealInFolder}</button>}</div></article>
+    return <article key={task.id}><div className={`md3-task-state is-${task.state}`}><i /><span>{taskStateLabel(task, language)}</span></div><div className="md3-task-copy"><strong>{task.plan.deliveryName}</strong><small title={task.plan.source.locator}>{task.plan.source.displayName}</small><div className="md3-task-meta"><span>{sourceStatus}</span>{task.plan.videoQuality && <span>{task.plan.videoQuality.mode === 'best' ? copy.qualityBest : `${task.plan.videoQuality.height}p`}</span>}</div>{expiredAuthentication && <div className="md3-task-problem" role="alert"><strong>{expiredAuthentication.title}</strong><span>{expiredAuthentication.summary}</span><small>{task.problem?.code}</small><button type="button" onClick={onUpdateAuthentication}>{expiredAuthentication.action}</button></div>}{downloadProgress ? <div className="md3-task-download-progress" role="progressbar" aria-label={copy.downloadProgress} aria-valuemin={0} aria-valuemax={100} aria-valuenow={downloadProgress.percent}><i><span style={{ width: `${downloadProgress.percent}%` }} /></i><small>{progressDetails.join(' · ')}</small></div> : <div className="md3-task-progress" role="progressbar" aria-label={copy.taskProgress} aria-valuemin={0} aria-valuemax={task.plan.steps.length} aria-valuenow={completed ? task.plan.steps.length : Math.max(0, activeStepIndex + 1)}>{task.plan.steps.map((step, index) => <span key={step.id} className={completed || index < activeStepIndex ? 'is-complete' : index === activeStepIndex ? 'is-current' : ''} />)}</div>}</div><div className="md3-task-actions"><time>{new Date(task.updatedAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit' })}</time>{task.state === 'needs-attention' && <button type="button" disabled={taskLogExportingId === task.id} onClick={() => void onExportTaskDiagnostics(task.id)}>{taskLogExportedId === task.id ? copy.taskDiagnosticsExported : taskLogExportingId === task.id ? copy.exportingTaskDiagnostics : copy.exportTaskDiagnostics}</button>}{deliverable && <button type="button" disabled={revealingDeliverableId === deliverable.id} onClick={() => void onRevealDeliverable(deliverable.id)}>{revealedDeliverableId === deliverable.id ? copy.revealedInFolder : revealingDeliverableId === deliverable.id ? copy.openingFolder : copy.revealInFolder}</button>}</div></article>
   })}</div>
 }

@@ -181,7 +181,7 @@ let v3Workspace = {
   taskBatches: action === 'v3CollectionFlow'
     ? [{ id: 'batch-z-existing', schedulingProfile: 'safe', createdAt: '2026-07-13T07:00:00.000Z', taskIds: [] }]
     : [],
-  tasks: action === 'v3TaskScrolling' ? scrollingTasks : action === 'v3ExpiredCookieProblem' ? [{
+  tasks: action === 'v3TaskScrolling' ? scrollingTasks : action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' ? [{
     id: 'task-expired-cookie', state: 'needs-attention', stage: 'acquiring', createdAt: '2026-08-18T10:00:00.000Z', updatedAt: '2026-08-18T10:01:00.000Z',
     problem: {
       code: 'authentication.cookies-expired',
@@ -212,7 +212,7 @@ let v3Workspace = {
     },
   }] : [],
   deliverables: action === 'v3DeliverableReveal' || action === 'v3ClearHistory' ? [{ id: 'deliverable-visible', taskId: 'task-visible', path: 'I:\\成品\\山海.mp4', deliveryName: '山海.mp4', createdAt: '2026-07-13T10:00:00.000Z' }] : [],
-  authenticationProfiles: action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3ExpiredCookieProblem'
+  authenticationProfiles: action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics'
     ? [{ id: action === 'v3ExpiredCookieProblem' ? 'auth-profile-expired' : 'auth-profile-fixture', displayName: 'My MediaCookies', services: [action === 'v3ExpiredCookieProblem' ? 'youtube' : 'fixturetv'], serviceCookieCounts: [{ service: action === 'v3ExpiredCookieProblem' ? 'youtube' : 'fixturetv', cookieCount: 8 }], cookieCount: 8, health: 'ready', createdAt: '2026-07-13T09:00:00.000Z' }]
     : action === 'v3EnglishWorkbench'
       ? [
@@ -278,6 +278,9 @@ const mediaDockApi = {
   },
   exportSupportDiagnostics: async () => action === 'v3SupportDiagnostics'
     ? 'I:\\Downloads\\media-dock-support-20260714.txt'
+    : null,
+  exportTaskDiagnostics: async (input) => action === 'v3TaskDiagnostics' && input?.taskId === 'task-expired-cookie'
+    ? 'I:\\Downloads\\media-dock-task-task-expired-cookie-20260818.txt'
     : null,
   inspectSource: async (input) => (action === 'v3SlowInspection' && await new Promise((resolve) => setTimeout(resolve, 1800)), action === 'v3CollectionProblem'
     ? {

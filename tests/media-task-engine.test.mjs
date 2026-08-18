@@ -1361,6 +1361,10 @@ test('an expired Cookie becomes an actionable authentication Problem instead of 
         summaryKey: 'problem.authenticationCookiesExpired.summary',
         actions: [{ id: 'update-authentication', kind: 'update-authentication' }],
       })
+      const taskDiagnostic = engine.getTaskDiagnosticEvidence('expired-cookie-task-1')
+      assert.equal(typeof taskDiagnostic?.recordedAt, 'string')
+      assert.match(taskDiagnostic?.detail ?? '', /no longer valid/i)
+      assert.doesNotMatch(taskDiagnostic?.detail ?? '', /expired-fixture/i)
 
       const forbiddenInspection = await engine.inspectSource({
         kind: 'network-url',

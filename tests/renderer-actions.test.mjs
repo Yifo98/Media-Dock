@@ -121,6 +121,10 @@ test('3.0 explains an expired Cookie in Chinese and links to authentication reco
   assertRendererAction('v3ExpiredCookieProblem')
 })
 
+test('3.0 exports a diagnostic log from one needs-attention task', () => {
+  assertRendererAction('v3TaskDiagnostics')
+})
+
 test('3.0 clears terminal task history without deleting delivered files', () => {
   assertRendererAction('v3ClearHistory')
 })

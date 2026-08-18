@@ -100,6 +100,7 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
     clearTaskHistory: async () => null,
   }
   let receivedInput = null
+  let receivedTaskInput = null
   let authenticationDirectoryOpened = false
   const runtimeUpdateCalls = []
   const pickers = {
@@ -113,14 +114,17 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
     checkRuntimeUpdates: async () => { runtimeUpdateCalls.push('check'); return { updateAvailable: true } },
     updateRuntimeTools: async (input) => { runtimeUpdateCalls.push(input); return { updateAvailable: false } },
     exportSupportDiagnostics: async (input) => { receivedInput = input; return 'support-log.txt' },
+    exportTaskDiagnostics: async (input) => { receivedTaskInput = input; return 'task-log.txt' },
   }
   const unregister = registerMediaDockV3Ipc(ipc, engine, () => [], pickers)
   const exportHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics)
+  const exportTaskHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.exportTaskDiagnostics)
   const openAuthenticationDirectoryHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.openAuthenticationProfilesDirectory)
   const checkRuntimeUpdatesHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates)
   const updateRuntimeToolsHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools)
 
   assert.equal(typeof exportHandler, 'function')
+  assert.equal(typeof exportTaskHandler, 'function')
   assert.equal(typeof openAuthenticationDirectoryHandler, 'function')
   assert.equal(typeof checkRuntimeUpdatesHandler, 'function')
   assert.equal(typeof updateRuntimeToolsHandler, 'function')
@@ -143,6 +147,10 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
   assert.deepEqual(receivedInput, { language: 'zh-CN', recentError: 'network unavailable' })
   await assert.rejects(async () => exportHandler({}, { language: 'system', recentError: 'x' }), /language/i)
   await assert.rejects(async () => exportHandler({}, { language: 'en', recentError: 42 }), /recent error/i)
+  assert.equal(await exportTaskHandler({}, { taskId: 'task-002', language: 'zh-CN' }), 'task-log.txt')
+  assert.deepEqual(receivedTaskInput, { taskId: 'task-002', language: 'zh-CN' })
+  await assert.rejects(async () => exportTaskHandler({}, { taskId: '', language: 'zh-CN' }), /Media Task id/i)
+  await assert.rejects(async () => exportTaskHandler({}, { taskId: 'task-002', language: 'system' }), /language/i)
 
   unregister()
   assert.equal(handlers.size, 0)
