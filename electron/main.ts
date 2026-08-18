@@ -48,7 +48,7 @@ import { extractZipArchive } from './core/zipArchive.js'
 import { createManagedRuntimeRegistry, type ManagedRuntimeRegistry } from './v3/managedRuntimeRegistry.js'
 import { createMediaTaskEngine, type MediaTaskEngine } from './v3/mediaTaskEngine.js'
 import { registerMediaDockV3Ipc } from './v3/registerMediaDockIpc.js'
-import { buildSanitizedSupportDiagnostics } from './v3/supportDiagnostics.js'
+import { buildSanitizedSupportDiagnostics, buildSanitizedTaskDiagnostics } from './v3/supportDiagnostics.js'
 
 type DownloadMode = 'video' | 'audio'
 type AudioFormat = 'mp3' | 'm4a' | 'wav' | 'opus'
@@ -4522,6 +4522,40 @@ async function initializeV3TaskEngine() {
         const result = await dialog.showSaveDialog(mainWindow!, {
           defaultPath: join(resolveDefaultDownloads(), `media-dock-support-${timestamp}.txt`),
           filters: [{ name: 'Media Dock support log', extensions: ['txt'] }],
+        })
+        if (result.canceled || !result.filePath) return null
+        writeFileSync(result.filePath, report, 'utf8')
+        return result.filePath
+      },
+      async exportTaskDiagnostics(input) {
+        const generatedAt = new Date()
+        const task = v3TaskEngine!.getWorkspaceSnapshot().tasks.find((candidate) => candidate.id === input.taskId)
+        if (!task) throw new Error(`Media Task does not exist: ${input.taskId}`)
+        const report = buildSanitizedTaskDiagnostics({
+          generatedAt: generatedAt.toISOString(),
+          appVersion: app.getVersion(),
+          uiLanguage: input.language,
+          platform: { name: process.platform, release: osRelease(), arch: process.arch },
+          processVersions: {
+            electron: process.versions.electron ?? 'unknown',
+            chrome: process.versions.chrome ?? 'unknown',
+            node: process.versions.node,
+          },
+          runtimes: {
+            ffmpeg: v3RuntimeRegistry?.getActive('ffmpeg')?.version ?? 'not installed',
+            ffprobe: v3RuntimeRegistry?.getActive('ffprobe')?.version ?? 'not installed',
+            ytDlp: v3RuntimeRegistry?.getActive('yt-dlp')?.version ?? 'not installed',
+            deno: v3RuntimeRegistry?.getActive('deno')?.version ?? null,
+          },
+          homeDirectory: homedir(),
+          task,
+          diagnosticEvidence: v3TaskEngine!.getTaskDiagnosticEvidence(task.id),
+        })
+        const timestamp = generatedAt.toISOString().replace(/[-:]/gu, '').replace(/\.\d{3}Z$/u, 'Z').replace('T', '-')
+        const taskReference = task.id.replace(/[^a-z0-9_-]+/giu, '-').slice(0, 32) || 'selected'
+        const result = await dialog.showSaveDialog(mainWindow!, {
+          defaultPath: join(resolveDefaultDownloads(), `media-dock-task-${taskReference}-${timestamp}.txt`),
+          filters: [{ name: 'Media Dock task log', extensions: ['txt'] }],
         })
         if (result.canceled || !result.filePath) return null
         writeFileSync(result.filePath, report, 'utf8')

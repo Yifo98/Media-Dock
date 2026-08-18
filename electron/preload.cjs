@@ -23,6 +23,7 @@ const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   checkRuntimeUpdates: 'media-dock:v3:check-runtime-updates',
   updateRuntimeTools: 'media-dock:v3:update-runtime-tools',
   exportSupportDiagnostics: 'media-dock:v3:export-support-diagnostics',
+  exportTaskDiagnostics: 'media-dock:v3:export-task-diagnostics',
   workspaceChanged: 'media-dock:v3:workspace-changed',
 })
 
@@ -49,6 +50,7 @@ function createMediaDockV3Api(renderer) {
     checkRuntimeUpdates: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates),
     updateRuntimeTools: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, input),
     exportSupportDiagnostics: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, input),
+    exportTaskDiagnostics: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.exportTaskDiagnostics, input),
     onWorkspaceChanged: (listener) => {
       const wrapped = (_event, snapshot) => listener(snapshot)
       renderer.on(MEDIA_DOCK_V3_CHANNELS.workspaceChanged, wrapped)

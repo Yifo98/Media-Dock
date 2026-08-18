@@ -224,6 +224,7 @@ export type MediaDockV3Api = Readonly<{
   checkRuntimeUpdates(): Promise<RuntimeUpdateSnapshot>
   updateRuntimeTools(input: RuntimeDownloadRequest): Promise<RuntimeUpdateSnapshot>
   exportSupportDiagnostics(input: Readonly<{ language: Language; recentError?: string }>): Promise<string | null>
+  exportTaskDiagnostics(input: Readonly<{ taskId: string; language: Language }>): Promise<string | null>
   onWorkspaceChanged(listener: (snapshot: WorkspaceSnapshot) => void): () => void
 }>
 

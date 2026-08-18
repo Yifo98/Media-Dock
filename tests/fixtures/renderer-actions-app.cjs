@@ -56,12 +56,12 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3ProductionPreload') {
       const rendered = await waitFor(
         win,
-        `document.body.innerText.includes('处理工作台') && !document.body.innerText.includes('Renderer error') && ['pickLocalSources', 'inspectVideoQualities', 'revealDeliverable', 'checkRuntimeUpdates', 'updateRuntimeTools', 'exportSupportDiagnostics'].every((key) => typeof window.mediaDock?.[key] === 'function')`,
+        `document.body.innerText.includes('处理工作台') && !document.body.innerText.includes('Renderer error') && ['pickLocalSources', 'inspectVideoQualities', 'revealDeliverable', 'checkRuntimeUpdates', 'updateRuntimeTools', 'exportSupportDiagnostics', 'exportTaskDiagnostics'].every((key) => typeof window.mediaDock?.[key] === 'function')`,
       )
       if (!rendered) throw new Error('Production preload did not expose the Media Dock 3 contract')
       console.log('[GREEN] the production preload exposes the Media Dock 3 sandbox contract.')
@@ -522,6 +522,22 @@ app.whenReady().then(async () => {
       const confirmed = await waitFor(win, `document.querySelector('.md3-task-list button')?.textContent.trim() === '已打开'`)
       if (!confirmed) throw new Error('Reveal action did not confirm the completed file location')
       console.log('[GREEN] Media Dock 3 reveals a completed Deliverable from its Task Center row.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3TaskDiagnostics') {
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '任务').click()`, true)
+      const actionReady = await waitFor(win, `Array.from(document.querySelectorAll('.md3-task-list button')).some((button) => button.textContent.trim() === '导出任务日志')`)
+      if (!actionReady) throw new Error('A needs-attention task did not expose its own diagnostic export action')
+      if (screenshotPath) {
+        await new Promise((resolve) => setTimeout(resolve, 200))
+        fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
+        fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
+      }
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-task-list button')).find((button) => button.textContent.trim() === '导出任务日志').click()`, true)
+      const exported = await waitFor(win, `document.querySelector('.md3-task-list')?.innerText.includes('任务日志已保存')`)
+      if (!exported) throw new Error('The selected task diagnostic log was not exported')
+      console.log('[GREEN] Media Dock 3 exports a privacy-safe diagnostic log for one needs-attention task.')
       app.exit(0)
       return
     }

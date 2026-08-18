@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildSanitizedSupportDiagnostics } from '../dist-electron/v3/supportDiagnostics.js'
+import { buildSanitizedSupportDiagnostics, buildSanitizedTaskDiagnostics } from '../dist-electron/v3/supportDiagnostics.js'
 
 test('support diagnostics keep cross-platform evidence while redacting user media and authentication details', () => {
   const report = buildSanitizedSupportDiagnostics({
@@ -73,6 +73,51 @@ test('support diagnostics keep cross-platform evidence while redacting user medi
     '--cookies C:',
     '?v=42',
   ]) {
+    assert.doesNotMatch(report, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+  }
+})
+
+test('one-task diagnostics retain actionable process evidence without leaking the selected media or credentials', () => {
+  const task = {
+    id: 'task-youtube-403',
+    state: 'needs-attention',
+    stage: 'acquiring',
+    createdAt: '2026-08-18T07:55:00.000Z',
+    updatedAt: '2026-08-18T07:56:00.000Z',
+    plan: {
+      planVersion: 1,
+      source: { kind: 'network-url', locator: 'https://www.youtube.com/watch?v=private-video&token=plan-secret', displayName: 'Private YouTube title', mediaKind: 'video', durationSeconds: 42, formatName: 'webm', sourceId: 'private-video', serviceName: 'YouTube' },
+      recipe: { id: 'network-video', deliverableKind: 'video', extension: 'mp4' },
+      outputDirectory: 'C:\\Users\\XiaoFu\\Videos',
+      deliveryName: 'Private YouTube title.mp4',
+      steps: [{ id: 'acquire-network', stage: 'acquiring', runtime: 'yt-dlp' }],
+      runtimeVersions: { ffmpeg: '7.1', ytDlp: '2026.08.18', deno: '2.9.5' },
+      authenticationProfileId: 'auth-private-id',
+      videoQuality: { mode: 'max-height', height: 2160 },
+    },
+    problem: { code: 'network.acquisition.failed', category: 'media-processing', stage: 'acquiring', titleKey: 'private-title-key', summaryKey: 'private-summary-key', actions: [] },
+  }
+  const report = buildSanitizedTaskDiagnostics({
+    generatedAt: '2026-08-18T08:00:00.000Z',
+    appVersion: '3.0.2',
+    uiLanguage: 'zh-CN',
+    platform: { name: 'win32', release: '10.0.26100', arch: 'x64' },
+    processVersions: { electron: '39.0.0', chrome: '140.0.0.0', node: '22.0.0' },
+    runtimes: { ffmpeg: '7.1', ffprobe: '7.1', ytDlp: '2026.08.18', deno: '2.9.5' },
+    homeDirectory: 'C:\\Users\\XiaoFu',
+    task,
+    diagnosticEvidence: {
+      recordedAt: '2026-08-18T07:56:00.000Z',
+      detail: 'ERROR: HTTP Error 403 for C:\\Users\\XiaoFu\\Videos\\Private YouTube title.mp4 https://www.youtube.com/watch?v=private-video&token=url-secret Cookie: SID=cookie-secret',
+    },
+  })
+
+  assert.match(report, /Media Dock Task Diagnostics/)
+  assert.match(report, /task reference: task-youtube-403/)
+  assert.match(report, /network\.acquisition\.failed/)
+  assert.match(report, /HTTP Error 403/)
+  assert.match(report, /yt-dlp=2026\.08\.18/)
+  for (const secret of ['XiaoFu', 'Private YouTube title', 'private-video', 'plan-secret', 'url-secret', 'cookie-secret', 'auth-private-id', '?v=']) {
     assert.doesNotMatch(report, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
   }
 })

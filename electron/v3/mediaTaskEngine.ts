@@ -1,5 +1,6 @@
 import { constants, mkdirSync } from 'node:fs'
 import { access, mkdir, rename, rm, rmdir, stat } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
@@ -12,6 +13,7 @@ import {
   readStoredAuthenticationCookieCounts,
 } from './authenticationProfiles.js'
 import { sanitizeDeliveryFileName } from './deliveryNaming.js'
+import { redactDiagnosticText } from './diagnosticRedaction.js'
 import { getLocalMediaRecipeOptions, inspectLocalMediaSource } from './localMediaSourceAdapter.js'
 import { inspectNetworkCollectionSource, type NetworkCollectionResolver } from './networkCollectionSourceAdapter.js'
 import {
@@ -204,6 +206,11 @@ export type MediaTaskSnapshot = Readonly<{
   progress?: MediaTaskProgress
 }>
 
+export type TaskDiagnosticEvidence = Readonly<{
+  recordedAt: string
+  detail: string
+}>
+
 export type TaskBatchSnapshot = Readonly<{
   id: string
   schedulingProfile: SchedulingProfile
@@ -249,6 +256,7 @@ export type MediaTaskEngine = Readonly<{
   clearTaskHistory(): Promise<WorkspaceSnapshot>
   subscribeWorkspace(listener: (snapshot: WorkspaceSnapshot) => void): () => void
   getWorkspaceSnapshot(): WorkspaceSnapshot
+  getTaskDiagnosticEvidence(taskId: string): TaskDiagnosticEvidence | null
   shutdown(): Promise<void>
   close(): void
 }>
@@ -278,6 +286,11 @@ type MediaTaskRow = Readonly<{
   updated_at: string
   plan_json: string
   problem_json: string | null
+}>
+
+type TaskDiagnosticRow = Readonly<{
+  recorded_at: string
+  detail: string
 }>
 
 type DeliverableRow = Readonly<{
@@ -485,6 +498,7 @@ function updateTaskExecutionState(
   stage: MediaTaskSnapshot['stage'],
   updatedAt: string,
   problem: ProblemSnapshot | null,
+  diagnosticEvidence?: TaskDiagnosticEvidence | null,
 ): void {
   database.exec('BEGIN IMMEDIATE')
   try {
@@ -495,6 +509,17 @@ function updateTaskExecutionState(
     `).run(state, stage, updatedAt, problem ? JSON.stringify(problem) : null, taskId)
     if (result.changes !== 1) {
       throw new Error(`Media Task does not exist: ${taskId}`)
+    }
+    if (diagnosticEvidence) {
+      database.prepare(`
+        INSERT INTO task_diagnostics (task_id, recorded_at, detail)
+        VALUES (?, ?, ?)
+        ON CONFLICT(task_id) DO UPDATE SET
+          recorded_at = excluded.recorded_at,
+          detail = excluded.detail
+      `).run(taskId, diagnosticEvidence.recordedAt, diagnosticEvidence.detail)
+    } else if (diagnosticEvidence === null) {
+      database.prepare('DELETE FROM task_diagnostics WHERE task_id = ?').run(taskId)
     }
     database.prepare(`
       UPDATE workspace_metadata
@@ -733,6 +758,12 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       updated_at TEXT NOT NULL,
       plan_json TEXT NOT NULL,
       problem_json TEXT
+    ) STRICT;
+
+    CREATE TABLE IF NOT EXISTS task_diagnostics (
+      task_id TEXT PRIMARY KEY REFERENCES media_tasks(id) ON DELETE CASCADE,
+      recorded_at TEXT NOT NULL,
+      detail TEXT NOT NULL
     ) STRICT;
 
     CREATE TABLE IF NOT EXISTS deliverables (
@@ -1526,13 +1557,19 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
           throw error
         }
         const problem = taskExecutionProblem(task, error)
+        const recordedAt = (options.now?.() ?? new Date()).toISOString()
+        const diagnosticEvidence = Object.freeze({
+          recordedAt,
+          detail: redactDiagnosticText(error instanceof Error ? error.message : String(error), homedir()),
+        })
         updateTaskExecutionState(
           database,
           taskId,
           'needs-attention',
           problem.stage,
-          (options.now?.() ?? new Date()).toISOString(),
+          recordedAt,
           problem,
+          diagnosticEvidence,
         )
         publishWorkspace()
         throw error
@@ -1581,6 +1618,17 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       }
 
       return readWorkspaceSnapshot(database, taskProgresses)
+    },
+
+    getTaskDiagnosticEvidence(taskId: string): TaskDiagnosticEvidence | null {
+      if (isClosed) throw new Error('Media Task Engine is closed.')
+      findTask(database, taskId)
+      const row = database.prepare(`
+        SELECT recorded_at, detail
+        FROM task_diagnostics
+        WHERE task_id = ?
+      `).get(taskId) as TaskDiagnosticRow | undefined
+      return row ? Object.freeze({ recordedAt: row.recorded_at, detail: row.detail }) : null
     },
 
     async shutdown(): Promise<void> {
