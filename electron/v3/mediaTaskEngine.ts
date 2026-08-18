@@ -830,8 +830,8 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
   function findMatchingAuthenticationProfile(sourceService: string): AuthenticationProfileSnapshot | null {
     const matches = readAuthenticationProfiles(database)
       .filter((profile) => profile.services.some((service) => authenticationServiceMatches(service, sourceService)))
-    // Automatic matching follows the most recently imported package for a service.
-    // This keeps repeat imports useful without silently dropping back to guest mode.
+    // Existing alpha workspaces may still contain more than one profile until
+    // the next explicit refresh replaces them with one current package.
     return matches.length > 0 ? matches[matches.length - 1] : null
   }
 
@@ -1086,6 +1086,21 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const displayName = input.displayName.trim()
       if (!displayName) throw new Error('Authentication Profile display name must not be empty.')
       const files = await inspectAuthenticationPackage(input.sourceDirectory)
+      const previousProfiles = database.prepare(`
+        SELECT id, display_name, services_json, cookie_counts_json, directory_name, created_at
+        FROM authentication_profiles
+        ORDER BY created_at ASC, id ASC
+      `).all() as AuthenticationProfileRow[]
+      const previousProfileIds = new Set(previousProfiles.map((profile) => profile.id))
+      const activeTaskUsesPreviousProfile = readTasks(database).some((task) => {
+        const profileId = task.plan.authenticationProfileId
+        return (task.state === 'queued' || task.state === 'running')
+          && profileId !== undefined
+          && previousProfileIds.has(profileId)
+      })
+      if (activeTaskUsesPreviousProfile) {
+        throw new Error('Finish or cancel active media tasks before replacing website sign-in data.')
+      }
       const id = options.idFactory?.('authentication-profile') ?? randomUUID()
       if (!/^[a-zA-Z0-9._-]+$/u.test(id)) throw new Error('Authentication Profile id is unsafe.')
       const timestamp = (options.now?.() ?? new Date()).toISOString()
@@ -1097,6 +1112,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
 
       database.exec('BEGIN IMMEDIATE')
       try {
+        database.prepare('DELETE FROM authentication_profiles').run()
         database.prepare(`
           INSERT INTO authentication_profiles (id, display_name, services_json, cookie_counts_json, directory_name, created_at)
           VALUES (?, ?, ?, ?, ?, ?)
@@ -1118,6 +1134,14 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         database.exec('ROLLBACK')
         await rm(targetDirectory, { recursive: true, force: true })
         throw error
+      }
+
+      for (const profile of previousProfiles) {
+        try {
+          await rm(path.join(authenticationProfilesRoot, profile.directory_name), { recursive: true, force: true })
+        } catch (error) {
+          console.warn(`Could not remove replaced Authentication Profile ${profile.id}:`, error)
+        }
       }
       return publishWorkspace()
     },

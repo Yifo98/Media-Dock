@@ -527,9 +527,13 @@ app.whenReady().then(async () => {
     }
     if (action === 'v3RuntimeCheck') {
       await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '设置').click()`, true)
-      const updateReady = await waitFor(win, `Array.from(document.querySelectorAll('.md3-system-list button')).some((button) => button.textContent.trim() === '检查并更新') && !document.body.innerText.includes('Media Dock 产品更新')`)
-      if (!updateReady) throw new Error('Managed runtime update action did not replace the product updater')
-      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-system-list button')).find((button) => button.textContent.trim() === '检查并更新').click()`, true)
+      const checkReady = await waitFor(win, `Array.from(document.querySelectorAll('.md3-system-list button')).some((button) => button.textContent.trim() === '检查更新') && !document.body.innerText.includes('Media Dock 产品更新')`)
+      if (!checkReady) throw new Error('Managed runtime check action did not replace the product updater')
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-system-list button')).find((button) => button.textContent.trim() === '检查更新').click()`, true)
+      const choicesReady = await waitFor(win, `document.body.innerText.includes('yt-dlp 2026.07.04 → 2026.08.01') && document.body.innerText.includes('Deno 2.9.2 → 2.9.5') && document.body.innerText.includes('发现可用更新') && Array.from(document.querySelectorAll('.md3-runtime-actions button')).some((button) => button.textContent.trim() === '官方更新') && Array.from(document.querySelectorAll('.md3-runtime-actions button')).some((button) => button.textContent.trim() === '镜像更新') && document.querySelector('.md3-runtime-mirror-field input')?.value === 'https://gh-proxy.com/'`)
+      if (!choicesReady) throw new Error('Managed runtime source choices did not appear after checking')
+      await win.webContents.executeJavaScript(`(() => { const input = document.querySelector('.md3-runtime-mirror-field input'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'https://mirror.example/ghproxy/'); input.dispatchEvent(new Event('input', { bubbles: true })); })()`, true)
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-runtime-actions button')).find((button) => button.textContent.trim() === '镜像更新').click()`, true)
       const updated = await waitFor(win, `document.body.innerText.includes('yt-dlp 2026.08.01') && document.body.innerText.includes('Deno 2.9.5') && document.body.innerText.includes('重启 Media Dock 后生效') && !document.body.innerText.includes('2026.07.04 → 2026.08.01')`)
       if (!updated) throw new Error('Managed runtime updates were not downloaded, verified, and staged')
       if (screenshotPath) {
@@ -538,7 +542,7 @@ app.whenReady().then(async () => {
         fs.mkdirSync(path.dirname(screenshotPath), { recursive: true })
         fs.writeFileSync(screenshotPath, (await win.webContents.capturePage()).toPNG())
       }
-      console.log('[GREEN] Media Dock 3 updates managed runtimes instead of the product package.')
+      console.log('[GREEN] Media Dock 3 checks first, then updates managed runtimes through the selected mirror.')
       app.exit(0)
       return
     }
@@ -762,8 +766,8 @@ app.whenReady().then(async () => {
       const updateLabel = english ? 'Update Cookies' : '更新 Cookies'
       const folderLabel = english ? 'Open Cookies folder' : '打开 Cookies 文件夹'
       const returnLabel = english ? 'Return to processing' : '返回处理工作台'
-      const latestLabel = english ? 'LATEST IMPORT' : '最新导入'
-      const availableLabel = english ? 'AVAILABLE BY SITE' : '可按站点匹配'
+      const latestLabel = english ? 'CURRENT' : '当前使用'
+      const replacedLabel = english ? 'old sign-in data was replaced' : '旧登录信息已替换'
       const systemReady = await waitFor(
         win,
         `Array.from(document.querySelectorAll('.md3-rail nav button')).some((button) => button.textContent.trim() === ${JSON.stringify(systemLabel)})`,
@@ -786,7 +790,7 @@ app.whenReady().then(async () => {
       `, true)
       const imported = await waitFor(
         win,
-        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes(${JSON.stringify(english ? '4 sites' : '4 个站点')}) && document.body.innerText.includes(${JSON.stringify(english ? '43 Cookie entries' : '43 条 Cookie')}) && document.body.innerText.includes(${JSON.stringify(latestLabel)}) && document.body.innerText.includes(${JSON.stringify(availableLabel)}) && document.querySelector('.md3-authentication-success')`,
+        `document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes(${JSON.stringify(english ? '4 sites' : '4 个站点')}) && document.body.innerText.includes(${JSON.stringify(english ? '43 Cookie entries' : '43 条 Cookie')}) && document.body.innerText.includes(${JSON.stringify(latestLabel)}) && document.body.innerText.includes(${JSON.stringify(replacedLabel)}) && !document.body.innerText.includes('Bilibili login') && document.querySelectorAll('.md3-profile-list article').length === 1 && document.querySelector('.md3-authentication-success')`,
       )
       if (!imported) throw new Error('Imported Authentication Profile did not appear in System Center')
       const updateReady = await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some((button) => button.textContent.trim() === ${JSON.stringify(updateLabel)})`, true)

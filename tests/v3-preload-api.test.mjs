@@ -66,7 +66,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
   await api.clearTaskHistory()
   await api.revealDeliverable('deliverable-001')
   await api.checkRuntimeUpdates()
-  await api.updateRuntimeTools()
+  await api.updateRuntimeTools({ source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' })
   await api.exportSupportDiagnostics({ language: 'zh-CN', recentError: 'network unavailable' })
 
   assert.deepEqual(invocations, [
@@ -88,7 +88,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     { channel: 'media-dock:v3:clear-task-history', payload: undefined },
     { channel: 'media-dock:v3:reveal-deliverable', payload: 'deliverable-001' },
     { channel: 'media-dock:v3:check-runtime-updates', payload: undefined },
-    { channel: 'media-dock:v3:update-runtime-tools', payload: undefined },
+    { channel: 'media-dock:v3:update-runtime-tools', payload: { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' } },
     { channel: 'media-dock:v3:export-support-diagnostics', payload: { language: 'zh-CN', recentError: 'network unavailable' } },
   ])
 

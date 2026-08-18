@@ -111,7 +111,7 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
     openMediaCookiesResource: async () => {},
     revealDeliverable: async () => {},
     checkRuntimeUpdates: async () => { runtimeUpdateCalls.push('check'); return { updateAvailable: true } },
-    updateRuntimeTools: async () => { runtimeUpdateCalls.push('update'); return { updateAvailable: false } },
+    updateRuntimeTools: async (input) => { runtimeUpdateCalls.push(input); return { updateAvailable: false } },
     exportSupportDiagnostics: async (input) => { receivedInput = input; return 'support-log.txt' },
   }
   const unregister = registerMediaDockV3Ipc(ipc, engine, () => [], pickers)
@@ -126,8 +126,18 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
   assert.equal(typeof updateRuntimeToolsHandler, 'function')
   await openAuthenticationDirectoryHandler({})
   assert.deepEqual(await checkRuntimeUpdatesHandler({}), { updateAvailable: true })
-  assert.deepEqual(await updateRuntimeToolsHandler({}), { updateAvailable: false })
-  assert.deepEqual(runtimeUpdateCalls, ['check', 'update'])
+  assert.deepEqual(await updateRuntimeToolsHandler({}, { source: 'official' }), { updateAvailable: false })
+  assert.deepEqual(await updateRuntimeToolsHandler({}, { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy' }), { updateAvailable: false })
+  assert.deepEqual(runtimeUpdateCalls, [
+    'check',
+    { source: 'official' },
+    { source: 'mirror', mirrorBaseUrl: 'https://mirror.example/ghproxy/' },
+  ])
+  await assert.rejects(
+    async () => updateRuntimeToolsHandler({}, { source: 'mirror', mirrorBaseUrl: 'http://mirror.example' }),
+    /HTTPS/i,
+  )
+  await assert.rejects(async () => updateRuntimeToolsHandler({}, { source: 'automatic' }), /official or mirror/i)
   assert.equal(authenticationDirectoryOpened, true)
   assert.equal(await exportHandler({}, { language: 'zh-CN', recentError: 'network unavailable' }), 'support-log.txt')
   assert.deepEqual(receivedInput, { language: 'zh-CN', recentError: 'network unavailable' })

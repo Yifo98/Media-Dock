@@ -14,8 +14,14 @@ import {
   getRuntimeUpdateAvailability,
   inspectRuntimeExecutable,
   installValidatedRuntimeExecutable,
+  verifyRuntimeFileIntegrity,
   type RuntimeExecutableInspection,
 } from './core/runtimeExecutable.js'
+import {
+  DEFAULT_RUNTIME_MIRROR_BASE_URL,
+  resolveRuntimeDownloadUrl,
+  type RuntimeDownloadRequest,
+} from './core/runtimeDownloadSource.js'
 import { compareVersions, normalizeVersion } from './core/version.js'
 import {
   downloadRuntimeFile,
@@ -56,6 +62,10 @@ type SubtitleCleanupMode = 'single' | 'batch'
 type MediaMergeMode = 'selection' | 'folder'
 type MediaMergeOutputFormat = 'mp4' | 'mkv' | 'mov'
 const electronRuntimeFetch: RuntimeFetch = async (input, init) => await net.fetch(input, init)
+const githubApiRequestHeaders = () => ({
+  Accept: 'application/vnd.github+json',
+  'User-Agent': `Media-Dock/${app.getVersion()}`,
+})
 const MEDIA_COOKIES_RESOURCE_URLS = Object.freeze({
   'chrome-store': 'https://chromewebstore.google.com/detail/xf-mediacookies/pkpnjlcfhkgiapclmidlhfgjklhifcek',
   github: 'https://github.com/Yifo98/MediaCookies',
@@ -205,6 +215,7 @@ type RuntimeToolUpdateCheckResult = {
 
 type ManagedRuntimeUpdateResult = RuntimeToolUpdateCheckResult & Readonly<{
   restartRequired: boolean
+  defaultMirrorBaseUrl: string
 }>
 
 type RuntimeToolProgressUpdate = {
@@ -1530,6 +1541,7 @@ async function checkForUpdates(): Promise<UpdateCheckResult> {
     fetchImpl: electronRuntimeFetch,
     url: GITHUB_LATEST_RELEASE_API,
     label: 'Media Dock update metadata request',
+    headers: githubApiRequestHeaders(),
   })
   const latestVersion = release.tag_name ? normalizeVersion(release.tag_name) : null
   const asset = selectUpdateAsset(release.assets ?? [])
@@ -1601,6 +1613,7 @@ async function fetchLatestYtDlpRelease() {
     fetchImpl: electronRuntimeFetch,
     url: YT_DLP_LATEST_RELEASE_API,
     label: 'yt-dlp metadata request',
+    headers: githubApiRequestHeaders(),
   })
 }
 
@@ -1609,6 +1622,7 @@ async function fetchLatestDenoRelease() {
     fetchImpl: electronRuntimeFetch,
     url: DENO_LATEST_RELEASE_API,
     label: 'Deno metadata request',
+    headers: githubApiRequestHeaders(),
   })
 }
 
@@ -1749,6 +1763,7 @@ async function checkV3ManagedRuntimeUpdates(): Promise<ManagedRuntimeUpdateResul
   return Object.freeze({
     ...managedRuntimeUpdateSnapshot(v3RuntimeRegistry, await getLatestManagedRuntimeReleases()),
     restartRequired: false,
+    defaultMirrorBaseUrl: DEFAULT_RUNTIME_MIRROR_BASE_URL,
   })
 }
 
@@ -1756,9 +1771,11 @@ async function installV3ManagedYtDlp(
   registry: ManagedRuntimeRegistry,
   release: GitHubReleasePayload,
   version: string,
+  downloadRequest: RuntimeDownloadRequest,
 ): Promise<void> {
   const asset = selectYtDlpDownloadAsset(release.assets ?? [])
   if (!asset) throw new Error('No matching yt-dlp release asset was found for this platform.')
+  const downloadUrl = resolveRuntimeDownloadUrl(asset.url, downloadRequest)
 
   await registry.installAndActivate({
     tool: 'yt-dlp',
@@ -1767,7 +1784,7 @@ async function installV3ManagedYtDlp(
     expectedSize: asset.size,
     expectedSha256: asset.digest,
     populateCandidate: async (candidatePath) => {
-      await downloadUrlToFile(asset.url, candidatePath, 'yt-dlp asset download', ({ percent }) => {
+      await downloadUrlToFile(downloadUrl, candidatePath, 'yt-dlp asset download', ({ percent }) => {
         emitRuntimeToolProgress({
           tool: 'yt-dlp',
           stage: 'downloading',
@@ -1795,10 +1812,12 @@ async function installV3ManagedDeno(
   registry: ManagedRuntimeRegistry,
   release: GitHubReleasePayload,
   version: string,
+  downloadRequest: RuntimeDownloadRequest,
 ): Promise<void> {
   const asset = selectDenoDownloadAsset(release.assets ?? [])
   if (!asset) throw new Error('No matching Deno release asset was found for this platform.')
   const executableName = getExecutableName('deno')
+  const downloadUrl = resolveRuntimeDownloadUrl(asset.url, downloadRequest)
 
   await registry.installAndActivate({
     tool: 'deno',
@@ -1808,13 +1827,17 @@ async function installV3ManagedDeno(
       const archivePath = `${candidatePath}.zip`
       const extractedDirectory = `${candidatePath}-extracted`
       try {
-        await downloadUrlToFile(asset.url, archivePath, 'Deno asset download', ({ percent }) => {
+        await downloadUrlToFile(downloadUrl, archivePath, 'Deno asset download', ({ percent }) => {
           emitRuntimeToolProgress({
             tool: 'deno',
             stage: 'downloading',
             message: `正在下载 Deno ${version}...`,
             percent,
           })
+        })
+        verifyRuntimeFileIntegrity(archivePath, {
+          size: asset.size,
+          sha256: asset.digest,
         })
         emitRuntimeToolProgress({ tool: 'deno', stage: 'extracting', message: '正在解压 Deno...', percent: null })
         await extractZip(archivePath, extractedDirectory)
@@ -1841,7 +1864,9 @@ async function installV3ManagedDeno(
   })
 }
 
-async function updateV3ManagedRuntimeTools(): Promise<ManagedRuntimeUpdateResult> {
+async function updateV3ManagedRuntimeTools(
+  downloadRequest: RuntimeDownloadRequest,
+): Promise<ManagedRuntimeUpdateResult> {
   if (!v3RuntimeRegistry) throw new Error('The managed runtime registry is not ready.')
   const hasActiveTasks = v3TaskEngine?.getWorkspaceSnapshot().tasks.some(
     (task) => task.state === 'queued' || task.state === 'running',
@@ -1855,16 +1880,27 @@ async function updateV3ManagedRuntimeTools(): Promise<ManagedRuntimeUpdateResult
   let restartRequired = false
 
   if (available.ytDlp.updateAvailable && available.ytDlp.latestVersion) {
-    await installV3ManagedYtDlp(registry, releases.ytDlpRelease, available.ytDlp.latestVersion)
+    await installV3ManagedYtDlp(
+      registry,
+      releases.ytDlpRelease,
+      available.ytDlp.latestVersion,
+      downloadRequest,
+    )
     restartRequired = true
   }
   if (available.deno.updateAvailable && available.deno.latestVersion) {
-    await installV3ManagedDeno(registry, releases.denoRelease, available.deno.latestVersion)
+    await installV3ManagedDeno(
+      registry,
+      releases.denoRelease,
+      available.deno.latestVersion,
+      downloadRequest,
+    )
     restartRequired = true
   }
   return Object.freeze({
     ...managedRuntimeUpdateSnapshot(registry, releases),
     restartRequired,
+    defaultMirrorBaseUrl: DEFAULT_RUNTIME_MIRROR_BASE_URL,
   })
 }
 
@@ -1940,6 +1976,8 @@ function selectDenoDownloadAsset(assets: NonNullable<GitHubReleasePayload['asset
     .map((asset) => ({
       name: asset.name ?? '',
       url: asset.browser_download_url ?? '',
+      size: typeof asset.size === 'number' ? asset.size : null,
+      digest: asset.digest ?? null,
     }))
     .filter((asset) => asset.name && asset.url)
 
@@ -4455,8 +4493,8 @@ async function initializeV3TaskEngine() {
       async checkRuntimeUpdates() {
         return await checkV3ManagedRuntimeUpdates()
       },
-      async updateRuntimeTools() {
-        return await updateV3ManagedRuntimeTools()
+      async updateRuntimeTools(downloadRequest) {
+        return await updateV3ManagedRuntimeTools(downloadRequest)
       },
       async exportSupportDiagnostics(input) {
         const generatedAt = new Date()

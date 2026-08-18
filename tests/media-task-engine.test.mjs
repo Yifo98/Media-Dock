@@ -1186,7 +1186,7 @@ test('network delivery names sanitize URL-title separators without dropping Unic
   })
 })
 
-test('an imported MediaCookies package stays secret while its profile is pinned by an authenticated network task', async () => {
+test('a refreshed MediaCookies package replaces the old profile without exposing Cookie values', async () => {
   await withTemporaryWorkspace(async (rootDirectory) => {
     const dataDirectory = path.join(rootDirectory, 'data')
     const packageDirectory = path.join(rootDirectory, 'MediaCookies Export')
@@ -1234,12 +1234,27 @@ test('an imported MediaCookies package stays secret while its profile is pinned 
       }])
       assert.equal(JSON.stringify(imported).includes(cookieSecret), false)
       assert.equal(JSON.stringify(imported).includes(packageDirectory), false)
+      assert.equal(existsSync(path.join(dataDirectory, 'authentication-profiles', 'auth-profile-001')), true)
+
+      const invalidPackageDirectory = path.join(rootDirectory, 'Invalid MediaCookies Export')
+      mkdirSync(invalidPackageDirectory)
+      await assert.rejects(
+        engine.importAuthenticationPackage({
+          sourceDirectory: invalidPackageDirectory,
+          displayName: 'Invalid replacement',
+        }),
+        /no supported.*Cookie files/i,
+      )
+      assert.equal(engine.getWorkspaceSnapshot().authenticationProfiles[0].id, 'auth-profile-001')
+      assert.equal(existsSync(path.join(dataDirectory, 'authentication-profiles', 'auth-profile-001')), true)
 
       const reimported = await engine.importAuthenticationPackage({
         sourceDirectory: packageDirectory,
         displayName: 'My newest MediaCookies',
       })
-      assert.equal(reimported.authenticationProfiles.length, 2)
+      assert.deepEqual(reimported.authenticationProfiles.map((profile) => profile.id), ['auth-profile-002'])
+      assert.equal(existsSync(path.join(dataDirectory, 'authentication-profiles', 'auth-profile-001')), false)
+      assert.equal(existsSync(path.join(dataDirectory, 'authentication-profiles', 'auth-profile-002')), true)
 
       const inspection = await engine.inspectSource({
         kind: 'network-url',
@@ -1268,6 +1283,14 @@ test('an imported MediaCookies package stays secret while its profile is pinned 
       assert.equal(JSON.stringify(plan).includes('cookies.txt'), false)
 
       engine.createTask(plan)
+      await assert.rejects(
+        engine.importAuthenticationPackage({
+          sourceDirectory: packageDirectory,
+          displayName: 'Blocked while queued',
+        }),
+        /finish or cancel active media tasks/i,
+      )
+      assert.deepEqual(engine.getWorkspaceSnapshot().authenticationProfiles.map((profile) => profile.id), ['auth-profile-002'])
       rmSync(packageDirectory, { recursive: true, force: true })
       const completed = await engine.runTask('task-auth-001')
       assert.equal(completed.tasks[0].state, 'completed')

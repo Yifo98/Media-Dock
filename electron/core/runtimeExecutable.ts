@@ -57,6 +57,28 @@ function calculateSha256(filePath: string) {
   return createHash('sha256').update(readFileSync(filePath)).digest('hex')
 }
 
+export function verifyRuntimeFileIntegrity(
+  filePath: string,
+  expected: Readonly<{ size?: number | null; sha256?: string | null }>,
+): void {
+  if (!existsSync(filePath)) throw new Error('The runtime download did not create a candidate file.')
+  const downloadedSize = statSync(filePath).size
+  if (downloadedSize === 0) throw new Error('The runtime download is empty.')
+  if (expected.size && downloadedSize !== expected.size) {
+    throw new Error(`Runtime size validation failed: expected ${expected.size} bytes but received ${downloadedSize}.`)
+  }
+  const expectedSha256 = normalizedSha256(expected.sha256)
+  if (expected.sha256 && !expectedSha256) {
+    throw new Error('The runtime release supplied an invalid SHA-256 digest.')
+  }
+  if (expectedSha256) {
+    const actualSha256 = calculateSha256(filePath)
+    if (actualSha256 !== expectedSha256) {
+      throw new Error(`Runtime SHA-256 validation failed: expected ${expectedSha256}, received ${actualSha256}.`)
+    }
+  }
+}
+
 export async function inspectRuntimeExecutable(
   executablePath: string | null,
   probeVersion: (executablePath: string) => Promise<string | null>,

@@ -43,7 +43,7 @@ function createMediaDockV3Api(ipcRenderer) {
     clearTaskHistory: () => ipcRenderer.invoke(MEDIA_DOCK_V3_CHANNELS.clearTaskHistory),
     revealDeliverable: (deliverableId) => ipcRenderer.invoke(MEDIA_DOCK_V3_CHANNELS.revealDeliverable, deliverableId),
     checkRuntimeUpdates: () => ipcRenderer.invoke(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates),
-    updateRuntimeTools: () => ipcRenderer.invoke(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools),
+    updateRuntimeTools: (input) => ipcRenderer.invoke(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, input),
     exportSupportDiagnostics: (input) => ipcRenderer.invoke(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, input),
     onWorkspaceChanged: (listener) => {
       const wrapped = (_event, snapshot) => listener(snapshot)

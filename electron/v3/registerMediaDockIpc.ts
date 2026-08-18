@@ -1,4 +1,8 @@
 import type { MediaTaskEngine, PlanTaskInput, TaskPlan } from './mediaTaskEngine.js'
+import {
+  normalizeRuntimeMirrorBaseUrl,
+  type RuntimeDownloadRequest,
+} from '../core/runtimeDownloadSource.js'
 
 export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   getWorkspace: 'media-dock:v3:get-workspace',
@@ -42,7 +46,7 @@ type MediaDockV3Pickers = Readonly<{
   openMediaCookiesResource(resource: 'chrome-store' | 'github'): Promise<void>
   revealDeliverable(deliverableId: string): Promise<void>
   checkRuntimeUpdates(): Promise<unknown>
-  updateRuntimeTools(): Promise<unknown>
+  updateRuntimeTools(input: RuntimeDownloadRequest): Promise<unknown>
   exportSupportDiagnostics(input: Readonly<{ language: 'zh-CN' | 'en'; recentError?: string }>): Promise<string | null>
 }>
 
@@ -70,6 +74,23 @@ function optionalString(value: unknown, label: string): string | undefined {
 function parseMediaCookiesResource(value: unknown): 'chrome-store' | 'github' {
   if (value === 'chrome-store' || value === 'github') return value
   throw new TypeError('MediaCookies resource is unsupported.')
+}
+
+function parseRuntimeDownloadRequest(value: unknown): RuntimeDownloadRequest {
+  const input = requireRecord(value, 'Runtime download request')
+  if (input.source === 'official') {
+    if (input.mirrorBaseUrl !== undefined) {
+      throw new TypeError('Official runtime downloads must not include a mirror URL.')
+    }
+    return Object.freeze({ source: 'official' })
+  }
+  if (input.source === 'mirror') {
+    return Object.freeze({
+      source: 'mirror',
+      mirrorBaseUrl: normalizeRuntimeMirrorBaseUrl(requireString(input.mirrorBaseUrl, 'Runtime mirror URL')),
+    })
+  }
+  throw new TypeError('Runtime download source must be official or mirror.')
 }
 
 function parseSupportDiagnosticsInput(value: unknown): Readonly<{ language: 'zh-CN' | 'en'; recentError?: string }> {
@@ -291,7 +312,7 @@ export function registerMediaDockV3Ipc(
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.clearTaskHistory, () => engine.clearTaskHistory())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.revealDeliverable, (_event, payload) => pickers.revealDeliverable(requireString(payload, 'Deliverable id')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates, () => pickers.checkRuntimeUpdates())
-  ipc.handle(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, () => pickers.updateRuntimeTools())
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, (_event, payload) => pickers.updateRuntimeTools(parseRuntimeDownloadRequest(payload)))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, (_event, payload) => pickers.exportSupportDiagnostics(parseSupportDiagnosticsInput(payload)))
 
   const unsubscribe = engine.subscribeWorkspace((snapshot) => {

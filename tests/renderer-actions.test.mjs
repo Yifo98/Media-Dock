@@ -129,7 +129,7 @@ test('3.0 reveals a completed deliverable from its Task Center row', () => {
   assertRendererAction('v3DeliverableReveal')
 })
 
-test('3.0 updates managed download runtimes from Settings instead of updating the product', () => {
+test('3.0 checks managed runtimes before offering official and mirror updates', () => {
   assertRendererAction('v3RuntimeCheck')
 })
 

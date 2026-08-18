@@ -131,7 +131,13 @@ export type RuntimeUpdateSnapshot = Readonly<{
   ytDlp: RuntimeToolUpdateInfo
   deno: RuntimeToolUpdateInfo
   restartRequired: boolean
+  defaultMirrorBaseUrl: string
 }>
+
+export type RuntimeDownloadRequest = Readonly<
+  { source: 'official' }
+  | { source: 'mirror'; mirrorBaseUrl: string }
+>
 
 export type MediaTaskSnapshot = Readonly<{
   id: string
@@ -216,7 +222,7 @@ export type MediaDockV3Api = Readonly<{
   clearTaskHistory(): Promise<WorkspaceSnapshot>
   revealDeliverable(deliverableId: string): Promise<void>
   checkRuntimeUpdates(): Promise<RuntimeUpdateSnapshot>
-  updateRuntimeTools(): Promise<RuntimeUpdateSnapshot>
+  updateRuntimeTools(input: RuntimeDownloadRequest): Promise<RuntimeUpdateSnapshot>
   exportSupportDiagnostics(input: Readonly<{ language: Language; recentError?: string }>): Promise<string | null>
   onWorkspaceChanged(listener: (snapshot: WorkspaceSnapshot) => void): () => void
 }>

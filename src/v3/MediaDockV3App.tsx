@@ -31,6 +31,7 @@ const EMPTY_WORKSPACE: WorkspaceSnapshot = Object.freeze({
 })
 
 const LANGUAGE_STORAGE_KEY = 'media-dock-v3-language'
+const RUNTIME_MIRROR_STORAGE_KEY = 'media-dock-v3-runtime-mirror'
 const MERGE_RECIPE_IDS = ['merge-fast', 'merge-compatible', 'merge-resolve'] as const
 
 function readStoredLanguage(): Language {
@@ -38,6 +39,14 @@ function readStoredLanguage(): Language {
     return window.localStorage.getItem(LANGUAGE_STORAGE_KEY) === 'en' ? 'en' : 'zh-CN'
   } catch {
     return 'zh-CN'
+  }
+}
+
+function readStoredRuntimeMirror(): string {
+  try {
+    return window.localStorage.getItem(RUNTIME_MIRROR_STORAGE_KEY)?.trim() ?? ''
+  } catch {
+    return ''
   }
 }
 
@@ -119,10 +128,13 @@ export default function MediaDockV3App() {
   const [expandedCollectionGroupIds, setExpandedCollectionGroupIds] = useState<ReadonlySet<string>>(() => new Set())
   const [busy, setBusy] = useState(false)
   const [authenticationImportResult, setAuthenticationImportResult] = useState<AuthenticationProfileSnapshot | null>(null)
+  const [authenticationWasReplaced, setAuthenticationWasReplaced] = useState(false)
   const [revealingDeliverableId, setRevealingDeliverableId] = useState<string | null>(null)
   const [revealedDeliverableId, setRevealedDeliverableId] = useState<string | null>(null)
   const [runtimeChecking, setRuntimeChecking] = useState(false)
+  const [runtimeUpdatingSource, setRuntimeUpdatingSource] = useState<'official' | 'mirror' | null>(null)
   const [runtimeUpdates, setRuntimeUpdates] = useState<RuntimeUpdateSnapshot | null>(null)
+  const [runtimeMirrorBaseUrl, setRuntimeMirrorBaseUrl] = useState(readStoredRuntimeMirror)
   const [runtimeRestartRequired, setRuntimeRestartRequired] = useState(false)
   const [supportLogExporting, setSupportLogExporting] = useState(false)
   const [supportLogExported, setSupportLogExported] = useState(false)
@@ -138,6 +150,11 @@ export default function MediaDockV3App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const copy = messages[language]
   const inspectionRunning = inspectionStartedAt !== null
+  const runtimeUpdateAvailable = Boolean(
+    runtimeUpdates?.ytDlp.updateAvailable
+    || runtimeUpdates?.ytDlp.repairRequired
+    || runtimeUpdates?.deno.updateAvailable,
+  )
 
   useEffect(() => {
     document.documentElement.dataset.product = 'v3'
@@ -459,6 +476,7 @@ export default function MediaDockV3App() {
   }
 
   async function importAuthenticationProfile() {
+    const replacingExistingProfile = workspace.authenticationProfiles.length > 0
     setBusy(true)
     setErrorMessage(null)
     try {
@@ -466,6 +484,7 @@ export default function MediaDockV3App() {
       if (snapshot) {
         setWorkspace(snapshot)
         setAuthenticationImportResult(snapshot.authenticationProfiles.at(-1) ?? null)
+        setAuthenticationWasReplaced(replacingExistingProfile)
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
@@ -590,13 +609,45 @@ export default function MediaDockV3App() {
     setRuntimeRestartRequired(false)
     setErrorMessage(null)
     try {
-      const result = await api.updateRuntimeTools()
+      const result = await api.checkRuntimeUpdates()
+      setRuntimeUpdates(result)
+      if (!runtimeMirrorBaseUrl.trim()) setRuntimeMirrorBaseUrl(result.defaultMirrorBaseUrl)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setRuntimeChecking(false)
+    }
+  }
+
+  function changeRuntimeMirrorBaseUrl(value: string) {
+    setRuntimeMirrorBaseUrl(value)
+    try {
+      window.localStorage.setItem(RUNTIME_MIRROR_STORAGE_KEY, value)
+    } catch {
+      // A custom mirror remains usable for this session when storage is unavailable.
+    }
+  }
+
+  async function updateRuntimeTools(source: 'official' | 'mirror') {
+    if (!runtimeUpdates || !runtimeUpdateAvailable) return
+    setRuntimeUpdatingSource(source)
+    setRuntimeRestartRequired(false)
+    setErrorMessage(null)
+    try {
+      const result = await api.updateRuntimeTools(
+        source === 'official'
+          ? { source: 'official' }
+          : {
+              source: 'mirror',
+              mirrorBaseUrl: runtimeMirrorBaseUrl.trim() || runtimeUpdates.defaultMirrorBaseUrl,
+            },
+      )
       setRuntimeUpdates(result)
       setRuntimeRestartRequired(result.restartRequired)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : String(error))
     } finally {
-      setRuntimeChecking(false)
+      setRuntimeUpdatingSource(null)
     }
   }
 
@@ -1172,12 +1223,39 @@ export default function MediaDockV3App() {
         <div className="md3-system-list">
           <article><span>01</span><div><strong>{copy.engine}</strong><small>{copy.engineValue}</small></div><b>{copy.revision} {workspace.revision}</b></article>
           <article><span>02</span><div><strong>{copy.dataBoundary}</strong><small>{copy.dataBoundaryValue}</small></div><b>{copy.localBadge.toUpperCase()}</b></article>
-          <article><span>03</span><div><strong>{copy.runtime}</strong><small>{copy.runtimeValue}</small>{runtimeUpdates && <div className="md3-runtime-results"><span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled}{runtimeUpdates.ytDlp.latestVersion && runtimeUpdates.ytDlp.latestVersion !== runtimeUpdates.ytDlp.currentVersion ? ` → ${runtimeUpdates.ytDlp.latestVersion}` : ''}</span><span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span>{runtimeRestartRequired && <b role="status">{copy.runtimeRestartRequired}</b>}</div>}</div><button className="md3-system-action" disabled={runtimeChecking} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.updatingRuntimeTools : copy.checkAndUpdateRuntimeTools}</button></article>
+          <article className="md3-runtime-maintenance">
+            <span>03</span>
+            <div>
+              <strong>{copy.runtime}</strong>
+              <small>{copy.runtimeValue}</small>
+              {runtimeUpdates && (
+                <div className="md3-runtime-results">
+                  <span>yt-dlp {runtimeUpdates.ytDlp.currentVersion ?? copy.notInstalled}{runtimeUpdates.ytDlp.latestVersion && runtimeUpdates.ytDlp.latestVersion !== runtimeUpdates.ytDlp.currentVersion ? ` → ${runtimeUpdates.ytDlp.latestVersion}` : ''}</span>
+                  <span>Deno {runtimeUpdates.deno.currentVersion ?? copy.notInstalled}{runtimeUpdates.deno.latestVersion && runtimeUpdates.deno.latestVersion !== runtimeUpdates.deno.currentVersion ? ` → ${runtimeUpdates.deno.latestVersion}` : ''}</span>
+                  <b role="status">{runtimeRestartRequired ? copy.runtimeRestartRequired : runtimeUpdateAvailable ? copy.runtimeUpdateAvailable : copy.runtimeUpToDate}</b>
+                </div>
+              )}
+            </div>
+            <div className="md3-runtime-actions">
+              <button className="md3-system-action" disabled={runtimeChecking || runtimeUpdatingSource !== null} onClick={() => void checkRuntimeUpdates()}>{runtimeChecking ? copy.checkingRuntimeTools : runtimeUpdates ? copy.recheckRuntimeTools : copy.checkRuntimeTools}</button>
+              {runtimeUpdates && runtimeUpdateAvailable && (
+                <>
+                  <button className="md3-system-action is-primary" disabled={runtimeUpdatingSource !== null} onClick={() => void updateRuntimeTools('official')}>{runtimeUpdatingSource === 'official' ? copy.updatingOfficialRuntimeTools : copy.updateFromOfficial}</button>
+                  <button className="md3-system-action" disabled={runtimeUpdatingSource !== null || !runtimeMirrorBaseUrl.trim()} onClick={() => void updateRuntimeTools('mirror')}>{runtimeUpdatingSource === 'mirror' ? copy.updatingMirrorRuntimeTools : copy.updateFromMirror}</button>
+                  <label className="md3-runtime-mirror-field">
+                    <span>{copy.runtimeMirrorLabel}</span>
+                    <input type="url" value={runtimeMirrorBaseUrl} placeholder={runtimeUpdates.defaultMirrorBaseUrl} onChange={(event) => changeRuntimeMirrorBaseUrl(event.target.value)} spellCheck={false} />
+                  </label>
+                  <small className="md3-runtime-source-hint">{copy.runtimeSourceHint}</small>
+                </>
+              )}
+            </div>
+          </article>
           <article id="md3-authentication-settings" className="md3-authentication-guide"><span>04</span><div><strong>{copy.authentication}</strong><small>{copy.authenticationValue}</small><ol>{copy.mediaCookiesSteps.map((step) => <li key={step}>{step}</li>)}</ol><div className="md3-authentication-links"><button type="button" onClick={() => void openMediaCookiesPage('chrome-store')}>{copy.openChromeStore}</button><button type="button" onClick={() => void openMediaCookiesPage('github')}>{copy.openMediaCookiesGitHub}</button></div></div><div className="md3-authentication-actions"><button className="md3-system-action" disabled={busy} onClick={() => void importAuthenticationProfile()}>{workspace.authenticationProfiles.length > 0 ? copy.updateAuthentication : copy.importAuthentication}</button><button className="md3-system-action" onClick={() => void openAuthenticationProfilesDirectory()}>{copy.openAuthenticationFolder}</button></div></article>
           <article className="md3-support-diagnostics"><span>05</span><div><strong>{copy.supportDiagnostics}</strong><small>{copy.supportDiagnosticsValue}</small><div className="md3-diagnostics-disclosure"><span>{copy.supportDiagnosticsIncludes}</span><span>{copy.supportDiagnosticsExcludes}</span>{supportLogExported && <b role="status">{copy.supportDiagnosticsExported}</b>}</div></div><button className="md3-system-action" disabled={supportLogExporting} onClick={() => void exportSupportDiagnostics()}>{supportLogExporting ? copy.exportingSupportDiagnostics : copy.exportSupportDiagnostics}</button></article>
           <article className="md3-qidu-about"><span>06</span><div><strong>{copy.aboutTitle}</strong><small>{copy.aboutValue}</small><div className="md3-qidu-motto"><b>{copy.brandMotto}</b><span>{copy.brandMottoSecondary}</span></div></div><em>{copy.brandSignature}</em></article>
         </div>
-        {authenticationImportResult && <section className="md3-authentication-success" role="status"><i aria-hidden="true">✓</i><div><strong>{copy.authenticationImportSuccess}</strong><span>{authenticationImportResult.displayName}</span><b>{copy.authenticationSummary(authenticationImportResult.services.length, authenticationImportResult.cookieCount)}</b><small>{authenticationImportResult.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</small></div><button type="button" onClick={returnToWorkbench}>{copy.returnToWorkbench}<span aria-hidden="true">→</span></button></section>}
+        {authenticationImportResult && <section className="md3-authentication-success" role="status"><i aria-hidden="true">✓</i><div><strong>{authenticationWasReplaced ? copy.authenticationUpdateSuccess : copy.authenticationImportSuccess}</strong><span>{authenticationImportResult.displayName}</span><b>{copy.authenticationSummary(authenticationImportResult.services.length, authenticationImportResult.cookieCount)}</b><small>{authenticationImportResult.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</small></div><button type="button" onClick={returnToWorkbench}>{copy.returnToWorkbench}<span aria-hidden="true">→</span></button></section>}
         {workspace.authenticationProfiles.length === 0
           ? <p className="md3-empty-line">{copy.noAuthentication}</p>
           : <div className="md3-profile-list">{workspace.authenticationProfiles.map((profile, index) => <article key={profile.id}><i /><div><strong>{profile.displayName}</strong><small>{copy.authenticationSummary(profile.services.length, profile.cookieCount)}</small><em>{profile.serviceCookieCounts.map((entry) => copy.authenticationServiceSummary(entry.service, entry.cookieCount)).join(' · ')}</em></div><b>{index === workspace.authenticationProfiles.length - 1 ? copy.latestAuthenticationProfile : copy.availableAuthenticationProfile}</b></article>)}</div>}

@@ -248,7 +248,7 @@ const mediaDockApi = {
     v3Workspace = {
       ...v3Workspace,
       revision: v3Workspace.revision + 1,
-      authenticationProfiles: [...v3Workspace.authenticationProfiles, {
+      authenticationProfiles: [{
         id: 'auth-profile-fixture',
         displayName: 'My MediaCookies',
         services: ['bilibili-b-site', 'douyin', 'tiktok', 'youtube'],
@@ -441,12 +441,19 @@ const mediaDockApi = {
     ytDlp: { tool: 'yt-dlp', currentVersion: '2026.07.04', latestVersion: action === 'v3RuntimeCheck' ? '2026.08.01' : '2026.07.04', updateAvailable: action === 'v3RuntimeCheck', repairRequired: false, releaseUrl: null, detail: 'yt-dlp' },
     deno: { tool: 'deno', currentVersion: '2.9.2', latestVersion: action === 'v3RuntimeCheck' ? '2.9.5' : '2.9.2', updateAvailable: action === 'v3RuntimeCheck', repairRequired: false, releaseUrl: null, detail: 'deno' },
     restartRequired: false,
+    defaultMirrorBaseUrl: 'https://gh-proxy.com/',
   }),
-  updateRuntimeTools: async () => ({
-    ytDlp: { tool: 'yt-dlp', currentVersion: '2026.08.01', latestVersion: '2026.08.01', updateAvailable: false, repairRequired: false, releaseUrl: null, detail: 'yt-dlp' },
-    deno: { tool: 'deno', currentVersion: '2.9.5', latestVersion: '2.9.5', updateAvailable: false, repairRequired: false, releaseUrl: null, detail: 'deno' },
-    restartRequired: true,
-  }),
+  updateRuntimeTools: async (input) => {
+    if (action === 'v3RuntimeCheck' && (input?.source !== 'mirror' || input.mirrorBaseUrl !== 'https://mirror.example/ghproxy/')) {
+      throw new Error('Renderer did not pass the selected custom runtime mirror')
+    }
+    return {
+      ytDlp: { tool: 'yt-dlp', currentVersion: '2026.08.01', latestVersion: '2026.08.01', updateAvailable: false, repairRequired: false, releaseUrl: null, detail: 'yt-dlp' },
+      deno: { tool: 'deno', currentVersion: '2.9.5', latestVersion: '2.9.5', updateAvailable: false, repairRequired: false, releaseUrl: null, detail: 'deno' },
+      restartRequired: true,
+      defaultMirrorBaseUrl: 'https://gh-proxy.com/',
+    }
+  },
   createTask: async (plan) => {
     if (action === 'v3PreflightMismatch') throw new Error('Cookie preflight was bypassed and an invalid task reached the queue')
     if (action === 'v3QualitySelection' && v3QualityInspectionCalls < 2) throw new Error('Selected quality was not checked again before queue creation')

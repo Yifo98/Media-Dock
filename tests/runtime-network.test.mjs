@@ -33,6 +33,30 @@ test('runtime metadata errors preserve the stage, host, and network cause', asyn
   )
 })
 
+test('runtime metadata requests forward explicit GitHub API headers', async () => {
+  let capturedInit = null
+  const result = await fetchRuntimeJson({
+    fetchImpl: async (_url, init) => {
+      capturedInit = init
+      return Response.json({ tag_name: '2026.07.04' })
+    },
+    url: 'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest',
+    label: 'yt-dlp metadata request',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'Media-Dock/3.0.1',
+    },
+  })
+
+  assert.deepEqual(result, { tag_name: '2026.07.04' })
+  assert.deepEqual(capturedInit, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'Media-Dock/3.0.1',
+    },
+  })
+})
+
 test('failed runtime downloads remove partial files and identify the asset host', async () => {
   const sandbox = createSandbox()
   try {

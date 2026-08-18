@@ -47,7 +47,7 @@ function createMediaDockV3Api(renderer) {
     clearTaskHistory: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.clearTaskHistory),
     revealDeliverable: (deliverableId) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.revealDeliverable, deliverableId),
     checkRuntimeUpdates: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.checkRuntimeUpdates),
-    updateRuntimeTools: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools),
+    updateRuntimeTools: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.updateRuntimeTools, input),
     exportSupportDiagnostics: (input) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.exportSupportDiagnostics, input),
     onWorkspaceChanged: (listener) => {
       const wrapped = (_event, snapshot) => listener(snapshot)
