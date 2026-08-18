@@ -44,7 +44,7 @@ test('runtime metadata requests forward explicit GitHub API headers', async () =
     label: 'yt-dlp metadata request',
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'Media-Dock/3.0.1',
+      'User-Agent': 'Media-Dock/3.0.2',
     },
   })
 
@@ -52,7 +52,7 @@ test('runtime metadata requests forward explicit GitHub API headers', async () =
   assert.deepEqual(capturedInit, {
     headers: {
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'Media-Dock/3.0.1',
+      'User-Agent': 'Media-Dock/3.0.2',
     },
   })
 })

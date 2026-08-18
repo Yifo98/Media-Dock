@@ -1,6 +1,6 @@
 # Media Dock release guide
 
-Media Dock 2.1.2 remains the stable line. Media Dock 3 candidates are opt-in previews until the platform-native gates and signing requirements below pass.
+Media Dock 3 is the current stable product line. Product-version maturity and platform-package trust are reported separately: a stable source release may carry explicitly labeled unsigned preview assets until the platform signing requirements below pass.
 
 ## Package shape
 
