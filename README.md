@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/Yifo98/Media-Dock/releases/latest"><img alt="Stable release" src="https://img.shields.io/github/v/release/Yifo98/Media-Dock?display_name=tag&label=stable&sort=semver"></a>
-  <a href="https://github.com/Yifo98/Media-Dock/releases/tag/v3.0.0"><img alt="Media Dock 3" src="https://img.shields.io/badge/Media%20Dock-3.0.0-c7b9f3"></a>
+  <a href="https://github.com/Yifo98/Media-Dock/releases/tag/v3.0.1"><img alt="Media Dock 3" src="https://img.shields.io/badge/Media%20Dock-3.0.1-c7b9f3"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-73cbd7">
   <img alt="Local first" src="https://img.shields.io/badge/privacy-local--first-24313b">
 </p>
@@ -15,7 +15,7 @@ Media Dock · 泊是器度 QIDU 旗下的本地优先媒体获取、音画合并
 
 | 版本线 | 状态 | 适合谁 |
 | --- | --- | --- |
-| 3.0.0 | 正式源码版本 | 使用全新工作台、任务模型与 3.0 数据边界的用户 |
+| 3.0.1 | 正式源码版本 | 使用全新工作台、任务模型、应用内升级与 3.0 数据边界的用户 |
 | [2.1.2](https://github.com/Yifo98/Media-Dock/releases/tag/v2.1.2) | 旧版维护线 | 需要旧界面和旧数据布局的用户 |
 
 Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2.1.2 数据。当前公开便携包尚未接入商业代码签名，仍会明确标记为未签名预览；Windows Smart App Control 或 macOS Gatekeeper 可能在应用启动前拦截它。BAT 不能替代 Windows 代码签名：即使批处理文件本身能够打开，它启动的 Electron、yt-dlp、Deno、FFmpeg 和 DLL 仍会被系统策略逐项检查。
@@ -50,7 +50,7 @@ Media Dock 3 使用独立的 `Media Dock Data/v3/` 数据边界，不会改写 2
 
 前往 [GitHub Releases](https://github.com/Yifo98/Media-Dock/releases)：
 
-- 下载 **3.0.0** 对应平台资产并完整解压。
+- 下载 **3.0.1** 对应平台资产并完整解压。
 - Windows 只保留一个入口：`Media Dock.exe`。
 - macOS 只保留一个入口：`Launch Media Dock.command`；应用运行组件收纳在 `core/Media Dock.app`。
 
@@ -117,7 +117,7 @@ Media Dock · 泊 is a QIDU local-first desktop workspace for acquiring public m
 
 | Channel | Status | Audience |
 | --- | --- | --- |
-| 3.0.0 | Stable source release | Users adopting the new workspace, task model, and isolated 3.0 data boundary |
+| 3.0.1 | Stable source release | Users adopting the new workspace, in-app updates, task model, and isolated 3.0 data boundary |
 | [2.1.2](https://github.com/Yifo98/Media-Dock/releases/tag/v2.1.2) | Legacy maintenance line | Users who still need the previous UI and data layout |
 
 Media Dock 3 owns the isolated `Media Dock Data/v3/` namespace and never rewrites 2.1.2 data. Current portable binaries are still explicitly labeled unsigned previews because the repository has no platform signing credentials; Smart App Control or Gatekeeper may block them before launch. A BAT file cannot replace Windows code signing: Electron, yt-dlp, Deno, FFmpeg, and their DLLs are still evaluated when launched through a batch wrapper.
@@ -137,7 +137,7 @@ Watch the [16-second bilingual feature demo](docs/showcase/3.0.0/Media-Dock-3.0.
 
 ### Install
 
-Download the 3.0.0 asset for your platform from [GitHub Releases](https://github.com/Yifo98/Media-Dock/releases) and extract the complete ZIP.
+Download the 3.0.1 asset for your platform from [GitHub Releases](https://github.com/Yifo98/Media-Dock/releases) and extract the complete ZIP.
 
 - Windows: run the single root entry, `Media Dock.exe`.
 - macOS: run the single root entry, `Launch Media Dock.command`; the internal app runtime remains under `core/Media Dock.app`.
