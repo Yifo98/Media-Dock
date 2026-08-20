@@ -139,6 +139,13 @@ export type RuntimeDownloadRequest = Readonly<
   | { source: 'mirror'; mirrorBaseUrl: string }
 >
 
+export type AcquisitionSnapshot = Readonly<{
+  attemptCount: number
+  connection: 'standard' | 'youtube-embedded'
+  trigger: 'youtube-http-403' | 'network-tls-interrupted' | 'network-failure'
+  stagingCleanup: 'completed' | 'incomplete'
+}>
+
 export type MediaTaskSnapshot = Readonly<{
   id: string
   state: 'queued' | 'running' | 'needs-attention' | 'completed' | 'cancelled'
@@ -147,6 +154,7 @@ export type MediaTaskSnapshot = Readonly<{
   updatedAt: string
   plan: TaskPlan
   problem: ProblemSnapshot | null
+  acquisition?: AcquisitionSnapshot
   progress?: Readonly<{
     mediaKind: 'video' | 'audio' | 'media'
     percent: number

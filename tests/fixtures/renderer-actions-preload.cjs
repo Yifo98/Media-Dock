@@ -181,7 +181,28 @@ let v3Workspace = {
   taskBatches: action === 'v3CollectionFlow'
     ? [{ id: 'batch-z-existing', schedulingProfile: 'safe', createdAt: '2026-07-13T07:00:00.000Z', taskIds: [] }]
     : [],
-  tasks: action === 'v3TaskScrolling' ? scrollingTasks : action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' ? [{
+  tasks: action === 'v3TaskScrolling' ? scrollingTasks : action === 'v3TlsNetworkProblem' || action === 'v3YoutubeBlockedProblem' ? [{
+    id: 'task-tls-interrupted', state: 'needs-attention', stage: 'acquiring', createdAt: '2026-08-20T01:20:00.000Z', updatedAt: '2026-08-20T01:23:00.000Z',
+    problem: {
+      code: action === 'v3YoutubeBlockedProblem' ? 'youtube.connectivity.blocked' : 'network.tls-interrupted',
+      category: 'network',
+      stage: 'acquiring',
+      titleKey: action === 'v3YoutubeBlockedProblem' ? 'problem.youtubeConnectivityBlocked.title' : 'problem.networkTlsInterrupted.title',
+      summaryKey: action === 'v3YoutubeBlockedProblem' ? 'problem.youtubeConnectivityBlocked.summary' : 'problem.networkTlsInterrupted.summary',
+      actions: [{ id: 'retry-task', kind: 'retry-task' }],
+    },
+    acquisition: action === 'v3YoutubeBlockedProblem'
+      ? { attemptCount: 2, connection: 'youtube-embedded', trigger: 'youtube-http-403', stagingCleanup: 'completed' }
+      : { attemptCount: 1, connection: 'standard', trigger: 'network-tls-interrupted', stagingCleanup: 'completed' },
+    plan: {
+      planVersion: 1,
+      source: { kind: 'network-url', locator: 'https://www.youtube.com/watch?v=tls-fixture', displayName: 'TLS fixture', mediaKind: 'video', durationSeconds: 30, formatName: 'webm', sourceId: 'tls-fixture', serviceName: 'Youtube' },
+      recipe: { id: 'network-video', deliverableKind: 'video', extension: 'mp4' },
+      outputDirectory: 'I:\\成品', deliveryName: 'TLS fixture - 视频.mp4',
+      steps: [{ id: 'verify-input', stage: 'preparing' }, { id: 'acquire-network', stage: 'acquiring', runtime: 'yt-dlp' }, { id: 'deliver', stage: 'delivering' }],
+      runtimeVersions: { ffmpeg: 'fixture', ytDlp: '2026.07.04', deno: '2.9.5' }, videoQuality: { mode: 'best' },
+    },
+  }] : action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' ? [{
     id: 'task-expired-cookie', state: 'needs-attention', stage: 'acquiring', createdAt: '2026-08-18T10:00:00.000Z', updatedAt: '2026-08-18T10:01:00.000Z',
     problem: {
       code: 'authentication.cookies-expired',
@@ -201,7 +222,10 @@ let v3Workspace = {
     },
   }] : action === 'v3TaskVisibility' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? [{
     id: 'task-visible', state: action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? 'completed' : 'running', stage: action === 'v3ClearHistory' || action === 'v3DeliverableReveal' ? 'delivering' : 'acquiring', createdAt: '2026-07-13T10:00:00.000Z', updatedAt: '2026-07-13T10:01:00.000Z', problem: null,
-    ...(action === 'v3TaskVisibility' ? { progress: { mediaKind: 'video', percent: 42.5, downloaded: '34.0MiB', total: '80.0MiB', speed: '4.2MiB/s', eta: '00:11' } } : {}),
+    ...(action === 'v3TaskVisibility' ? {
+      progress: { mediaKind: 'video', percent: 42.5, downloaded: '34.0MiB', total: '80.0MiB', speed: '4.2MiB/s', eta: '00:11' },
+      acquisition: { attemptCount: 2, connection: 'youtube-embedded', trigger: 'youtube-http-403', stagingCleanup: 'completed' },
+    } : {}),
     plan: {
       planVersion: 1,
       source: { kind: 'network-url', locator: 'https://media.example/watch?v=42', displayName: '山海 Episode 42', mediaKind: 'video', durationSeconds: 42, formatName: 'webm', sourceId: '42', serviceName: 'FixtureTV' },
@@ -295,6 +319,18 @@ const mediaDockApi = {
           actions: [{ id: 'choose-source', kind: 'choose-source' }],
         },
       }
+    : action === 'v3NetworkInspectionProblem'
+      ? {
+          status: 'needs-attention',
+          problem: {
+            code: 'source.network.inspect-failed',
+            category: 'source',
+            stage: 'preparing',
+            titleKey: 'problem.networkInspectionFailed.title',
+            summaryKey: 'problem.networkInspectionFailed.summary',
+            actions: [{ id: 'choose-source', kind: 'choose-source' }],
+          },
+        }
     : action === 'v3MergeFlow'
       ? input.path.includes('video')
         ? {

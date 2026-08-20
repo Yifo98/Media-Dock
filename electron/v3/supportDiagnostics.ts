@@ -69,6 +69,12 @@ export function buildSanitizedTaskDiagnostics(input: TaskDiagnosticsInput) {
     `authentication used: ${task.plan.authenticationProfileId ? 'yes' : 'no'}`,
     `pinned runtimes: FFmpeg=${task.plan.runtimeVersions.ffmpeg}; yt-dlp=${task.plan.runtimeVersions.ytDlp ?? 'not used'}; Deno=${task.plan.runtimeVersions.deno ?? 'not used'}`,
     `problem: ${task.problem ? `${task.problem.code}; category=${task.problem.category}; stage=${task.problem.stage}` : 'none'}`,
+    ...(task.acquisition ? [
+      `acquisition attempts: ${task.acquisition.attemptCount}`,
+      `compatibility connection: ${task.acquisition.connection}`,
+      `compatibility trigger: ${task.acquisition.trigger}`,
+      `managed staging cleanup: ${task.acquisition.stagingCleanup}`,
+    ] : []),
     ...(task.progress ? [
       `last progress: kind=${task.progress.mediaKind}; percent=${task.progress.percent}; downloaded=${task.progress.downloaded}; total=${task.progress.total}; speed=${task.progress.speed}; eta=${task.progress.eta}`,
     ] : []),
@@ -127,6 +133,9 @@ export function buildSanitizedSupportDiagnostics(input: SupportDiagnosticsInput)
       `  quality: ${task.plan.videoQuality?.mode === 'max-height' ? `${task.plan.videoQuality.height}p ceiling` : task.plan.videoQuality?.mode ?? 'not recorded'}`,
       `  runtimes: FFmpeg=${task.plan.runtimeVersions.ffmpeg}; yt-dlp=${task.plan.runtimeVersions.ytDlp ?? 'not used'}; Deno=${task.plan.runtimeVersions.deno ?? 'not used'}`,
       `  problem: ${task.problem ? `${task.problem.code}; category=${task.problem.category}; stage=${task.problem.stage}` : 'none'}`,
+      ...(task.acquisition ? [
+        `  acquisition: attempts=${task.acquisition.attemptCount}; connection=${task.acquisition.connection}; trigger=${task.acquisition.trigger}; staging-cleanup=${task.acquisition.stagingCleanup}`,
+      ] : []),
     )
   })
   lines.push('', '[Most recent UI error]')

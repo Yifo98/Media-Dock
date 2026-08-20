@@ -96,6 +96,12 @@ test('one-task diagnostics retain actionable process evidence without leaking th
       videoQuality: { mode: 'max-height', height: 2160 },
     },
     problem: { code: 'network.acquisition.failed', category: 'media-processing', stage: 'acquiring', titleKey: 'private-title-key', summaryKey: 'private-summary-key', actions: [] },
+    acquisition: {
+      attemptCount: 2,
+      connection: 'youtube-embedded',
+      trigger: 'youtube-http-403',
+      stagingCleanup: 'completed',
+    },
   }
   const report = buildSanitizedTaskDiagnostics({
     generatedAt: '2026-08-18T08:00:00.000Z',
@@ -117,6 +123,10 @@ test('one-task diagnostics retain actionable process evidence without leaking th
   assert.match(report, /network\.acquisition\.failed/)
   assert.match(report, /HTTP Error 403/)
   assert.match(report, /yt-dlp=2026\.08\.18/)
+  assert.match(report, /acquisition attempts: 2/)
+  assert.match(report, /compatibility connection: youtube-embedded/)
+  assert.match(report, /compatibility trigger: youtube-http-403/)
+  assert.match(report, /managed staging cleanup: completed/)
   for (const secret of ['XiaoFu', 'Private YouTube title', 'private-video', 'plan-secret', 'url-secret', 'cookie-secret', 'auth-private-id', '?v=']) {
     assert.doesNotMatch(report, new RegExp(secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
   }

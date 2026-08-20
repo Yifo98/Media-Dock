@@ -138,7 +138,7 @@ export type ProblemAction = Readonly<{
 
 export type ProblemSnapshot = Readonly<{
   code: string
-  category: 'source' | 'authentication' | 'media-processing'
+  category: 'source' | 'authentication' | 'network' | 'media-processing'
   stage: 'preparing' | 'acquiring' | 'processing' | 'delivering'
   titleKey: string
   summaryKey: string
@@ -195,6 +195,13 @@ export type MediaTaskProgress = Readonly<{
   eta: string
 }>
 
+export type AcquisitionSnapshot = Readonly<{
+  attemptCount: number
+  connection: 'standard' | 'youtube-embedded'
+  trigger: 'youtube-http-403' | 'network-tls-interrupted' | 'network-failure'
+  stagingCleanup: 'completed' | 'incomplete'
+}>
+
 export type MediaTaskSnapshot = Readonly<{
   id: string
   state: 'queued' | 'running' | 'needs-attention' | 'completed' | 'cancelled'
@@ -204,6 +211,7 @@ export type MediaTaskSnapshot = Readonly<{
   plan: TaskPlan
   problem: ProblemSnapshot | null
   progress?: MediaTaskProgress
+  acquisition?: AcquisitionSnapshot
 }>
 
 export type TaskDiagnosticEvidence = Readonly<{
@@ -286,6 +294,7 @@ type MediaTaskRow = Readonly<{
   updated_at: string
   plan_json: string
   problem_json: string | null
+  acquisition_json: string | null
 }>
 
 type TaskDiagnosticRow = Readonly<{
@@ -344,7 +353,7 @@ function readTasks(
   taskProgresses: ReadonlyMap<string, MediaTaskProgress> = new Map(),
 ): readonly MediaTaskSnapshot[] {
   const rows = database.prepare(`
-    SELECT id, state, stage, created_at, updated_at, plan_json, problem_json
+    SELECT id, state, stage, created_at, updated_at, plan_json, problem_json, acquisition_json
     FROM media_tasks
     ORDER BY created_at ASC, id ASC
   `).all() as MediaTaskRow[]
@@ -358,6 +367,9 @@ function readTasks(
     plan: freezeTaskPlan(JSON.parse(row.plan_json) as TaskPlan),
     problem: row.problem_json ? Object.freeze(JSON.parse(row.problem_json) as ProblemSnapshot) : null,
     ...(taskProgresses.get(row.id) ? { progress: taskProgresses.get(row.id) } : {}),
+    ...(row.acquisition_json
+      ? { acquisition: Object.freeze(JSON.parse(row.acquisition_json) as AcquisitionSnapshot) }
+      : {}),
   })))
 }
 
@@ -533,6 +545,31 @@ function updateTaskExecutionState(
   }
 }
 
+function updateTaskAcquisitionSnapshot(
+  database: DatabaseSync,
+  taskId: string,
+  acquisition: AcquisitionSnapshot,
+): void {
+  database.exec('BEGIN IMMEDIATE')
+  try {
+    const result = database.prepare(`
+      UPDATE media_tasks
+      SET acquisition_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify(acquisition), taskId)
+    if (result.changes !== 1) throw new Error(`Media Task does not exist: ${taskId}`)
+    database.prepare(`
+      UPDATE workspace_metadata
+      SET revision = revision + 1
+      WHERE singleton = 1
+    `).run()
+    database.exec('COMMIT')
+  } catch (error) {
+    database.exec('ROLLBACK')
+    throw error
+  }
+}
+
 function interruptedTaskProblem(stage: NonNullable<MediaTaskSnapshot['stage']>): ProblemSnapshot {
   return Object.freeze({
     code: 'task.interrupted',
@@ -577,8 +614,29 @@ function hasYoutubeForbiddenAcquisitionEvidence(error: unknown): boolean {
   return /\bHTTP Error 403\b|\bHTTP 403\b|\b403 Forbidden\b/iu.test(message)
 }
 
-function taskExecutionProblem(task: MediaTaskSnapshot, error: unknown): ProblemSnapshot {
+function hasTlsInterruptionEvidence(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /\bEOF occurred in violation of protocol\b|\bTLS(?:v\d(?:\.\d)?)?\s+(?:connection|handshake).*(?:closed|failed|interrupted|terminated)|\bSSL(?:ZeroReturnError|SyscallError)\b/iu.test(message)
+}
+
+function taskExecutionProblem(
+  task: MediaTaskSnapshot,
+  error: unknown,
+  acquisition: AcquisitionSnapshot | null = null,
+): ProblemSnapshot {
   const isNetworkTask = task.plan.source.kind === 'network-url'
+  if (isNetworkTask && hasTlsInterruptionEvidence(error)) {
+    return Object.freeze({
+      code: 'network.tls-interrupted',
+      category: 'network',
+      stage: 'acquiring',
+      titleKey: 'problem.networkTlsInterrupted.title',
+      summaryKey: 'problem.networkTlsInterrupted.summary',
+      actions: Object.freeze([
+        Object.freeze({ id: 'retry-task', kind: 'retry-task' }),
+      ]),
+    })
+  }
   if (isNetworkTask && task.plan.authenticationProfileId && hasExplicitExpiredCookieEvidence(error)) {
     return Object.freeze({
       code: 'authentication.cookies-expired',
@@ -588,6 +646,21 @@ function taskExecutionProblem(task: MediaTaskSnapshot, error: unknown): ProblemS
       summaryKey: 'problem.authenticationCookiesExpired.summary',
       actions: Object.freeze([
         Object.freeze({ id: 'update-authentication', kind: 'update-authentication' }),
+      ]),
+    })
+  }
+  if (isNetworkTask
+    && isYoutubeService(task.plan.source.serviceName)
+    && acquisition?.connection === 'youtube-embedded'
+    && hasYoutubeForbiddenAcquisitionEvidence(error)) {
+    return Object.freeze({
+      code: 'youtube.connectivity.blocked',
+      category: 'network',
+      stage: 'acquiring',
+      titleKey: 'problem.youtubeConnectivityBlocked.title',
+      summaryKey: 'problem.youtubeConnectivityBlocked.summary',
+      actions: Object.freeze([
+        Object.freeze({ id: 'retry-task', kind: 'retry-task' }),
       ]),
     })
   }
@@ -606,7 +679,7 @@ function taskExecutionProblem(task: MediaTaskSnapshot, error: unknown): ProblemS
 
 function recoverAbandonedTasks(database: DatabaseSync, getRecoveredAt: () => string): void {
   const abandoned = database.prepare(`
-    SELECT id, state, stage, created_at, updated_at, plan_json, problem_json
+    SELECT id, state, stage, created_at, updated_at, plan_json, problem_json, acquisition_json
     FROM media_tasks
     WHERE state = 'running'
     ORDER BY created_at ASC, id ASC
@@ -766,7 +839,8 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       plan_json TEXT NOT NULL,
-      problem_json TEXT
+      problem_json TEXT,
+      acquisition_json TEXT
     ) STRICT;
 
     CREATE TABLE IF NOT EXISTS task_diagnostics (
@@ -805,6 +879,10 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       PRIMARY KEY (batch_id, position)
     ) STRICT;
   `)
+  const mediaTaskColumns = database.prepare('PRAGMA table_info(media_tasks)').all() as { name: string }[]
+  if (!mediaTaskColumns.some((column) => column.name === 'acquisition_json')) {
+    database.exec('ALTER TABLE media_tasks ADD COLUMN acquisition_json TEXT')
+  }
   const authenticationColumns = database.prepare('PRAGMA table_info(authentication_profiles)').all() as { name: string }[]
   if (!authenticationColumns.some((column) => column.name === 'cookie_counts_json')) {
     database.exec("ALTER TABLE authentication_profiles ADD COLUMN cookie_counts_json TEXT NOT NULL DEFAULT '{}'")
@@ -1392,6 +1470,7 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
       const taskStagingDirectory = path.join(stagingRoot, taskId)
       const stagedDeliveryPath = path.join(taskStagingDirectory, task.plan.deliveryName)
       const finalDeliveryPath = path.join(task.plan.outputDirectory, task.plan.deliveryName)
+      let acquisitionSnapshot: AcquisitionSnapshot | null = null
 
       try {
         await assertWritableOutputDirectory(task.plan.outputDirectory)
@@ -1485,6 +1564,13 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
             taskProgressPublishedAt.delete(taskId)
             await rm(taskStagingDirectory, { recursive: true, force: true })
             await mkdir(taskStagingDirectory, { recursive: true })
+            acquisitionSnapshot = Object.freeze({
+              attemptCount: 2,
+              connection: 'youtube-embedded',
+              trigger: 'youtube-http-403',
+              stagingCleanup: 'completed',
+            })
+            updateTaskAcquisitionSnapshot(database, taskId, acquisitionSnapshot)
             publishWorkspace()
             await runNetworkAcquisition([
               '--extractor-args',
@@ -1586,11 +1672,35 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
         if (isShuttingDown || isClosed) {
           throw error
         }
-        const problem = taskExecutionProblem(task, error)
+        let stagingCleanupCompleted = true
+        try {
+          await rm(taskStagingDirectory, { recursive: true, force: true })
+          await rmdir(stagingRoot).catch(() => undefined)
+        } catch {
+          stagingCleanupCompleted = false
+        }
+        if (task.plan.source.kind === 'network-url') {
+          acquisitionSnapshot = acquisitionSnapshot
+            ? Object.freeze({
+                ...acquisitionSnapshot,
+                stagingCleanup: stagingCleanupCompleted ? 'completed' : 'incomplete',
+              })
+            : Object.freeze({
+                attemptCount: 1,
+                connection: 'standard',
+                trigger: hasTlsInterruptionEvidence(error) ? 'network-tls-interrupted' : 'network-failure',
+                stagingCleanup: stagingCleanupCompleted ? 'completed' : 'incomplete',
+              })
+          updateTaskAcquisitionSnapshot(database, taskId, acquisitionSnapshot)
+        }
+        const problem = taskExecutionProblem(task, error, acquisitionSnapshot)
         const recordedAt = (options.now?.() ?? new Date()).toISOString()
         const diagnosticEvidence = Object.freeze({
           recordedAt,
-          detail: redactDiagnosticText(error instanceof Error ? error.message : String(error), homedir()),
+          detail: [
+            redactDiagnosticText(error instanceof Error ? error.message : String(error), homedir()),
+            `managed staging cleanup: ${stagingCleanupCompleted ? 'completed' : 'incomplete'}`,
+          ].join('\n'),
         })
         updateTaskExecutionState(
           database,

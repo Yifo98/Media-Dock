@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3DefaultDesktop' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3DefaultDesktop' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3TlsNetworkProblem' || action === 'v3YoutubeBlockedProblem' || action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3NetworkInspectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3ProductionPreload') {
       const rendered = await waitFor(
@@ -483,7 +483,7 @@ app.whenReady().then(async () => {
       await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '任务').click()`, true)
       const visible = await waitFor(
         win,
-        `Boolean(document.querySelector('.md3-task-download-progress')) && document.body.innerText.includes('视频流') && document.body.innerText.includes('42.5%') && document.body.innerText.includes('4.2MiB/s') && document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes('1080p')`,
+        `Boolean(document.querySelector('.md3-task-download-progress')) && document.body.innerText.includes('视频流') && document.body.innerText.includes('42.5%') && document.body.innerText.includes('4.2MiB/s') && document.body.innerText.includes('My MediaCookies') && document.body.innerText.includes('1080p') && document.body.innerText.includes('已自动切换 YouTube 兼容连接')`,
       )
       if (!visible) throw new Error('Task progress, authentication profile, or quality ceiling was not visible')
       if (screenshotPath) {
@@ -514,6 +514,44 @@ app.whenReady().then(async () => {
       const settingsOpened = await waitFor(win, `document.querySelector('#md3-authentication-settings')?.offsetParent !== null`)
       if (!settingsOpened) throw new Error('Expired Cookie recovery did not open authentication settings')
       console.log('[GREEN] Media Dock 3 explains an expired Cookie in Chinese with authentication recovery.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3TlsNetworkProblem') {
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '任务').click()`, true)
+      const explained = await waitFor(
+        win,
+        `Boolean(document.querySelector('.md3-task-problem'))
+          && document.querySelector('.md3-task-problem')?.innerText.includes('安全连接被提前中断')
+          && document.querySelector('.md3-task-problem')?.innerText.includes('代理或安全软件')
+          && document.querySelector('.md3-task-problem')?.innerText.includes('未完成文件已清理')
+          && Array.from(document.querySelectorAll('.md3-task-problem button')).some((button) => button.textContent.trim() === '重新处理')`,
+      )
+      if (!explained) throw new Error('TLS interruption did not show localized cause and recovery guidance')
+      await win.webContents.executeJavaScript(`document.querySelector('.md3-task-problem button').click()`, true)
+      const retryReady = await waitFor(
+        win,
+        `document.querySelector('.md3-workspace-header h1')?.textContent.trim() === '处理工作台'
+          && document.querySelector('.md3-source-field input')?.value.includes('tls-fixture')`,
+      )
+      if (!retryReady) throw new Error('TLS recovery did not return the Source to Workbench')
+      console.log('[GREEN] Media Dock 3 explains a TLS interruption and prepares the Source for a user-controlled retry.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3YoutubeBlockedProblem') {
+      await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.md3-rail nav button')).find((button) => button.textContent.trim() === '任务').click()`, true)
+      const explained = await waitFor(
+        win,
+        `Boolean(document.querySelector('.md3-task-problem'))
+          && document.querySelector('.md3-task-problem')?.innerText.includes('YouTube 拒绝了媒体连接')
+          && document.querySelector('.md3-task-problem')?.innerText.includes('标准连接和兼容连接')
+          && document.querySelector('.md3-task-problem')?.innerText.includes('切换网络出口')
+          && document.querySelector('.md3-task-problem')?.innerText.includes('更新 Cookies')
+          && Array.from(document.querySelectorAll('.md3-task-problem button')).some((button) => button.textContent.trim() === '重新处理')`,
+      )
+      if (!explained) throw new Error('YouTube connectivity rejection did not show localized recovery guidance')
+      console.log('[GREEN] Media Dock 3 explains a rejected YouTube compatibility connection and the available recovery steps.')
       app.exit(0)
       return
     }
@@ -771,6 +809,37 @@ app.whenReady().then(async () => {
       )
       if (!explained) throw new Error('Collection Problem did not show localized guidance and recovery')
       console.log('[GREEN] Media Dock 3 explains collection inspection failure in product language.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3NetworkInspectionProblem') {
+      const inputReady = await waitFor(win, `Boolean(document.querySelector('.md3-source-field input'))`)
+      if (!inputReady) throw new Error('Source Dock input did not render')
+      await win.webContents.executeJavaScript(`
+        (() => {
+          const input = document.querySelector('.md3-source-field input')
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+          setter.call(input, 'https://www.youtube.com/watch?v=inspection-problem')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          document.querySelector('.md3-primary-action').click()
+        })()
+      `, true)
+      const explained = await waitFor(
+        win,
+        `Boolean(document.querySelector('.md3-problem'))
+          && document.querySelector('.md3-problem')?.innerText.includes('无法连接到视频网站')
+          && document.querySelector('.md3-problem')?.innerText.includes('网络或代理')
+          && document.querySelector('.md3-problem')?.innerText.includes('稍后重试')`,
+      )
+      if (!explained) throw new Error('Network Source Inspection failure did not show actionable guidance')
+      await win.webContents.executeJavaScript(`document.querySelector('.md3-problem button').click()`, true)
+      const retryReady = await waitFor(
+        win,
+        `document.querySelector('.md3-source-field input')?.value.includes('inspection-problem')
+          && document.querySelector('.md3-primary-action')?.textContent.includes('识别内容')`,
+      )
+      if (!retryReady) throw new Error('Network Source Inspection recovery did not preserve the Source for retry')
+      console.log('[GREEN] Media Dock 3 explains a network Source Inspection failure and how to recover.')
       app.exit(0)
       return
     }

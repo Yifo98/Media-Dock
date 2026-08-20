@@ -206,6 +206,32 @@ writeFileSync(outputPath, Buffer.from('youtube-compatible-media'))
 `)
 }
 
+function writeTlsInterruptedFakeYtDlp(filePath) {
+  writeFileSync(filePath, `
+const { writeFileSync } = require('node:fs')
+const args = process.argv.slice(2)
+if (args.includes('--dump-single-json')) {
+  process.stdout.write(JSON.stringify({
+    id: 'tls-interrupted-fixture',
+    title: 'TLS Interrupted Fixture',
+    duration: 20,
+    webpage_url: 'https://www.youtube.com/watch?v=tls-interrupted-fixture',
+    extractor_key: 'Youtube',
+    ext: 'webm',
+    vcodec: 'vp9',
+    acodec: 'opus',
+    formats: [{ format_id: 'combined', height: 1080, vcodec: 'vp9', acodec: 'opus', filesize: 1700000 }],
+  }))
+  process.exit(0)
+}
+const outputFlag = args.indexOf('--output')
+if (outputFlag === -1 || !args[outputFlag + 1]) process.exit(2)
+writeFileSync(args[outputFlag + 1] + '.part', Buffer.from('partial-tls-media'))
+process.stderr.write('ERROR: [download] Got error: EOF occurred in violation of protocol (_ssl.c:1007). Giving up after 10 retries')
+process.exit(1)
+`)
+}
+
 const ffprobeCommand = process.env.MEDIA_DOCK_TEST_FFPROBE ?? 'ffprobe'
 const hasFfprobe = spawnSync(ffprobeCommand, ['-version'], { stdio: 'ignore' }).status === 0
 const ffmpegCommand = process.env.MEDIA_DOCK_TEST_FFMPEG ?? 'ffmpeg'
@@ -1191,6 +1217,12 @@ test('a YouTube 403 retries once with the embedded compatibility client after cl
       const acquisitionAttempts = invocations.filter((invocation) => !invocation.metadata)
 
       assert.equal(completed.tasks[0].state, 'completed')
+      assert.deepEqual(completed.tasks[0].acquisition, {
+        attemptCount: 2,
+        connection: 'youtube-embedded',
+        trigger: 'youtube-http-403',
+        stagingCleanup: 'completed',
+      })
       assert.equal(readFileSync(deliveryPath, 'utf8'), 'youtube-compatible-media')
       assert.deepEqual(acquisitionAttempts, [
         { metadata: false, embedded: false, authenticated: false },
@@ -1198,6 +1230,76 @@ test('a YouTube 403 retries once with the embedded compatibility client after cl
       ])
       assert.equal(existsSync(`${deliveryPath}.part`), false)
       assert.equal(existsSync(path.join(outputDirectory, '.media-dock-staging')), false)
+
+      engine.close()
+      const reopenedEngine = createMediaTaskEngine({ dataDirectory: path.join(rootDirectory, 'data') })
+      try {
+        assert.deepEqual(reopenedEngine.getWorkspaceSnapshot().tasks[0].acquisition, {
+          attemptCount: 2,
+          connection: 'youtube-embedded',
+          trigger: 'youtube-http-403',
+          stagingCleanup: 'completed',
+        })
+      } finally {
+        reopenedEngine.close()
+      }
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('a TLS-interrupted network task removes managed staging and explains how the user can recover', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const fakeYtDlpPath = path.join(rootDirectory, 'tls-interrupted-yt-dlp.cjs')
+    const outputDirectory = path.join(rootDirectory, 'output')
+    writeTlsInterruptedFakeYtDlp(fakeYtDlpPath)
+    mkdirSync(outputDirectory)
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      idFactory: (kind) => kind === 'task' ? 'tls-interrupted-task' : 'tls-interrupted-deliverable',
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: '2026.07.04-fixture' },
+        ffmpeg: { command: 'ffmpeg', version: '7.1-fixture' },
+      },
+    })
+
+    try {
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://www.youtube.com/watch?v=tls-interrupted-fixture',
+      })
+      assert.equal(inspection.status, 'ready')
+      if (inspection.status !== 'ready') return
+      const plan = await engine.planTask({
+        source: inspection.source,
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'zh-CN',
+      })
+      engine.createTask(plan)
+
+      await assert.rejects(engine.runTask('tls-interrupted-task'), /EOF occurred in violation of protocol/i)
+      const failedTask = engine.getWorkspaceSnapshot().tasks[0]
+      const diagnostic = engine.getTaskDiagnosticEvidence('tls-interrupted-task')
+
+      assert.equal(failedTask.state, 'needs-attention')
+      assert.deepEqual(failedTask.problem, {
+        code: 'network.tls-interrupted',
+        category: 'network',
+        stage: 'acquiring',
+        titleKey: 'problem.networkTlsInterrupted.title',
+        summaryKey: 'problem.networkTlsInterrupted.summary',
+        actions: [{ id: 'retry-task', kind: 'retry-task' }],
+      })
+      assert.deepEqual(failedTask.acquisition, {
+        attemptCount: 1,
+        connection: 'standard',
+        trigger: 'network-tls-interrupted',
+        stagingCleanup: 'completed',
+      })
+      assert.equal(existsSync(path.join(outputDirectory, '.media-dock-staging')), false)
+      assert.match(diagnostic?.detail ?? '', /EOF occurred in violation of protocol/i)
     } finally {
       engine.close()
     }
@@ -1481,8 +1583,8 @@ test('an expired Cookie becomes an actionable authentication Problem instead of 
         (candidate) => candidate.id === 'expired-cookie-task-2',
       )
       assert.equal(forbiddenTask?.state, 'needs-attention')
-      assert.equal(forbiddenTask?.problem?.code, 'network.acquisition.failed')
-      assert.equal(forbiddenTask?.problem?.category, 'media-processing')
+      assert.equal(forbiddenTask?.problem?.code, 'youtube.connectivity.blocked')
+      assert.equal(forbiddenTask?.problem?.category, 'network')
     } finally {
       engine.close()
     }

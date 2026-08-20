@@ -125,6 +125,14 @@ test('3.0 explains an expired Cookie in Chinese and links to authentication reco
   assertRendererAction('v3ExpiredCookieProblem')
 })
 
+test('3.0 explains a TLS interruption, cleanup, and a user-controlled retry in Chinese', () => {
+  assertRendererAction('v3TlsNetworkProblem')
+})
+
+test('3.0 explains when both YouTube connections are rejected and how to recover', () => {
+  assertRendererAction('v3YoutubeBlockedProblem')
+})
+
 test('3.0 exports a diagnostic log from one needs-attention task', () => {
   assertRendererAction('v3TaskDiagnostics')
 })
@@ -151,6 +159,10 @@ test('3.0 remembers an explicit language choice without consulting the system la
 
 test('3.0 explains a collection inspection failure in product language with a recovery action', () => {
   assertRendererAction('v3CollectionProblem')
+})
+
+test('3.0 explains a network Source Inspection failure and the next recovery steps', () => {
+  assertRendererAction('v3NetworkInspectionProblem')
 })
 
 test('3.0 localizes product-owned collection group names in English', () => {
