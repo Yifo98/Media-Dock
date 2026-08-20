@@ -184,6 +184,13 @@ export default function MediaDockV3App() {
 
   useEffect(() => {
     let mounted = true
+    void api.getDefaultOutputDirectory()
+      .then((defaultDirectory) => {
+        if (mounted) setOutputDirectory((currentDirectory) => currentDirectory || defaultDirectory)
+      })
+      .catch(() => {
+        // The save-location picker remains available if the platform default cannot be resolved.
+      })
     void api.getWorkspaceSnapshot()
       .then((snapshot) => {
         if (mounted) setWorkspace(snapshot)

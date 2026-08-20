@@ -24,6 +24,7 @@ test('the IPC boundary accepts a complete local audio-video pair and rejects inc
     clearTaskHistory: async () => null,
   }
   const pickers = {
+    getDefaultOutputDirectory: async () => '/desktop',
     pickLocalSource: async () => null,
     pickOutputDirectory: async () => null,
     importAuthenticationProfile: async () => null,
@@ -35,6 +36,7 @@ test('the IPC boundary accepts a complete local audio-video pair and rejects inc
   }
   const unregister = registerMediaDockV3Ipc(ipc, engine, () => [], pickers)
   const planHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.planTask)
+  const defaultOutputHandler = handlers.get(MEDIA_DOCK_V3_CHANNELS.getDefaultOutputDirectory)
   const source = {
     kind: 'local-av-pair',
     locator: '/media/video.mp4',
@@ -45,6 +47,8 @@ test('the IPC boundary accepts a complete local audio-video pair and rejects inc
     durationSeconds: 42,
     formatName: 'video + audio',
   }
+
+  assert.equal(await defaultOutputHandler({}), '/desktop')
 
   await planHandler({}, {
     source,
@@ -104,6 +108,7 @@ test('the IPC boundary exports support diagnostics from validated renderer conte
   let authenticationDirectoryOpened = false
   const runtimeUpdateCalls = []
   const pickers = {
+    getDefaultOutputDirectory: async () => '/desktop',
     pickLocalSource: async () => null,
     pickLocalSources: async () => [],
     pickOutputDirectory: async () => null,

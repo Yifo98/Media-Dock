@@ -231,6 +231,7 @@ let v3LocalPickerCalls = 0
 const mediaDockApi = {
   contractVersion: 1,
   getWorkspaceSnapshot: async () => v3Workspace,
+  getDefaultOutputDirectory: async () => 'I:\\桌面',
   pickLocalSource: async () => {
     if (action === 'v3LocalFlow') return 'I:\\素材\\field-note.wav'
     if (action === 'v3MergeFlow') {
@@ -322,7 +323,7 @@ const mediaDockApi = {
           { id: 'keep-original', deliverableKind: 'source', extension: 'wav' },
         ],
       }
-    : action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection'
+    : action === 'v3NetworkFlow' || action === 'v3DefaultDesktop' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection'
       ? {
           status: 'ready',
           source: {

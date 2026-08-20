@@ -160,6 +160,52 @@ process.exit(1)
 `)
 }
 
+function writeYoutubeCompatibilityFakeYtDlp(filePath, invocationPath) {
+  writeFileSync(filePath, `
+const { appendFileSync, existsSync, writeFileSync } = require('node:fs')
+const args = process.argv.slice(2)
+const usesEmbeddedClient = args.some((value) => value === 'youtube:player_client=web_embedded')
+appendFileSync(${JSON.stringify(invocationPath)}, JSON.stringify({
+  metadata: args.includes('--dump-single-json'),
+  embedded: usesEmbeddedClient,
+  authenticated: args.includes('--cookies'),
+}) + '\\n')
+
+if (args.includes('--dump-single-json')) {
+  process.stdout.write(JSON.stringify({
+    id: 'youtube-connectivity-fixture',
+    title: 'YouTube Connectivity Fixture',
+    duration: 20,
+    webpage_url: 'https://www.youtube.com/watch?v=connectivity-fixture',
+    extractor_key: 'Youtube',
+    ext: 'webm',
+    vcodec: 'vp9',
+    acodec: 'opus',
+    formats: [
+      { format_id: 'video', height: 1080, vcodec: 'vp9', acodec: 'none', filesize: 1500000 },
+      { format_id: 'audio', vcodec: 'none', acodec: 'opus', filesize: 200000 },
+    ],
+  }))
+  process.exit(0)
+}
+
+const outputFlag = args.indexOf('--output')
+if (outputFlag === -1 || !args[outputFlag + 1]) process.exit(2)
+const outputPath = args[outputFlag + 1]
+const partialPath = outputPath + '.part'
+if (!usesEmbeddedClient) {
+  writeFileSync(partialPath, Buffer.from('partial-media'))
+  process.stderr.write('ERROR: unable to download video data: HTTP Error 403: Forbidden')
+  process.exit(1)
+}
+if (existsSync(partialPath)) {
+  process.stderr.write('compatibility retry reused partial media')
+  process.exit(5)
+}
+writeFileSync(outputPath, Buffer.from('youtube-compatible-media'))
+`)
+}
+
 const ffprobeCommand = process.env.MEDIA_DOCK_TEST_FFPROBE ?? 'ffprobe'
 const hasFfprobe = spawnSync(ffprobeCommand, ['-version'], { stdio: 'ignore' }).status === 0
 const ffmpegCommand = process.env.MEDIA_DOCK_TEST_FFMPEG ?? 'ffmpeg'
@@ -1101,6 +1147,56 @@ test('a queued network task acquires into staging and safely delivers an indexed
       }])
       assert.equal(existsSync(deliveryPath), true)
       assert.equal(readFileSync(deliveryPath, 'utf8'), 'bv*[height<=1080]+ba/b[height<=1080]')
+      assert.equal(existsSync(path.join(outputDirectory, '.media-dock-staging')), false)
+    } finally {
+      engine.close()
+    }
+  })
+})
+
+test('a YouTube 403 retries once with the embedded compatibility client after clearing partial staging', async () => {
+  await withTemporaryWorkspace(async (rootDirectory) => {
+    const fakeYtDlpPath = path.join(rootDirectory, 'youtube-compatibility-yt-dlp.cjs')
+    const invocationPath = path.join(rootDirectory, 'youtube-invocations.jsonl')
+    const outputDirectory = path.join(rootDirectory, 'output')
+    writeYoutubeCompatibilityFakeYtDlp(fakeYtDlpPath, invocationPath)
+    mkdirSync(outputDirectory)
+    const engine = createMediaTaskEngine({
+      dataDirectory: path.join(rootDirectory, 'data'),
+      idFactory: (kind) => kind === 'task' ? 'youtube-connectivity-task' : 'youtube-connectivity-deliverable',
+      managedRuntimes: {
+        ytDlp: { command: process.execPath, argsPrefix: [fakeYtDlpPath], version: '2026.07.04-fixture' },
+        ffmpeg: { command: 'ffmpeg', version: '7.1-fixture' },
+      },
+    })
+
+    try {
+      const inspection = await engine.inspectSource({
+        kind: 'network-url',
+        url: 'https://www.youtube.com/watch?v=connectivity-fixture',
+      })
+      assert.equal(inspection.status, 'ready')
+      if (inspection.status !== 'ready') return
+      const plan = await engine.planTask({
+        source: inspection.source,
+        recipeId: 'network-video',
+        outputDirectory,
+        language: 'zh-CN',
+      })
+      engine.createTask(plan)
+
+      const completed = await engine.runTask('youtube-connectivity-task')
+      const deliveryPath = path.join(outputDirectory, 'YouTube Connectivity Fixture - 视频.mp4')
+      const invocations = readFileSync(invocationPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+      const acquisitionAttempts = invocations.filter((invocation) => !invocation.metadata)
+
+      assert.equal(completed.tasks[0].state, 'completed')
+      assert.equal(readFileSync(deliveryPath, 'utf8'), 'youtube-compatible-media')
+      assert.deepEqual(acquisitionAttempts, [
+        { metadata: false, embedded: false, authenticated: false },
+        { metadata: false, embedded: true, authenticated: false },
+      ])
+      assert.equal(existsSync(`${deliveryPath}.part`), false)
       assert.equal(existsSync(path.join(outputDirectory, '.media-dock-staging')), false)
     } finally {
       engine.close()

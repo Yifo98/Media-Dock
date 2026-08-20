@@ -4,6 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 // self-contained and cover it with the production-preload renderer test.
 const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   getWorkspace: 'media-dock:v3:get-workspace',
+  getDefaultOutputDirectory: 'media-dock:v3:get-default-output-directory',
   pickLocalSource: 'media-dock:v3:pick-local-source',
   pickLocalSources: 'media-dock:v3:pick-local-sources',
   pickOutputDirectory: 'media-dock:v3:pick-output-directory',
@@ -31,6 +32,7 @@ function createMediaDockV3Api(renderer) {
   return Object.freeze({
     contractVersion: 1,
     getWorkspaceSnapshot: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.getWorkspace),
+    getDefaultOutputDirectory: () => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.getDefaultOutputDirectory),
     pickLocalSource: (currentPath) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.pickLocalSource, currentPath),
     pickLocalSources: (currentPath) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.pickLocalSources, currentPath),
     pickOutputDirectory: (currentPath) => renderer.invoke(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory, currentPath),

@@ -65,6 +65,10 @@ test('3.0 Workbench opens with Source Dock and one contextual primary action', (
   assertRendererAction('v3Workbench')
 })
 
+test('3.0 defaults video delivery to Desktop without removing the save-location picker', () => {
+  assertRendererAction('v3DefaultDesktop')
+})
+
 test('3.0 keeps one shared workspace navigation across the four focused product spaces', () => {
   assertRendererAction('v3WorkspaceNavigation')
 })

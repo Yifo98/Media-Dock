@@ -31,6 +31,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
     'createTaskBatch',
     'exportSupportDiagnostics',
     'exportTaskDiagnostics',
+    'getDefaultOutputDirectory',
     'getWorkspaceSnapshot',
     'importAuthenticationProfile',
     'inspectSource',
@@ -50,6 +51,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
   assert.equal(api.contractVersion, 1)
 
   await api.getWorkspaceSnapshot()
+  await api.getDefaultOutputDirectory()
   await api.pickLocalSource('/media')
   await api.pickLocalSources('/media')
   await api.pickOutputDirectory('/deliverables')
@@ -73,6 +75,7 @@ test('the versioned preload API exposes only Media Dock product commands and rev
 
   assert.deepEqual(invocations, [
     { channel: 'media-dock:v3:get-workspace', payload: undefined },
+    { channel: 'media-dock:v3:get-default-output-directory', payload: undefined },
     { channel: 'media-dock:v3:pick-local-source', payload: '/media' },
     { channel: 'media-dock:v3:pick-local-sources', payload: '/media' },
     { channel: 'media-dock:v3:pick-output-directory', payload: '/deliverables' },

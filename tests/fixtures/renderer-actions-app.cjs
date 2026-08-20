@@ -36,6 +36,7 @@ app.whenReady().then(async () => {
       authenticationProfiles: [],
       systemOperations: [],
     }))
+    ipcMain.handle('media-dock:v3:get-default-output-directory', () => 'I:\\桌面')
   }
   const win = new BrowserWindow({
     show: Boolean(screenshotPath),
@@ -56,12 +57,12 @@ app.whenReady().then(async () => {
   try {
     await win.loadFile(
       path.resolve(__dirname, '../../dist/index.html'),
-      action === 'v3Workbench' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
+      action === 'v3Workbench' || action === 'v3DefaultDesktop' || action === 'v3EnglishWorkbench' || action === 'v3WorkspaceNavigation' || action === 'v3TaskScrolling' || action === 'v3LocalFlow' || action === 'v3MergeFlow' || action === 'v3MediaCookiesGuide' || action === 'v3NetworkFlow' || action === 'v3SlowInspection' || action === 'v3MultipleLinksFlow' || action === 'v3PreflightMismatch' || action === 'v3QualitySelection' || action === 'v3CollectionFlow' || action === 'v3CollectionGrouping' || action === 'v3TaskVisibility' || action === 'v3ExpiredCookieProblem' || action === 'v3TaskDiagnostics' || action === 'v3ClearHistory' || action === 'v3DeliverableReveal' || action === 'v3RuntimeCheck' || action === 'v3SupportDiagnostics' || action === 'v3EnglishCollection' || action === 'v3CollectionProblem' || action === 'v3LanguagePersistence' || action === 'v3AuthProfile' || action === 'v3EnglishAuthProfile' || action === 'v3ProductionPreload' ? { hash: 'v3' } : undefined,
     )
     if (action === 'v3ProductionPreload') {
       const rendered = await waitFor(
         win,
-        `document.body.innerText.includes('处理工作台') && !document.body.innerText.includes('Renderer error') && ['pickLocalSources', 'inspectVideoQualities', 'revealDeliverable', 'checkRuntimeUpdates', 'updateRuntimeTools', 'exportSupportDiagnostics', 'exportTaskDiagnostics'].every((key) => typeof window.mediaDock?.[key] === 'function')`,
+        `document.body.innerText.includes('处理工作台') && !document.body.innerText.includes('Renderer error') && ['getDefaultOutputDirectory', 'pickLocalSources', 'inspectVideoQualities', 'revealDeliverable', 'checkRuntimeUpdates', 'updateRuntimeTools', 'exportSupportDiagnostics', 'exportTaskDiagnostics'].every((key) => typeof window.mediaDock?.[key] === 'function')`,
       )
       if (!rendered) throw new Error('Production preload did not expose the Media Dock 3 contract')
       console.log('[GREEN] the production preload exposes the Media Dock 3 sandbox contract.')
@@ -113,6 +114,27 @@ app.whenReady().then(async () => {
         fs.writeFileSync(screenshotPath, screenshot.toPNG())
       }
       console.log('[GREEN] Media Dock 3 Workbench opens with Source Dock and one contextual primary action.')
+      app.exit(0)
+      return
+    }
+    if (action === 'v3DefaultDesktop') {
+      const inputReady = await waitFor(win, `Boolean(document.querySelector('.md3-source-field input'))`)
+      if (!inputReady) throw new Error('Source Dock input did not render')
+      await win.webContents.executeJavaScript(`
+        (() => {
+          const input = document.querySelector('.md3-source-field input')
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+          setter.call(input, 'https://media.example/watch?v=desktop-default')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })()
+      `, true)
+      await win.webContents.executeJavaScript(`document.querySelector('.md3-primary-action').click()`, true)
+      const desktopReady = await waitFor(
+        win,
+        `document.querySelector('.md3-destination-picker')?.innerText.includes('I:\\\\桌面')`,
+      )
+      if (!desktopReady) throw new Error('Desktop did not become the default video save location')
+      console.log('[GREEN] Media Dock 3 defaults video delivery to Desktop while keeping the directory picker available.')
       app.exit(0)
       return
     }
@@ -436,8 +458,12 @@ app.whenReady().then(async () => {
           select.dispatchEvent(new Event('change', { bubbles: true }))
         })()
       `, true)
-      const outputReady = await waitFor(win, `document.querySelector('.md3-primary-action')?.textContent.trim().startsWith('请先选择保存位置')`)
-      if (!outputReady) throw new Error('Output action did not become available after quality selection')
+      const outputReady = await waitFor(
+        win,
+        `document.querySelector('.md3-destination-picker')?.innerText.includes('I:\\\\桌面')
+          && document.querySelector('.md3-primary-action')?.textContent.trim().startsWith('开始处理')`,
+      )
+      if (!outputReady) throw new Error('Desktop default did not produce a ready plan after quality selection')
       await win.webContents.executeJavaScript(`document.querySelector('.md3-destination-picker').click()`, true)
       const planned = await waitFor(win, `document.body.innerText.includes('山海 Episode 42 - 视频.mp4')`)
       if (!planned) throw new Error('Selected 1080p ceiling was not accepted by task planning')

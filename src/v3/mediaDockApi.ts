@@ -205,6 +205,7 @@ export type PlanTaskInput = Readonly<{
 export type MediaDockV3Api = Readonly<{
   contractVersion: 1
   getWorkspaceSnapshot(): Promise<WorkspaceSnapshot>
+  getDefaultOutputDirectory(): Promise<string>
   pickLocalSource(currentPath?: string): Promise<string | null>
   pickLocalSources(currentPath?: string): Promise<readonly string[]>
   pickOutputDirectory(currentPath?: string): Promise<string | null>

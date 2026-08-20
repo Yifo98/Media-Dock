@@ -6,6 +6,7 @@ import {
 
 export const MEDIA_DOCK_V3_CHANNELS = Object.freeze({
   getWorkspace: 'media-dock:v3:get-workspace',
+  getDefaultOutputDirectory: 'media-dock:v3:get-default-output-directory',
   pickLocalSource: 'media-dock:v3:pick-local-source',
   pickLocalSources: 'media-dock:v3:pick-local-sources',
   pickOutputDirectory: 'media-dock:v3:pick-output-directory',
@@ -39,6 +40,7 @@ type WorkspaceTarget = Readonly<{
 }>
 
 type MediaDockV3Pickers = Readonly<{
+  getDefaultOutputDirectory(): Promise<string>
   pickLocalSource(currentPath: string | undefined): Promise<string | null>
   pickLocalSources(currentPath: string | undefined): Promise<readonly string[]>
   pickOutputDirectory(currentPath: string | undefined): Promise<string | null>
@@ -301,6 +303,7 @@ export function registerMediaDockV3Ipc(
   pickers: MediaDockV3Pickers,
 ): () => void {
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.getWorkspace, () => engine.getWorkspaceSnapshot())
+  ipc.handle(MEDIA_DOCK_V3_CHANNELS.getDefaultOutputDirectory, () => pickers.getDefaultOutputDirectory())
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickLocalSource, (_event, payload) => pickers.pickLocalSource(optionalString(payload, 'Current source path')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickLocalSources, (_event, payload) => pickers.pickLocalSources(optionalString(payload, 'Current source path')))
   ipc.handle(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory, (_event, payload) => pickers.pickOutputDirectory(optionalString(payload, 'Current output directory')))
@@ -338,6 +341,7 @@ export function registerMediaDockV3Ipc(
   return () => {
     unsubscribe()
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.getWorkspace)
+    ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.getDefaultOutputDirectory)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickLocalSource)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickLocalSources)
     ipc.removeHandler(MEDIA_DOCK_V3_CHANNELS.pickOutputDirectory)

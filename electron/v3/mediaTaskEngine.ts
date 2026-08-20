@@ -568,6 +568,15 @@ function hasExplicitExpiredCookieEvidence(error: unknown): boolean {
   ].some((pattern) => pattern.test(message))
 }
 
+function isYoutubeService(value: string): boolean {
+  return value.toLowerCase().replace(/[^a-z0-9]+/gu, ' ').split(/\s+/u).includes('youtube')
+}
+
+function hasYoutubeForbiddenAcquisitionEvidence(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /\bHTTP Error 403\b|\bHTTP 403\b|\b403 Forbidden\b/iu.test(message)
+}
+
 function taskExecutionProblem(task: MediaTaskSnapshot, error: unknown): ProblemSnapshot {
   const isNetworkTask = task.plan.source.kind === 'network-url'
   if (isNetworkTask && task.plan.authenticationProfileId && hasExplicitExpiredCookieEvidence(error)) {
@@ -1417,50 +1426,71 @@ export function createMediaTaskEngine(options: CreateMediaTaskEngineOptions): Me
           const authenticationCookiePath = task.plan.authenticationProfileId
             ? resolveAuthenticationCookiePath(task.plan.authenticationProfileId, task.plan.source.serviceName)
             : null
-          await runRuntimeProcessCollectOutput({
-            command: ytDlp.command,
-            args: [
-              ...(ytDlp.argsPrefix ?? []),
-              '--ignore-config',
-              '--no-update',
-              '--no-playlist',
-              '--progress',
-              '--newline',
-              '--progress-template',
-              'download:PROGRESS|%(info.format_id)s|%(info.vcodec)s|%(info.acodec)s|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
-              '--ffmpeg-location',
-              path.isAbsolute(ffmpeg.command) ? path.dirname(ffmpeg.command) : ffmpeg.command,
-              '-f',
-              task.plan.videoQuality?.mode === 'max-height'
-                ? `bv*[height<=${task.plan.videoQuality.height}]+ba/b[height<=${task.plan.videoQuality.height}]`
-                : 'bv*+ba/b',
-              '--merge-output-format',
-              'mp4',
-              ...(deno ? ['--js-runtimes', `deno:${deno.command}`] : []),
-              ...(authenticationCookiePath ? ['--cookies', authenticationCookiePath] : []),
-              '--output',
-              stagedDeliveryPath,
-              task.plan.source.locator,
-            ],
-            timeoutMs: 30 * 60_000,
-            workingDirectory: taskStagingDirectory,
-            env: process.env,
-            signal: shutdownController.signal,
-            onOutputLine: (line) => {
-              const parsed = parseYtDlpProgressLine(line)
-              if (!parsed) return
-              const previousProgress = taskProgresses.get(taskId)
-              const formatChanged = taskProgressFormatIds.get(taskId) !== parsed.formatId
-              const publishedAt = taskProgressPublishedAt.get(taskId) ?? 0
-              const now = Date.now()
-              taskProgresses.set(taskId, parsed.progress)
-              taskProgressFormatIds.set(taskId, parsed.formatId)
-              if (formatChanged || now - publishedAt >= 500 || (parsed.progress.percent >= 100 && (previousProgress?.percent ?? 0) < 100)) {
-                taskProgressPublishedAt.set(taskId, now)
-                publishWorkspace()
-              }
-            },
-          })
+          const handleYtDlpOutputLine = (line: string) => {
+            const parsed = parseYtDlpProgressLine(line)
+            if (!parsed) return
+            const previousProgress = taskProgresses.get(taskId)
+            const formatChanged = taskProgressFormatIds.get(taskId) !== parsed.formatId
+            const publishedAt = taskProgressPublishedAt.get(taskId) ?? 0
+            const now = Date.now()
+            taskProgresses.set(taskId, parsed.progress)
+            taskProgressFormatIds.set(taskId, parsed.formatId)
+            if (formatChanged || now - publishedAt >= 500 || (parsed.progress.percent >= 100 && (previousProgress?.percent ?? 0) < 100)) {
+              taskProgressPublishedAt.set(taskId, now)
+              publishWorkspace()
+            }
+          }
+          const runNetworkAcquisition = async (compatibilityArgs: readonly string[] = []) => {
+            await runRuntimeProcessCollectOutput({
+              command: ytDlp.command,
+              args: [
+                ...(ytDlp.argsPrefix ?? []),
+                '--ignore-config',
+                '--no-update',
+                '--no-playlist',
+                '--progress',
+                '--newline',
+                '--progress-template',
+                'download:PROGRESS|%(info.format_id)s|%(info.vcodec)s|%(info.acodec)s|%(progress._percent_str)s|%(progress._downloaded_bytes_str)s|%(progress._total_bytes_str)s|%(progress._speed_str)s|%(progress._eta_str)s',
+                '--ffmpeg-location',
+                path.isAbsolute(ffmpeg.command) ? path.dirname(ffmpeg.command) : ffmpeg.command,
+                '-f',
+                task.plan.videoQuality?.mode === 'max-height'
+                  ? `bv*[height<=${task.plan.videoQuality.height}]+ba/b[height<=${task.plan.videoQuality.height}]`
+                  : 'bv*+ba/b',
+                '--merge-output-format',
+                'mp4',
+                ...(deno ? ['--js-runtimes', `deno:${deno.command}`] : []),
+                ...(authenticationCookiePath ? ['--cookies', authenticationCookiePath] : []),
+                ...compatibilityArgs,
+                '--output',
+                stagedDeliveryPath,
+                task.plan.source.locator,
+              ],
+              timeoutMs: 30 * 60_000,
+              workingDirectory: taskStagingDirectory,
+              env: process.env,
+              signal: shutdownController.signal,
+              onOutputLine: handleYtDlpOutputLine,
+            })
+          }
+          try {
+            await runNetworkAcquisition()
+          } catch (error) {
+            if (!isYoutubeService(task.plan.source.serviceName) || !hasYoutubeForbiddenAcquisitionEvidence(error)) {
+              throw error
+            }
+            taskProgresses.delete(taskId)
+            taskProgressFormatIds.delete(taskId)
+            taskProgressPublishedAt.delete(taskId)
+            await rm(taskStagingDirectory, { recursive: true, force: true })
+            await mkdir(taskStagingDirectory, { recursive: true })
+            publishWorkspace()
+            await runNetworkAcquisition([
+              '--extractor-args',
+              'youtube:player_client=web_embedded',
+            ])
+          }
         } else if (task.plan.source.kind === 'local-av-pair') {
           await runRuntimeProcessCollectOutput({
             command: ffmpeg.command,

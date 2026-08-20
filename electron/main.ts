@@ -4424,6 +4424,9 @@ async function initializeV3TaskEngine() {
       .filter((window) => !window.isDestroyed())
       .map((window) => window.webContents),
     {
+      async getDefaultOutputDirectory() {
+        return app.getPath('desktop')
+      },
       async pickLocalSource(currentPath) {
         const result = await dialog.showOpenDialog(mainWindow!, {
           defaultPath: currentPath ?? resolveDefaultDownloads(),
@@ -4448,7 +4451,7 @@ async function initializeV3TaskEngine() {
       },
       async pickOutputDirectory(currentPath) {
         const result = await dialog.showOpenDialog(mainWindow!, {
-          defaultPath: currentPath ?? resolveDefaultDownloads(),
+          defaultPath: currentPath ?? app.getPath('desktop'),
           properties: ['openDirectory', 'createDirectory'],
         })
         return result.canceled ? null : result.filePaths[0] ?? null
